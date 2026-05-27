@@ -4,42 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Element Armor: Hào Quang Giáp</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="icon" type="image/png" href="/assets/hero/portrait/hero_portrait.png" />
+    <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <main class="game-shell">
       <section class="stage" aria-label="Element Armor game">
         <div id="gameMount" tabindex="0"></div>
-
-        <div id="screenOverlay" class="screen-overlay is-visible">
-          <div class="menu-panel">
-            <p class="eyebrow">Element Armor</p>
-            <h1>Hào Quang Giáp</h1>
-            <p id="overlayCopy">Rìa thành phố đã mở cổng nứt. Chọn số người chơi rồi kích hoạt lõi giáp.</p>
-            <div class="mode-select" role="group" aria-label="Chọn chế độ">
-              <button class="is-selected" data-mode="1" type="button">1 người</button>
-              <button data-mode="2" type="button">2 người</button>
-            </div>
-            <div class="menu-actions">
-              <button id="startButton" class="primary-button" type="button">Bắt đầu</button>
-              <button id="restartButton" class="ghost-button" type="button" style="display: none">Chơi lại</button>
-            </div>
-          </div>
-        </div>
       </section>
 
       <nav class="touch-controls" aria-label="Điều khiển cảm ứng">
         <div class="touch-cluster">
-          <button data-action="left" aria-label="Sang trái">‹</button>
-          <button data-action="up" aria-label="Nhảy">⌃</button>
-          <button data-action="right" aria-label="Sang phải">›</button>
+          <button data-touch-action="left" aria-label="Sang trái" type="button">‹</button>
+          <button data-touch-action="jump" aria-label="Nhảy" type="button">⌃</button>
+          <button data-touch-action="right" aria-label="Sang phải" type="button">›</button>
         </div>
         <div class="touch-cluster action-cluster">
-          <button data-action="guard" aria-label="Đỡ">◈</button>
-          <button data-action="dash" aria-label="Lướt">⇢</button>
-          <button data-action="attack" aria-label="Đánh">✦</button>
-          <button data-action="special" aria-label="Tuyệt chiêu">✷</button>
-          <button data-action="overdrive" aria-label="Bùng nổ lõi">◆</button>
+          <button data-touch-action="dash" aria-label="Dash" type="button">⇢</button>
+          <button data-touch-action="slash" aria-label="Chém" type="button">✦</button>
+          <button data-touch-action="blast" aria-label="Bắn" type="button">✧</button>
         </div>
       </nav>
     </main>
