@@ -14,7 +14,6 @@ const modeButtons = [...document.querySelectorAll<HTMLButtonElement>("[data-mode
 
 type Action = "left" | "right" | "up" | "attack" | "dash" | "guard" | "special" | "overdrive" | "prevArmor" | "nextArmor" | "armor1" | "armor2" | "armor3" | "armor4";
 type EnemyKind = "crawler" | "mutant" | "drone" | "elite" | "boss";
-type Pose = "idle" | "walk1" | "walk2" | "jump" | "attack" | "dash" | "hurt";
 
 type Colors = {
   primary: number;
@@ -154,11 +153,6 @@ const armorForms: ArmorForm[] = [
   },
 ];
 
-const playerPalettes: Colors[] = [
-  armorForms[0].colors,
-  { primary: 0x13a7ff, plate: 0xe9f4ff, accent: 0x94fbff, visor: 0xc7fdff, dark: 0x061728, trim: 0x0b65d8 },
-];
-
 const touchHeld = new Set<Action>();
 const touchJust = new Set<Action>();
 let selectedPlayers = 1;
@@ -171,8 +165,9 @@ class MainScene extends Phaser.Scene {
   private effects: EffectState[] = [];
   private waves: Wave[] = [];
   private controls: Controls[] = [];
-  private hud!: Phaser.GameObjects.Graphics;
   private hudTexts: Phaser.GameObjects.Text[] = [];
+  private hudImages: Phaser.GameObjects.Image[] = [];
+  private bossHudImage?: Phaser.GameObjects.Image;
   private scoreText!: Phaser.GameObjects.Text;
   private messageText!: Phaser.GameObjects.Text;
   private score = 0;
@@ -189,14 +184,49 @@ class MainScene extends Phaser.Scene {
     super("MainScene");
   }
 
+  preload() {
+    this.load.image("bg-city-neon", "/assets/backgrounds/city_neon.png");
+
+    this.load.image("hero-idle", "/assets/hero/sprites/idle.png");
+    this.load.image("hero-walk-1", "/assets/hero/sprites/walk_1.png");
+    this.load.image("hero-walk-2", "/assets/hero/sprites/walk_2.png");
+    this.load.image("hero-walk-3", "/assets/hero/sprites/walk_3.png");
+    this.load.image("hero-walk-4", "/assets/hero/sprites/walk_4.png");
+    this.load.image("hero-jump", "/assets/hero/sprites/jump.png");
+    this.load.image("hero-attack-slash", "/assets/hero/sprites/attack_slash.png");
+    this.load.image("hero-attack-blast", "/assets/hero/sprites/attack_blast.png");
+    this.load.image("hero-dash", "/assets/hero/sprites/dash.png");
+    this.load.image("hero-hit", "/assets/hero/sprites/hit_reaction.png");
+    this.load.image("hero-portrait", "/assets/hero/portrait/hero_portrait.png");
+
+    this.load.image("crawler-idle", "/assets/enemies/crawler/crawler_main.png");
+    this.load.image("crawler-walk1", "/assets/enemies/crawler/crawl.png");
+    this.load.image("crawler-walk2", "/assets/enemies/crawler/crawler_main.png");
+    this.load.image("mutant-idle", "/assets/enemies/horned_mutant/mutant_main.png");
+    this.load.image("mutant-walk1", "/assets/enemies/horned_mutant/walk_1.png");
+    this.load.image("mutant-walk2", "/assets/enemies/horned_mutant/walk_2.png");
+    this.load.image("elite-idle", "/assets/enemies/aegis_elite/aegis_main.png");
+    this.load.image("elite-walk1", "/assets/enemies/aegis_elite/walk.png");
+    this.load.image("elite-walk2", "/assets/enemies/aegis_elite/walk.png");
+    this.load.image("drone", "/assets/enemies/sky_hunter/sky_hunter_main.png");
+    this.load.image("boss", "/assets/enemies/boss/abyssal_colossus_main.png");
+
+    this.load.image("hud-health", "/assets/ui/hud/health_bar.png");
+    this.load.image("hud-energy", "/assets/ui/hud/energy_bar.png");
+    this.load.image("hud-boss", "/assets/ui/hud/boss_bar.png");
+
+    this.load.image("slash", "/assets/effects/slash_crescent_1.png");
+    this.load.image("energy-blasts", "/assets/effects/energy_blasts_sheet.png");
+    this.load.image("hit-sparks", "/assets/effects/hit_sparks_sheet.png");
+    this.load.image("explosions", "/assets/effects/explosions_sheet.png");
+  }
+
   create() {
     gameScene = this;
     this.cameras.main.setBounds(0, 0, WORLD_W, H);
     this.cameras.main.setBackgroundColor("#06111f");
-    this.createTextures();
     this.drawBackground();
     this.createControls();
-    this.hud = this.add.graphics().setScrollFactor(0).setDepth(1000);
     this.scoreText = this.add.text(W - 44, 34, "", {
       fontFamily: "Inter, Arial, sans-serif",
       fontSize: "21px",
@@ -273,19 +303,23 @@ class MainScene extends Phaser.Scene {
     for (const item of this.projectiles) item.image.destroy();
     for (const item of this.effects) item.image.destroy();
     for (const text of this.hudTexts) text.destroy();
+    for (const image of this.hudImages) image.destroy();
+    this.bossHudImage?.destroy();
     this.players = [];
     this.enemies = [];
     this.projectiles = [];
     this.effects = [];
     this.hudTexts = [];
+    this.hudImages = [];
+    this.bossHudImage = undefined;
   }
 
   private createPlayers(playerCount: number): PlayerState[] {
     const result: PlayerState[] = [];
     for (let i = 0; i < playerCount; i++) {
       const armor = i % armorForms.length;
-      const sprite = this.add.image(140 + i * 72, GROUND_Y, `hero-p${i + 1}-${armorForms[armor].id}-idle`).setOrigin(0.5, 1).setDepth(60);
-      const portrait = this.add.image(60, 56 + i * 74, `hero-p${i + 1}-${armorForms[armor].id}-idle`).setOrigin(0.5, 0.85).setScale(0.32).setScrollFactor(0).setDepth(1002);
+      const sprite = this.add.image(140 + i * 82, GROUND_Y, "hero-idle").setOrigin(0.5, 1).setScale(i === 0 ? 1.15 : 1.1).setDepth(60);
+      const portrait = this.add.image(58, 56 + i * 82, "hero-portrait").setOrigin(0.5).setScale(0.22).setScrollFactor(0).setDepth(1002);
       result.push({
         id: i,
         tag: i === 0 ? "P1" : "P2",
@@ -480,10 +514,6 @@ class MainScene extends Phaser.Scene {
 
       enemy.sprite.setFlipX(enemy.facing < 0);
       enemy.sprite.setAlpha(enemy.hurtTime > 0 && Math.floor(this.time.now * 0.045) % 2 === 0 ? 0.55 : 1);
-      if (enemy.kind !== "boss" && enemy.kind !== "drone") {
-        const walk = Math.floor(this.time.now * 0.008 + enemy.id) % 2 === 0 ? "walk1" : "walk2";
-        enemy.sprite.setTexture(`${enemy.kind}-${Math.abs(enemy.vx) > 8 ? walk : "idle"}`);
-      }
     }
 
     const dead = this.enemies.filter((enemy) => enemy.hp <= 0);
@@ -586,7 +616,9 @@ class MainScene extends Phaser.Scene {
     }[kind];
     const boost = selectedPlayers > 1 && kind !== "boss" ? 1.22 : 1;
     const sprite = this.add.image(x, stats.y, stats.key).setOrigin(0.5, 1).setDepth(kind === "boss" ? 52 : 54);
-    if (elite && kind !== "boss") sprite.setTint(0xc9fdff);
+    const scale = { crawler: 0.72, mutant: 0.78, drone: 0.72, elite: 0.74, boss: 0.66 }[kind];
+    sprite.setScale(scale);
+    if (elite && kind !== "boss" && kind !== "elite") sprite.setTint(0xc9fdff);
     this.enemies.push({
       id: this.enemySeq++,
       kind,
@@ -612,7 +644,7 @@ class MainScene extends Phaser.Scene {
     player.attackCd = player.overdrive > 0 ? 0.18 : 0.28;
     player.attackTime = 0.18;
     const slash = this.add.image(player.sprite.x + player.facing * 62, player.sprite.y - 82, "slash").setOrigin(0.5).setFlipX(player.facing < 0).setDepth(90).setBlendMode(Phaser.BlendModes.ADD);
-    slash.setTint(form.colors.accent);
+    slash.setScale(0.95);
     this.effects.push({ image: slash, life: 0.16, maxLife: 0.16, spin: player.facing * 0.5 });
     const hit = { x: player.sprite.x + player.facing * 62 - 55, y: player.sprite.y - 132, width: 110, height: 86 };
     for (const enemy of this.enemies) {
@@ -624,8 +656,9 @@ class MainScene extends Phaser.Scene {
     const form = armorForms[player.armor];
     player.core -= 28;
     player.specialCd = 0.52;
-    const bolt = this.add.image(player.sprite.x + player.facing * 64, player.sprite.y - 92, "player-bolt").setOrigin(0.5).setFlipX(player.facing < 0).setDepth(80).setBlendMode(Phaser.BlendModes.ADD);
-    bolt.setTint(form.colors.accent);
+    player.attackTime = 0.2;
+    const bolt = this.add.image(player.sprite.x + player.facing * 64, player.sprite.y - 92, "energy-blasts").setOrigin(0.5).setFlipX(player.facing < 0).setDepth(80).setBlendMode(Phaser.BlendModes.ADD);
+    bolt.setCrop(160, 0, 120, 145).setDisplaySize(118, 42);
     this.projectiles.push({ image: bolt, owner: "player", attacker: player, vx: player.facing * 760, vy: 0, damage: form.melee + 16, life: 1.1, facing: player.facing });
     this.spawnBurst(player.sprite.x + player.facing * 50, player.sprite.y - 94, form.colors.accent, 8);
   }
@@ -638,7 +671,8 @@ class MainScene extends Phaser.Scene {
       width: 88,
       height: 104,
     };
-    const flash = this.add.image(enemy.sprite.x + enemy.facing * 62, enemy.sprite.y - 78, "enemy-spark").setOrigin(0.5).setFlipX(enemy.facing < 0).setDepth(91).setBlendMode(Phaser.BlendModes.ADD);
+    const flash = this.add.image(enemy.sprite.x + enemy.facing * 62, enemy.sprite.y - 78, "hit-sparks").setOrigin(0.5).setFlipX(enemy.facing < 0).setDepth(91).setBlendMode(Phaser.BlendModes.ADD);
+    flash.setCrop(0, 0, 82, 145).setDisplaySize(84, 54);
     this.effects.push({ image: flash, life: 0.16, maxLife: 0.16 });
     for (const player of this.players) {
       if (player.alive && this.intersects(hit, this.playerBounds(player))) this.damagePlayer(player, enemy.damage, enemy.facing);
@@ -646,13 +680,15 @@ class MainScene extends Phaser.Scene {
   }
 
   private enemyProjectile(enemy: EnemyState, target: PlayerState) {
-    const bolt = this.add.image(enemy.sprite.x + enemy.facing * 34, enemy.sprite.y - 52, "enemy-bolt").setOrigin(0.5).setFlipX(enemy.facing < 0).setDepth(70).setBlendMode(Phaser.BlendModes.ADD);
+    const bolt = this.add.image(enemy.sprite.x + enemy.facing * 34, enemy.sprite.y - 52, "energy-blasts").setOrigin(0.5).setFlipX(enemy.facing < 0).setDepth(70).setBlendMode(Phaser.BlendModes.ADD);
+    bolt.setCrop(74, 0, 82, 145).setDisplaySize(82, 36);
     this.projectiles.push({ image: bolt, owner: "enemy", vx: enemy.facing * 420, vy: (target.sprite.y - 110 - enemy.sprite.y) * 0.45, damage: enemy.damage, life: 1.45, facing: enemy.facing });
   }
 
   private bossSmash(enemy: EnemyState) {
     const impactX = enemy.sprite.x + enemy.facing * 95;
-    const ring = this.add.image(impactX, GROUND_Y - 34, "impact").setDepth(92).setBlendMode(Phaser.BlendModes.ADD);
+    const ring = this.add.image(impactX, GROUND_Y - 24, "explosions").setOrigin(0.5, 0.72).setDepth(92).setBlendMode(Phaser.BlendModes.ADD);
+    ring.setCrop(330, 0, 155, 155).setDisplaySize(190, 170);
     this.effects.push({ image: ring, life: 0.26, maxLife: 0.26 });
     this.shakeTimer = 0.28;
     const hit = { x: impactX - 120, y: GROUND_Y - 156, width: 240, height: 150 };
@@ -662,7 +698,8 @@ class MainScene extends Phaser.Scene {
   }
 
   private bossBeam(enemy: EnemyState, target: PlayerState) {
-    const beam = this.add.image(enemy.sprite.x + enemy.facing * 190, target.sprite.y - 96, "boss-beam").setOrigin(0.5).setFlipX(enemy.facing < 0).setDepth(88).setBlendMode(Phaser.BlendModes.ADD);
+    const beam = this.add.image(enemy.sprite.x + enemy.facing * 190, target.sprite.y - 96, "energy-blasts").setOrigin(0.5).setFlipX(enemy.facing < 0).setDepth(88).setBlendMode(Phaser.BlendModes.ADD);
+    beam.setCrop(286, 0, 214, 145).setDisplaySize(430, 86);
     this.effects.push({ image: beam, life: 0.24, maxLife: 0.24 });
     const hit = { x: enemy.facing > 0 ? enemy.sprite.x + 38 : enemy.sprite.x - 430, y: target.sprite.y - 132, width: 430, height: 74 };
     for (const player of this.players) {
@@ -697,19 +734,18 @@ class MainScene extends Phaser.Scene {
     if (player.hp <= 0) {
       player.hp = 0;
       player.alive = false;
-      player.sprite.setTexture(`hero-p${player.id + 1}-${armorForms[player.armor].id}-hurt`).setAlpha(0.65).setRotation(-0.65);
+      player.sprite.setTexture("hero-hit").setAlpha(0.65).setRotation(-0.65);
     }
   }
 
   private textureForPlayer(player: PlayerState) {
-    const base = `hero-p${player.id + 1}`;
-    const armor = armorForms[player.armor].id;
-    if (player.hurtTime > 0) return `${base}-${armor}-hurt`;
-    if (player.attackTime > 0) return `${base}-${armor}-attack`;
-    if (player.dashTime > 0) return `${base}-${armor}-dash`;
-    if (!player.grounded) return `${base}-${armor}-jump`;
-    if (Math.abs(player.vx) > 40) return `${base}-${armor}-${Math.floor(player.step) % 2 === 0 ? "walk1" : "walk2"}`;
-    return `${base}-${armor}-idle`;
+    if (player.hurtTime > 0) return "hero-hit";
+    if (player.attackTime > 0 && player.specialCd > 0.32) return "hero-attack-blast";
+    if (player.attackTime > 0) return "hero-attack-slash";
+    if (player.dashTime > 0) return "hero-dash";
+    if (!player.grounded) return "hero-jump";
+    if (Math.abs(player.vx) > 40) return `hero-walk-${(Math.floor(player.step) % 4) + 1}`;
+    return "hero-idle";
   }
 
   private switchArmor(player: PlayerState, direction: number) {
@@ -749,14 +785,15 @@ class MainScene extends Phaser.Scene {
   }
 
   private playerBounds(player: PlayerState) {
-    return { x: player.sprite.x - 34, y: player.sprite.y - 146, width: 68, height: 140 };
+    const width = Math.max(62, player.sprite.displayWidth * 0.42);
+    const height = Math.max(132, player.sprite.displayHeight * 0.86);
+    return { x: player.sprite.x - width / 2, y: player.sprite.y - height, width, height };
   }
 
   private enemyBounds(enemy: EnemyState) {
-    if (enemy.kind === "boss") return { x: enemy.sprite.x - 100, y: enemy.sprite.y - 214, width: 200, height: 210 };
-    if (enemy.kind === "drone") return { x: enemy.sprite.x - 48, y: enemy.sprite.y - 82, width: 96, height: 76 };
-    if (enemy.kind === "crawler") return { x: enemy.sprite.x - 44, y: enemy.sprite.y - 64, width: 88, height: 64 };
-    return { x: enemy.sprite.x - 42, y: enemy.sprite.y - 128, width: 84, height: 126 };
+    const width = enemy.kind === "boss" ? enemy.sprite.displayWidth * 0.46 : enemy.sprite.displayWidth * 0.58;
+    const height = enemy.kind === "drone" ? enemy.sprite.displayHeight * 0.56 : enemy.sprite.displayHeight * 0.78;
+    return { x: enemy.sprite.x - width / 2, y: enemy.sprite.y - height, width, height };
   }
 
   private endRun(title: string, copy: string) {
@@ -766,75 +803,49 @@ class MainScene extends Phaser.Scene {
   }
 
   private drawHud() {
-    this.hud.clear();
-    this.hud.fillStyle(0x020b18, 0.78);
-    this.hud.lineStyle(2, 0x18e6ff, 0.72);
-    this.roundPanel(W - 244, 21, 214, 42, 8);
     this.scoreText.setText(`DIEM ${this.score}`);
     this.messageText.setText(this.messageTimer > 0 ? this.message : "");
     this.messageText.setAlpha(Math.min(1, this.messageTimer));
 
     for (let i = 0; i < this.players.length; i++) {
       const player = this.players[i];
-      const y = 26 + i * 74;
-      this.hud.fillStyle(0x02152f, 0.84);
-      this.hud.lineStyle(2, player.alive ? 0x18e6ff : 0xff6d57, 0.68);
-      this.roundPanel(34, y, 356, 62, 8);
-      this.hud.lineStyle(1, 0x18e6ff, 0.16);
-      for (let k = 0; k < 6; k++) {
-        this.hud.strokeTriangle(72 + k * 46, y + 8, 91 + k * 46, y + 31, 72 + k * 46, y + 54);
+      const y = 14 + i * 86;
+      const healthIndex = i * 2;
+      const energyIndex = healthIndex + 1;
+      if (!this.hudImages[healthIndex]) {
+        this.hudImages[healthIndex] = this.add.image(22, y, "hud-health").setOrigin(0, 0).setScale(0.62).setScrollFactor(0).setDepth(998);
+        this.hudImages[energyIndex] = this.add.image(68, y + 44, "hud-energy").setOrigin(0, 0).setScale(0.5).setScrollFactor(0).setDepth(998);
       }
-      player.portrait.setPosition(67, y + 54).setVisible(true).setTexture(`hero-p${player.id + 1}-${armorForms[player.armor].id}-idle`);
-      this.drawBar(128, y + 27, 172, 12, player.hp / player.maxHp, player.alive ? 0x45f06b : 0x682232);
-      this.drawBar(128, y + 44, 172, 10, player.core / player.maxCore, 0x18e6ff);
-      if (player.overdrive > 0) this.drawBar(310, y + 45, 58, 8, player.overdrive / 7.5, armorForms[player.armor].colors.accent);
-      this.hud.fillStyle(0x8cf8ff, 1);
-      this.hud.fillRect(315, y + 23, 16, 14);
-      for (let k = 0; k < 4; k++) {
-        this.hud.fillStyle(k === player.armor ? armorForms[k].colors.primary : 0xe9f4ff, k === player.armor ? 1 : 0.12);
-        this.hud.fillRoundedRect(314 + k * 22, y + 23, 17, 14, 3);
-        this.hud.lineStyle(1, k === player.armor ? armorForms[k].colors.accent : 0xe9f4ff, k === player.armor ? 0.9 : 0.24);
-        this.hud.strokeRoundedRect(314 + k * 22, y + 23, 17, 14, 3);
-      }
+      this.hudImages[healthIndex].setPosition(22, y).setVisible(true).setAlpha(player.alive ? 1 : 0.48);
+      this.hudImages[energyIndex].setPosition(68, y + 44).setVisible(true).setAlpha(player.alive ? 1 : 0.48);
+      player.portrait.setPosition(58, y + 40).setVisible(true).setTexture("hero-portrait");
 
       if (!this.hudTexts[i * 2]) {
-        this.hudTexts[i * 2] = this.add.text(128, y + 8, "", { fontFamily: "Inter, Arial, sans-serif", fontSize: "13px", fontStyle: "900", color: "#8cf8ff" }).setScrollFactor(0).setDepth(1001);
-        this.hudTexts[i * 2 + 1] = this.add.text(160, y + 8, "", { fontFamily: "Inter, Arial, sans-serif", fontSize: "15px", fontStyle: "900", color: "#eaf8ff" }).setScrollFactor(0).setDepth(1001);
+        this.hudTexts[i * 2] = this.add.text(140, y + 7, "", { fontFamily: "Inter, Arial, sans-serif", fontSize: "13px", fontStyle: "900", color: "#8cf8ff", stroke: "#02060b", strokeThickness: 3 }).setScrollFactor(0).setDepth(1001);
+        this.hudTexts[i * 2 + 1] = this.add.text(175, y + 7, "", { fontFamily: "Inter, Arial, sans-serif", fontSize: "14px", fontStyle: "900", color: "#eaf8ff", stroke: "#02060b", strokeThickness: 3 }).setScrollFactor(0).setDepth(1001);
       }
-      this.hudTexts[i * 2].setPosition(128, y + 8).setText(player.tag).setVisible(true);
-      this.hudTexts[i * 2 + 1].setPosition(160, y + 8).setText(player.alive ? armorForms[player.armor].name : "Da guc").setVisible(true);
+      this.hudTexts[i * 2].setPosition(140, y + 7).setText(player.tag).setVisible(true);
+      this.hudTexts[i * 2 + 1].setPosition(175, y + 7).setText(player.alive ? armorForms[player.armor].name : "Da guc").setVisible(true);
     }
 
     for (let i = this.players.length * 2; i < this.hudTexts.length; i++) this.hudTexts[i].setVisible(false);
-    const progress = this.players.length > 0 ? Phaser.Math.Clamp(Math.max(...this.players.map((player) => player.sprite.x)) / (WORLD_W - 160), 0, 1) : 0;
-    this.hud.fillStyle(0x020b18, 0.76);
-    this.hud.fillRoundedRect(454, H - 40, 372, 16, 6);
-    this.hud.lineStyle(2, 0x18e6ff, 0.38);
-    this.hud.strokeRoundedRect(454, H - 40, 372, 16, 6);
-    this.hud.fillStyle(0x18e6ff, 0.9);
-    this.hud.fillRoundedRect(458, H - 36, 364 * progress, 8, 4);
-  }
+    for (let i = this.players.length * 2; i < this.hudImages.length; i++) this.hudImages[i].setVisible(false);
 
-  private drawBar(x: number, y: number, w: number, h: number, value: number, color: number) {
-    const width = Math.max(0, w * Phaser.Math.Clamp(value, 0, 1));
-    this.hud.fillStyle(0x000000, 0.58);
-    this.hud.fillRoundedRect(x, y, w, h, 4);
-    this.hud.lineStyle(1, 0xffffff, 0.18);
-    this.hud.strokeRoundedRect(x, y, w, h, 4);
-    this.hud.fillStyle(color, 1);
-    this.hud.fillRoundedRect(x, y, width, h, 4);
-    this.hud.fillStyle(0xffffff, 0.32);
-    this.hud.fillRoundedRect(x + 2, y + 2, Math.max(0, width - 4), Math.max(2, h * 0.28), 3);
-  }
-
-  private roundPanel(x: number, y: number, w: number, h: number, r: number) {
-    this.hud.fillRoundedRect(x, y, w, h, r);
-    this.hud.strokeRoundedRect(x, y, w, h, r);
+    const boss = this.enemies.find((enemy) => enemy.kind === "boss");
+    if (boss) {
+      if (!this.bossHudImage) this.bossHudImage = this.add.image(W / 2, 24, "hud-boss").setOrigin(0.5, 0).setScale(0.6).setScrollFactor(0).setDepth(998);
+      this.bossHudImage.setVisible(true).setAlpha(1);
+    } else {
+      this.bossHudImage?.setVisible(false);
+    }
   }
 
   private spawnBurst(x: number, y: number, color: number, count: number) {
     for (let i = 0; i < count; i++) {
-      const spark = this.add.image(x, y, "spark").setTint(color).setBlendMode(Phaser.BlendModes.ADD).setDepth(95);
+      const spark = this.add.image(x, y, "hit-sparks").setBlendMode(Phaser.BlendModes.ADD).setDepth(95);
+      const frame = Phaser.Math.Between(0, 4);
+      const size = 14 + Math.random() * 20;
+      spark.setCrop(frame * 71, 0, 71, 145).setDisplaySize(size, size);
       const angle = Math.random() * Math.PI * 2;
       const dist = 18 + Math.random() * 46;
       this.tweens.add({
@@ -850,7 +861,7 @@ class MainScene extends Phaser.Scene {
   }
 
   private spawnJet(x: number, y: number, color: number) {
-    const jet = this.add.image(x, y, "impact").setTint(color).setAlpha(0.55).setScale(0.5, 0.18).setBlendMode(Phaser.BlendModes.ADD).setDepth(45);
+    const jet = this.add.image(x, y, "energy-blasts").setCrop(286, 0, 160, 145).setDisplaySize(130, 42).setAlpha(0.58).setBlendMode(Phaser.BlendModes.ADD).setDepth(45);
     this.effects.push({ image: jet, life: 0.18, maxLife: 0.18 });
   }
 
@@ -860,302 +871,12 @@ class MainScene extends Phaser.Scene {
   }
 
   private drawBackground() {
-    const back = this.add.graphics().setDepth(-20);
-    back.fillGradientStyle(0x07132a, 0x07132a, 0x08111d, 0x03070d, 1);
-    back.fillRect(0, 0, WORLD_W, H);
-    back.fillStyle(0x102f67, 0.34);
-    for (let i = 0; i < 55; i++) {
-      const x = 80 + i * 84;
-      const h = 130 + ((i * 47) % 240);
-      back.fillRect(x, GROUND_Y - 86 - h, 56 + (i % 4) * 22, h);
-      back.fillStyle(i % 5 === 0 ? 0x18e6ff : 0x3457ff, 0.4);
-      for (let row = 0; row < 8; row++) {
-        for (let col = 0; col < 3; col++) {
-          if ((row + col + i) % 3 !== 0) back.fillRect(x + 10 + col * 17, GROUND_Y - 72 - h + 20 + row * 25, 7, 10);
-        }
-      }
-      back.fillStyle(0x102f67, 0.34);
+    const scale = 2.84;
+    const tileWidth = 930 * scale;
+    for (let x = 0; x < WORLD_W + tileWidth; x += tileWidth - 2) {
+      this.add.image(x, 0, "bg-city-neon").setOrigin(0, 0).setScale(scale).setDepth(-20);
     }
-    back.lineStyle(2, 0x18e6ff, 0.5);
-    for (let i = 0; i < 14; i++) {
-      const x = 260 + i * 320;
-      back.strokeRect(x, GROUND_Y - 286, 104, 42);
-      back.fillStyle(i % 2 ? 0x0b65d8 : 0x18e6ff, 0.18);
-      back.fillRect(x + 5, GROUND_Y - 281, 94, 32);
-    }
-
-    const mid = this.add.graphics().setDepth(-10);
-    mid.fillStyle(0x121a25, 1);
-    mid.fillRect(0, GROUND_Y - 54, WORLD_W, 72);
-    mid.lineStyle(4, 0x0d1d32, 1);
-    for (let x = -20; x < WORLD_W; x += 120) {
-      mid.fillStyle(0x222c38, 1);
-      mid.fillRoundedRect(x, GROUND_Y - 65, 124, 60, 4);
-      mid.lineStyle(2, 0x03070d, 1);
-      mid.strokeRoundedRect(x, GROUND_Y - 65, 124, 60, 4);
-      mid.fillStyle(0x18e6ff, 0.52);
-      mid.fillRect(x + 18, GROUND_Y - 28, 66, 5);
-      mid.fillStyle(0xf9b62e, 0.62);
-      mid.fillRect(x + 90, GROUND_Y - 57, 22, 4);
-    }
-    mid.fillStyle(0x070b12, 1);
-    mid.fillRect(0, GROUND_Y, WORLD_W, H - GROUND_Y);
-    mid.lineStyle(2, 0x18e6ff, 0.32);
-    mid.strokeRect(0, GROUND_Y - 76, WORLD_W, 16);
   }
-
-  private createTextures() {
-    for (let p = 0; p < 2; p++) {
-      for (const form of armorForms) {
-        const playerAccent = playerPalettes[p];
-        const colors = {
-          ...form.colors,
-          visor: p === 0 ? form.colors.visor : playerAccent.visor,
-          plate: p === 0 ? form.colors.plate : playerAccent.plate,
-          trim: p === 0 ? form.colors.trim : playerAccent.trim,
-        };
-        for (const pose of ["idle", "walk1", "walk2", "jump", "attack", "dash", "hurt"] as Pose[]) {
-          drawHeroTexture(this, `hero-p${p + 1}-${form.id}-${pose}`, colors, pose);
-        }
-      }
-    }
-    drawCrawlerTexture(this, "crawler-idle", "idle");
-    drawCrawlerTexture(this, "crawler-walk1", "walk1");
-    drawCrawlerTexture(this, "crawler-walk2", "walk2");
-    drawMutantTexture(this, "mutant-idle", "mutant", "idle");
-    drawMutantTexture(this, "mutant-walk1", "mutant", "walk1");
-    drawMutantTexture(this, "mutant-walk2", "mutant", "walk2");
-    drawMutantTexture(this, "elite-idle", "elite", "idle");
-    drawMutantTexture(this, "elite-walk1", "elite", "walk1");
-    drawMutantTexture(this, "elite-walk2", "elite", "walk2");
-    drawDroneTexture(this, "drone");
-    drawBossTexture(this, "boss");
-    drawSlashTexture(this, "slash");
-    drawBoltTexture(this, "player-bolt", 0x18e6ff);
-    drawBoltTexture(this, "enemy-bolt", 0x67e8ff);
-    drawBeamTexture(this, "boss-beam");
-    drawImpactTexture(this, "impact");
-    drawSparkTexture(this, "spark");
-    drawSparkSlashTexture(this, "enemy-spark");
-  }
-}
-
-function drawHeroTexture(scene: Phaser.Scene, key: string, colors: Colors, pose: Pose) {
-  const g = scene.add.graphics({ x: 0, y: 0 }).setVisible(false);
-  const cx = 76;
-  const feet = 166;
-  const walk = pose === "walk1" ? 5 : pose === "walk2" ? -5 : 0;
-  const attack = pose === "attack";
-  const dash = pose === "dash";
-  const jump = pose === "jump";
-  const hurt = pose === "hurt";
-  g.clear();
-  g.lineStyle(4, 0x02060c, 1);
-  g.fillStyle(0x000000, 0.22);
-  g.fillEllipse(cx, feet + 2, 70, 16);
-  limb(g, cx - 18, feet - 56, cx - 31 - walk, feet - 15, 15, colors.dark, colors.plate, colors.accent);
-  limb(g, cx + 18, feet - 56, cx + 31 + walk, feet - 15, 15, colors.dark, colors.plate, colors.accent);
-  poly(g, [[cx - 46, feet - 90], [cx - 34, feet - 116], [cx - 10, feet - 127], [cx + 11, feet - 127], [cx + 36, feet - 116], [cx + 48, feet - 90], [cx + 34, feet - 45], [cx + 10, feet - 36], [cx - 10, feet - 36], [cx - 34, feet - 45]], colors.plate, colors.accent);
-  poly(g, [[cx - 24, feet - 104], [cx, feet - 122], [cx + 24, feet - 104], [cx + 16, feet - 72], [cx, feet - 61], [cx - 16, feet - 72]], colors.primary, colors.accent);
-  poly(g, [[cx - 60, feet - 94], [cx - 36, feet - 119], [cx - 10, feet - 101], [cx - 29, feet - 76], [cx - 54, feet - 72]], colors.primary, colors.accent);
-  poly(g, [[cx + 60, feet - 94], [cx + 36, feet - 119], [cx + 10, feet - 101], [cx + 29, feet - 76], [cx + 54, feet - 72]], colors.primary, colors.accent);
-  const leftArmEnd = attack ? [cx - 54, feet - 78] : [cx - 47, feet - 47];
-  const rightArmEnd = attack ? [cx + 86, feet - 78] : dash ? [cx + 62, feet - 48] : [cx + 49, feet - 48];
-  limb(g, cx - 25, feet - 82, leftArmEnd[0], leftArmEnd[1], 15, colors.dark, colors.plate, colors.accent);
-  limb(g, cx + 25, feet - 82, rightArmEnd[0], rightArmEnd[1], 15, colors.dark, colors.plate, colors.accent);
-  poly(g, [[cx - 38 - walk, feet - 29], [cx - 13 - walk, feet - 29], [cx - 6 - walk, feet - 6], [cx - 42 - walk, feet - 6]], colors.primary, colors.accent);
-  poly(g, [[cx + 38 + walk, feet - 29], [cx + 13 + walk, feet - 29], [cx + 6 + walk, feet - 6], [cx + 42 + walk, feet - 6]], colors.primary, colors.accent);
-  poly(g, [[cx - 12, feet - 94], [cx, feet - 102], [cx + 12, feet - 94], [cx + 10, feet - 78], [cx, feet - 71], [cx - 10, feet - 78]], colors.accent, 0xffffff);
-  helmet(g, cx, feet - (jump ? 134 : 132), colors);
-  if (attack) {
-    g.lineStyle(7, colors.accent, 0.9);
-    g.strokeEllipse(cx + 78, feet - 78, 72, 32);
-  }
-  if (dash) {
-    g.fillStyle(colors.accent, 0.35);
-    g.fillTriangle(cx - 72, feet - 104, cx - 15, feet - 86, cx - 68, feet - 70);
-  }
-  if (hurt) g.setAlpha(0.72);
-  g.generateTexture(key, 152, 178);
-  g.destroy();
-}
-
-function helmet(g: Phaser.GameObjects.Graphics, cx: number, top: number, colors: Colors) {
-  poly(g, [[cx - 34, top + 24], [cx - 21, top + 5], [cx - 6, top - 4], [cx, top - 15], [cx + 7, top - 4], [cx + 22, top + 5], [cx + 35, top + 24], [cx + 27, top + 50], [cx + 10, top + 59], [cx - 10, top + 59], [cx - 27, top + 50]], colors.plate, colors.accent);
-  poly(g, [[cx - 44, top + 24], [cx - 24, top + 8], [cx - 29, top + 32], [cx - 48, top + 43]], colors.primary, colors.accent);
-  poly(g, [[cx + 44, top + 24], [cx + 24, top + 8], [cx + 29, top + 32], [cx + 48, top + 43]], colors.primary, colors.accent);
-  poly(g, [[cx - 24, top + 31], [cx, top + 21], [cx + 24, top + 31], [cx + 15, top + 45], [cx, top + 51], [cx - 15, top + 45]], colors.visor, 0xffffff);
-  poly(g, [[cx - 6, top + 3], [cx, top - 17], [cx + 8, top + 3], [cx + 5, top + 34], [cx - 5, top + 34]], colors.primary, colors.accent);
-}
-
-function drawCrawlerTexture(scene: Phaser.Scene, key: string, pose: "idle" | "walk1" | "walk2") {
-  const g = scene.add.graphics().setVisible(false);
-  const cx = 64;
-  const feet = 78;
-  const wiggle = pose === "walk1" ? -5 : pose === "walk2" ? 5 : 0;
-  g.lineStyle(3, 0x02060c, 1);
-  g.fillStyle(0x000000, 0.2);
-  g.fillEllipse(cx, feet + 2, 76, 12);
-  limb(g, cx - 24, feet - 24, cx - 44, feet - 8 + wiggle, 8, 0x121824, 0xd7e3f0, 0x18e6ff);
-  limb(g, cx + 24, feet - 24, cx + 44, feet - 8 - wiggle, 8, 0x121824, 0xd7e3f0, 0x18e6ff);
-  limb(g, cx - 8, feet - 20, cx - 22, feet - 4 - wiggle, 8, 0x121824, 0x0b65d8, 0x18e6ff);
-  limb(g, cx + 8, feet - 20, cx + 22, feet - 4 + wiggle, 8, 0x121824, 0x0b65d8, 0x18e6ff);
-  poly(g, [[cx - 42, feet - 42], [cx - 20, feet - 62], [cx + 28, feet - 62], [cx + 46, feet - 40], [cx + 32, feet - 20], [cx - 31, feet - 20]], 0xd7e3f0, 0x18e6ff);
-  poly(g, [[cx - 18, feet - 50], [cx + 14, feet - 50], [cx + 24, feet - 32], [cx - 24, feet - 32]], 0x0b65d8, 0x18e6ff);
-  g.fillStyle(0x18e6ff, 1);
-  g.fillCircle(cx, feet - 41, 9);
-  g.generateTexture(key, 128, 88);
-  g.destroy();
-}
-
-function drawMutantTexture(scene: Phaser.Scene, key: string, variant: "mutant" | "elite", pose: "idle" | "walk1" | "walk2") {
-  const g = scene.add.graphics().setVisible(false);
-  const cx = 72;
-  const feet = 146;
-  const walk = pose === "walk1" ? 6 : pose === "walk2" ? -6 : 0;
-  const blue = variant === "elite" ? 0x0b65d8 : 0x1f8ee8;
-  g.lineStyle(4, 0x02060c, 1);
-  g.fillStyle(0x000000, 0.25);
-  g.fillEllipse(cx, feet + 2, 78, 16);
-  limb(g, cx - 20, feet - 48, cx - 35 - walk, feet - 9, 15, 0x141b27, 0xc7d2e1, 0x18e6ff);
-  limb(g, cx + 20, feet - 48, cx + 35 + walk, feet - 9, 15, 0x141b27, 0xc7d2e1, 0x18e6ff);
-  limb(g, cx - 34, feet - 92, cx - 58, feet - 55, 17, 0x141b27, 0xd7e3f0, 0x18e6ff);
-  limb(g, cx + 34, feet - 92, cx + 61, feet - 55, 17, 0x141b27, 0xd7e3f0, 0x18e6ff);
-  poly(g, [[cx - 51, feet - 105], [cx - 28, feet - 128], [cx, feet - 135], [cx + 31, feet - 128], [cx + 54, feet - 105], [cx + 42, feet - 42], [cx + 15, feet - 32], [cx, feet - 38], [cx - 16, feet - 32], [cx - 42, feet - 42]], 0x202838, 0x18e6ff);
-  poly(g, [[cx - 34, feet - 96], [cx, feet - 118], [cx + 35, feet - 96], [cx + 22, feet - 62], [cx, feet - 52], [cx - 22, feet - 62]], 0xd7e3f0, 0x18e6ff);
-  poly(g, [[cx - 18, feet - 91], [cx, feet - 104], [cx + 18, feet - 91], [cx + 12, feet - 75], [cx, feet - 67], [cx - 12, feet - 75]], blue, 0x18e6ff);
-  poly(g, [[cx - 30, feet - 137], [cx - 8, feet - 153], [cx + 10, feet - 153], [cx + 32, feet - 137], [cx + 25, feet - 112], [cx, feet - 104], [cx - 25, feet - 112]], 0xd7e3f0, 0x18e6ff);
-  poly(g, [[cx - 33, feet - 137], [cx - 55, feet - 151], [cx - 40, feet - 121]], blue, 0x18e6ff);
-  poly(g, [[cx + 33, feet - 137], [cx + 55, feet - 151], [cx + 40, feet - 121]], blue, 0x18e6ff);
-  poly(g, [[cx - 16, feet - 128], [cx, feet - 137], [cx + 16, feet - 128], [cx + 10, feet - 120], [cx - 10, feet - 120]], 0x8cf8ff, 0xffffff);
-  g.generateTexture(key, 144, 158);
-  g.destroy();
-}
-
-function drawDroneTexture(scene: Phaser.Scene, key: string) {
-  const g = scene.add.graphics().setVisible(false);
-  const cx = 80;
-  const cy = 72;
-  g.lineStyle(3, 0x02060c, 1);
-  g.fillStyle(0x18e6ff, 0.28);
-  g.fillEllipse(cx - 56, cy, 74, 16);
-  g.fillEllipse(cx + 56, cy, 74, 16);
-  poly(g, [[cx - 72, cy - 18], [cx - 28, cy - 28], [cx - 6, cy], [cx - 50, cy + 15]], 0x0b65d8, 0x18e6ff);
-  poly(g, [[cx + 72, cy - 18], [cx + 28, cy - 28], [cx + 6, cy], [cx + 50, cy + 15]], 0x0b65d8, 0x18e6ff);
-  poly(g, [[cx - 28, cy - 33], [cx, cy - 50], [cx + 28, cy - 33], [cx + 22, cy + 18], [cx, cy + 35], [cx - 22, cy + 18]], 0xf2f8ff, 0x18e6ff);
-  poly(g, [[cx - 18, cy - 18], [cx, cy - 29], [cx + 18, cy - 18], [cx + 12, cy + 2], [cx, cy + 10], [cx - 12, cy + 2]], 0x0b65d8, 0x67f6ff);
-  g.fillStyle(0x8cf8ff, 1);
-  g.fillRoundedRect(cx - 17, cy - 17, 34, 7, 3);
-  g.generateTexture(key, 160, 118);
-  g.destroy();
-}
-
-function drawBossTexture(scene: Phaser.Scene, key: string) {
-  const g = scene.add.graphics().setVisible(false);
-  const cx = 128;
-  const feet = 234;
-  g.lineStyle(5, 0x02060c, 1);
-  g.fillStyle(0x000000, 0.24);
-  g.fillEllipse(cx, feet + 2, 150, 24);
-  limb(g, cx - 54, feet - 76, cx - 78, feet - 10, 24, 0x121925, 0x667287, 0x18e6ff);
-  limb(g, cx + 54, feet - 76, cx + 80, feet - 10, 24, 0x121925, 0x667287, 0x18e6ff);
-  limb(g, cx - 75, feet - 138, cx - 126, feet - 88, 28, 0x121925, 0xd7e3f0, 0x18e6ff);
-  limb(g, cx + 75, feet - 138, cx + 132, feet - 88, 28, 0x121925, 0xd7e3f0, 0x18e6ff);
-  for (let i = 0; i < 7; i++) poly(g, [[cx - 68 + i * 22, feet - 172], [cx - 58 + i * 22, feet - 202 - (i % 2) * 8], [cx - 46 + i * 22, feet - 172]], i % 2 ? 0x18e6ff : 0x0b65d8, 0x18e6ff);
-  poly(g, [[cx - 88, feet - 154], [cx - 42, feet - 196], [cx, feet - 204], [cx + 46, feet - 196], [cx + 92, feet - 154], [cx + 68, feet - 56], [cx + 27, feet - 38], [cx, feet - 48], [cx - 30, feet - 38], [cx - 68, feet - 56]], 0x202838, 0x18e6ff);
-  poly(g, [[cx - 70, feet - 148], [cx - 32, feet - 174], [cx, feet - 182], [cx + 34, feet - 174], [cx + 72, feet - 148], [cx + 51, feet - 78], [cx + 18, feet - 64], [cx, feet - 70], [cx - 20, feet - 64], [cx - 51, feet - 78]], 0xd7e3f0, 0x18e6ff);
-  poly(g, [[cx - 38, feet - 156], [cx, feet - 178], [cx + 40, feet - 156], [cx + 25, feet - 104], [cx - 24, feet - 104]], 0x0b65d8, 0x18e6ff);
-  poly(g, [[cx - 38, feet - 196], [cx - 18, feet - 220], [cx, feet - 228], [cx + 20, feet - 220], [cx + 40, feet - 196], [cx + 29, feet - 170], [cx, feet - 160], [cx - 30, feet - 170]], 0xd7e3f0, 0x18e6ff);
-  poly(g, [[cx - 22, feet - 190], [cx, feet - 200], [cx + 22, feet - 190], [cx + 15, feet - 178], [cx - 15, feet - 178]], 0x8cf8ff, 0xffffff);
-  g.fillStyle(0x67f6ff, 0.95);
-  g.fillCircle(cx, feet - 132, 18);
-  g.generateTexture(key, 256, 248);
-  g.destroy();
-}
-
-function drawSlashTexture(scene: Phaser.Scene, key: string) {
-  const g = scene.add.graphics().setVisible(false);
-  g.lineStyle(13, 0x18e6ff, 0.86);
-  g.beginPath();
-  g.arc(58, 58, 52, Phaser.Math.DegToRad(216), Phaser.Math.DegToRad(330), false);
-  g.strokePath();
-  g.lineStyle(5, 0xffffff, 0.92);
-  g.beginPath();
-  g.arc(58, 58, 38, Phaser.Math.DegToRad(220), Phaser.Math.DegToRad(328), false);
-  g.strokePath();
-  g.generateTexture(key, 116, 116);
-  g.destroy();
-}
-
-function drawSparkSlashTexture(scene: Phaser.Scene, key: string) {
-  const g = scene.add.graphics().setVisible(false);
-  g.lineStyle(6, 0x18e6ff, 0.9);
-  g.lineBetween(10, 42, 78, 20);
-  g.lineStyle(3, 0xffffff, 0.9);
-  g.lineBetween(18, 48, 92, 40);
-  g.generateTexture(key, 104, 68);
-  g.destroy();
-}
-
-function drawBoltTexture(scene: Phaser.Scene, key: string, color: number) {
-  const g = scene.add.graphics().setVisible(false);
-  g.fillStyle(color, 0.8);
-  g.fillTriangle(0, 18, 66, 0, 78, 18);
-  g.fillTriangle(0, 18, 66, 36, 78, 18);
-  g.fillStyle(0xffffff, 0.9);
-  g.fillTriangle(12, 18, 54, 8, 66, 18);
-  g.fillTriangle(12, 18, 54, 28, 66, 18);
-  g.generateTexture(key, 82, 38);
-  g.destroy();
-}
-
-function drawBeamTexture(scene: Phaser.Scene, key: string) {
-  const g = scene.add.graphics().setVisible(false);
-  g.fillStyle(0x18e6ff, 0.45);
-  g.fillRoundedRect(0, 22, 420, 36, 18);
-  g.fillStyle(0xffffff, 0.85);
-  g.fillRoundedRect(16, 32, 330, 14, 7);
-  g.lineStyle(4, 0x18e6ff, 0.85);
-  g.strokeCircle(350, 40, 30);
-  g.generateTexture(key, 430, 80);
-  g.destroy();
-}
-
-function drawImpactTexture(scene: Phaser.Scene, key: string) {
-  const g = scene.add.graphics().setVisible(false);
-  g.lineStyle(5, 0x18e6ff, 0.82);
-  g.strokeEllipse(64, 34, 110, 44);
-  g.fillStyle(0x18e6ff, 0.35);
-  g.fillEllipse(64, 34, 90, 25);
-  g.generateTexture(key, 128, 68);
-  g.destroy();
-}
-
-function drawSparkTexture(scene: Phaser.Scene, key: string) {
-  const g = scene.add.graphics().setVisible(false);
-  g.fillStyle(0xffffff, 1);
-  g.fillCircle(6, 6, 5);
-  g.generateTexture(key, 12, 12);
-  g.destroy();
-}
-
-function limb(g: Phaser.GameObjects.Graphics, x1: number, y1: number, x2: number, y2: number, width: number, dark: number, plate: number, accent: number) {
-  g.lineStyle(width, dark, 1);
-  g.lineBetween(x1, y1, x2, y2);
-  g.lineStyle(Math.max(4, width * 0.45), plate, 1);
-  g.lineBetween(x1, y1, x2, y2);
-  g.lineStyle(2, accent, 0.72);
-  g.lineBetween(x1, y1, x2, y2);
-}
-
-function poly(g: Phaser.GameObjects.Graphics, points: number[][], fill: number, glow: number) {
-  const phaserPoints = points.map(([x, y]) => new Phaser.Geom.Point(x, y));
-  g.fillStyle(fill, 1);
-  g.fillPoints(phaserPoints, true);
-  g.lineStyle(3, 0x02060c, 1);
-  g.strokePoints(phaserPoints, true);
-  g.lineStyle(1, glow, 0.85);
-  g.strokePoints(phaserPoints, true);
 }
 
 function showOverlay(title: string, copy: string, buttonText: string) {
