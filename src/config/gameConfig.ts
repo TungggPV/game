@@ -5,6 +5,7 @@ export const GRAVITY = 2300;
 export const PLATFORM_Y = Math.round(GAME_HEIGHT * 0.812);
 export const PLAYER_START_X = 188;
 export const MAX_PLAYERS = 2;
+export type GameMode = "solo" | "coop" | "pk";
 
 export const DEPTHS = {
   background: -50,
@@ -35,5 +36,8 @@ export type GameOverPayload = {
   detail: string;
   score: number;
   heroId: string;
+  p1HeroId?: string;
+  p2HeroId?: string;
+  mode?: GameMode;
   playerCount: 1 | 2;
 };

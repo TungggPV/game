@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { AssetKeys } from "../config/assets";
-import { GAME_HEIGHT, GAME_WIDTH, GameOverPayload } from "../config/gameConfig";
+import { GAME_HEIGHT, GAME_WIDTH, GameMode, GameOverPayload } from "../config/gameConfig";
 import { DEFAULT_HERO_ID, HEROES, getHeroById, heroDynamicKey, heroPortraitKey } from "../config/heroes";
 import { padScore } from "../utils/geometry";
 
@@ -11,7 +11,7 @@ type HeroCard = {
 };
 
 type ModeButton = {
-  mode: 1 | 2;
+  mode: GameMode;
   bg: Phaser.GameObjects.Rectangle;
   text: Phaser.GameObjects.Text;
 };
@@ -19,15 +19,19 @@ type ModeButton = {
 type MenuData = {
   result?: GameOverPayload;
   heroId?: string;
+  p1HeroId?: string;
+  p2HeroId?: string;
+  mode?: GameMode;
   playerCount?: 1 | 2;
 };
 
 export class MenuScene extends Phaser.Scene {
   private selectedHeroIndex = 0;
-  private selectedPlayerCount: 1 | 2 = 1;
+  private selectedMode: GameMode = "solo";
   private heroCards: HeroCard[] = [];
   private modeButtons: ModeButton[] = [];
   private heroName!: Phaser.GameObjects.Text;
+  private pkHintText!: Phaser.GameObjects.Text;
   private dynamicArt!: Phaser.GameObjects.Image;
   private resultText!: Phaser.GameObjects.Text;
   private missingText!: Phaser.GameObjects.Text;
@@ -43,9 +47,9 @@ export class MenuScene extends Phaser.Scene {
   }
 
   init(data: MenuData) {
-    const defaultId = data.heroId ?? data.result?.heroId ?? DEFAULT_HERO_ID;
+    const defaultId = data.p1HeroId ?? data.heroId ?? data.result?.p1HeroId ?? data.result?.heroId ?? DEFAULT_HERO_ID;
     this.selectedHeroIndex = Math.max(0, HEROES.findIndex((hero) => hero.id === defaultId));
-    this.selectedPlayerCount = data.playerCount ?? data.result?.playerCount ?? 1;
+    this.selectedMode = data.mode ?? data.result?.mode ?? (data.playerCount === 2 || data.result?.playerCount === 2 ? "coop" : "solo");
     this.result = data.result;
   }
 
@@ -132,8 +136,18 @@ export class MenuScene extends Phaser.Scene {
         strokeThickness: 5,
       })
       .setShadow(0, 0, "#18e6ff", 8, true, true);
+    this.pkHintText = this.add
+      .text(82, 260, "", {
+        fontFamily: "Arial, sans-serif",
+        fontSize: "13px",
+        fontStyle: "900",
+        color: "#ffd66d",
+        stroke: "#02070d",
+        strokeThickness: 4,
+      })
+      .setShadow(0, 0, "#ffd66d", 5, true, true);
 
-    this.add.text(82, 266, "P1: A/D move  W/Space jump  J basic  K/L skills  U/I ultimate  Shift/F dash  P/Esc pause", {
+    this.add.text(82, 286, "P1: A/D move  W/Space jump  J basic  K/L skills  U/I ultimate  Shift/F dash  P/Esc pause", {
       fontFamily: "Arial, sans-serif",
       fontSize: "12px",
       fontStyle: "700",
@@ -141,7 +155,7 @@ export class MenuScene extends Phaser.Scene {
       stroke: "#02070d",
       strokeThickness: 3,
     });
-    this.add.text(82, 286, "P2: Arrows move/jump  N1 basic  N2/N3 skills  N4 ultimate  Right Shift/N0 dash", {
+    this.add.text(82, 306, "P2: Arrows move/jump  N1 basic  N2/N3 skills  N4 ultimate  Right Shift/N0 dash", {
       fontFamily: "Arial, sans-serif",
       fontSize: "12px",
       fontStyle: "700",
@@ -196,8 +210,9 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private createButtons() {
-    this.modeButtons.push(this.createModeButton(82, 498, 126, 42, "1 Nguoi", 1));
-    this.modeButtons.push(this.createModeButton(222, 498, 126, 42, "2 Nguoi", 2));
+    this.modeButtons.push(this.createModeButton(82, 498, 126, 42, "1 Nguoi", "solo"));
+    this.modeButtons.push(this.createModeButton(222, 498, 142, 42, "2P Co-op", "coop"));
+    this.modeButtons.push(this.createModeButton(380, 498, 126, 42, "PK Mode", "pk"));
     this.createButton(82, 560, 154, 48, "Bat dau", () => this.startGame());
     this.createButton(252, 560, 154, 48, "Choi lai", () => this.startGame(), Boolean(this.result));
   }
@@ -214,7 +229,7 @@ export class MenuScene extends Phaser.Scene {
     this.rightKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT);
   }
 
-  private createModeButton(x: number, y: number, width: number, height: number, label: string, mode: 1 | 2): ModeButton {
+  private createModeButton(x: number, y: number, width: number, height: number, label: string, mode: GameMode): ModeButton {
     const hit = this.add.zone(x, y, width, height).setOrigin(0).setDepth(22).setInteractive({ useHandCursor: true });
     const bg = this.add.rectangle(x, y, width, height, 0x071a2c, 0.92).setOrigin(0).setDepth(20).setStrokeStyle(1, 0x8cf8ff, 0.78);
     const text = this.add.text(x + width / 2, y + height / 2, label, {
@@ -224,7 +239,9 @@ export class MenuScene extends Phaser.Scene {
       color: "#eaf8ff",
     }).setOrigin(0.5).setDepth(21);
     const selectMode = () => {
-      this.selectedPlayerCount = mode;
+      this.selectedMode = mode;
+      if (mode === "pk") console.info("[PK] PK mode selected");
+      this.refreshSelection();
       this.refreshModeButtons();
     };
     hit
@@ -295,8 +312,12 @@ export class MenuScene extends Phaser.Scene {
 
   private refreshSelection() {
     const hero = HEROES[this.selectedHeroIndex];
+    const p2Hero = HEROES[(this.selectedHeroIndex + 1) % HEROES.length];
     this.heroName.setText(hero.displayName.toUpperCase());
     this.heroName.setColor(hero.themeCss);
+    this.pkHintText
+      .setVisible(this.selectedMode === "pk")
+      .setText(this.selectedMode === "pk" ? `PK P2: ${p2Hero.displayName.toUpperCase()}` : "");
     const dynamicKey = heroDynamicKey(hero);
     if (this.textures.exists(dynamicKey)) this.dynamicArt.setTexture(dynamicKey).setDisplaySize(430, 430).setVisible(true);
     else this.dynamicArt.setVisible(false);
@@ -314,7 +335,7 @@ export class MenuScene extends Phaser.Scene {
 
   private refreshModeButtons() {
     for (const button of this.modeButtons) {
-      const selected = button.mode === this.selectedPlayerCount;
+      const selected = button.mode === this.selectedMode;
       button.bg
         .setFillStyle(selected ? 0x18e6ff : 0x071a2c, selected ? 0.94 : 0.92)
         .setStrokeStyle(selected ? 3 : 1, selected ? 0xf6c65a : 0x8cf8ff, selected ? 0.95 : 0.78);
@@ -324,6 +345,13 @@ export class MenuScene extends Phaser.Scene {
 
   private startGame() {
     const selected = getHeroById(HEROES[this.selectedHeroIndex].id);
-    this.scene.start("GameScene", { heroId: selected.id, playerCount: this.selectedPlayerCount });
+    const p2Hero = HEROES[(this.selectedHeroIndex + 1) % HEROES.length];
+    this.scene.start("GameScene", {
+      mode: this.selectedMode,
+      heroId: selected.id,
+      p1HeroId: selected.id,
+      p2HeroId: p2Hero.id,
+      playerCount: this.selectedMode === "solo" ? 1 : 2,
+    });
   }
 }

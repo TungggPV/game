@@ -4,6 +4,7 @@ import {
   DEPTHS,
   GAME_HEIGHT,
   GAME_WIDTH,
+  GameMode,
   PLAYER_START_X,
   PLATFORM_Y,
   PlayerInput,
@@ -18,7 +19,10 @@ import { RectLike, overlaps } from "../utils/geometry";
 import { touchControls } from "../utils/touchControls";
 
 type GameSceneData = {
+  mode?: GameMode;
   heroId?: string;
+  p1HeroId?: string;
+  p2HeroId?: string;
   playerCount?: 1 | 2;
 };
 
@@ -62,12 +66,35 @@ type DebugRect = {
   life: number;
 };
 
+type AtmosphereLayer = {
+  layer: Phaser.GameObjects.TileSprite;
+  factor: number;
+  speed: number;
+  drift: number;
+};
+
+const OVERLAY_DEPTH = 9000;
+const PANEL_DEPTH = 9100;
+const BUTTON_DEPTH = 10000;
+const PK_ARENA_MIN = 76;
+const PK_ARENA_MAX = GAME_WIDTH - 76;
+const PK_TIMER_MAX = 99;
+const PK_DAMAGE_MULTIPLIER = {
+  basic: 0.6,
+  skill: 0.65,
+  ultimate: 0.55,
+};
+
 export class GameScene extends Phaser.Scene {
   private selectedHero!: HeroConfig;
+  private p2Hero!: HeroConfig;
+  private gameMode: GameMode = "solo";
   private playerCount: 1 | 2 = 1;
   private players: Player[] = [];
   private hud!: HUD;
   private background?: Phaser.GameObjects.TileSprite;
+  private readonly atmosphereLayers: AtmosphereLayer[] = [];
+  private neonRain?: Phaser.GameObjects.Graphics;
   private enemies: Enemy[] = [];
   private projectiles: SkillProjectile[] = [];
   private activeAreas: ActiveArea[] = [];
@@ -79,6 +106,11 @@ export class GameScene extends Phaser.Scene {
   private paused = false;
   private stageClear = false;
   private gameOver = false;
+  private matchEnded = false;
+  private pkIntroTimer = 0;
+  private pkFightShown = false;
+  private pkTimer = PK_TIMER_MAX;
+  private pkStatusText?: Phaser.GameObjects.Text;
   private hitPauseTimer = 0;
   private messageText?: Phaser.GameObjects.Text;
   private messageTimer = 0;
@@ -100,14 +132,21 @@ export class GameScene extends Phaser.Scene {
   ];
   private pauseOverlay?: Phaser.GameObjects.Container;
   private resultOverlay?: Phaser.GameObjects.Container;
+  private readonly pauseOverlayButtons: Phaser.GameObjects.GameObject[] = [];
+  private readonly resultOverlayButtons: Phaser.GameObjects.GameObject[] = [];
 
   constructor() {
     super("GameScene");
   }
 
   init(data: GameSceneData) {
-    this.selectedHero = getHeroById(data.heroId ?? "");
-    this.playerCount = data.playerCount === 2 ? 2 : 1;
+    this.gameMode = data.mode ?? (data.playerCount === 2 ? "coop" : "solo");
+    this.selectedHero = getHeroById(data.p1HeroId ?? data.heroId ?? "");
+    const selectedIndex = Math.max(0, HEROES.findIndex((hero) => hero.id === this.selectedHero.id));
+    const fallbackP2 = HEROES[(selectedIndex + 1) % HEROES.length];
+    const requestedP2 = getHeroById(data.p2HeroId ?? fallbackP2.id);
+    this.p2Hero = requestedP2.id === this.selectedHero.id ? fallbackP2 : requestedP2;
+    this.playerCount = this.gameMode === "solo" ? 1 : 2;
   }
 
   create() {
@@ -117,7 +156,7 @@ export class GameScene extends Phaser.Scene {
     this.drawPlatform();
     this.createKeyTracking();
     this.createPlayers();
-    this.hud = new HUD(this, this.players);
+    this.hud = new HUD(this, this.players, this.gameMode);
     this.messageText = this.add
       .text(GAME_WIDTH / 2, 142, "", {
         fontFamily: "Arial, sans-serif",
@@ -146,9 +185,11 @@ export class GameScene extends Phaser.Scene {
       .setDepth(DEPTHS.hud + 8)
       .setVisible(false);
     this.debugGraphics = this.add.graphics().setDepth(DEPTHS.hud + 20);
-    this.showMessage(this.playerCount === 2 ? "CO-OP ARMOR SYNC" : "ARMOR CORE ONLINE", 1);
+    this.createPkStatusText();
+    this.showMessage(this.gameMode === "pk" ? "READY" : this.playerCount === 2 ? "CO-OP ARMOR SYNC" : "ARMOR CORE ONLINE", 1);
     this.addLog("Run start: SCORE 0000");
-    this.startNextWave();
+    if (this.gameMode === "pk") this.startPkMatch();
+    else this.startNextWave();
   }
 
   update(_time: number, deltaMs: number) {
@@ -174,19 +215,27 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (this.running) {
+      const controlsLocked = this.gameMode === "pk" && this.pkIntroTimer > 0;
+      if (controlsLocked) this.updatePkIntro(dt);
+
       for (let i = 0; i < this.players.length; i++) {
-        const input = this.readInput(i);
-        this.processPlayerInput(this.players[i], input);
+        const input = controlsLocked ? this.emptyInput() : this.readInput(i);
+        if (!controlsLocked) this.processPlayerInput(this.players[i], input);
         this.players[i].update(dt, input);
       }
-      this.updateEnemies(dt);
+      if (this.gameMode !== "pk") this.updateEnemies(dt);
       this.updateProjectiles(dt);
       this.updateActiveAreas(dt);
       this.resolveBodySpacing();
-      this.cleanupDeadEnemies();
-      this.updateWaveFlow(dt);
+      if (this.gameMode !== "pk") {
+        this.cleanupDeadEnemies();
+        this.updateWaveFlow(dt);
+      } else if (!controlsLocked) {
+        this.updatePkTimer(dt);
+      }
       this.updateCamera(dt);
-      this.checkGameOver();
+      if (this.gameMode === "pk") this.checkPkEnd();
+      else this.checkGameOver();
     }
 
     this.updateHudAndMessage(dt);
@@ -200,6 +249,10 @@ export class GameScene extends Phaser.Scene {
     this.paused = false;
     this.stageClear = false;
     this.gameOver = false;
+    this.matchEnded = false;
+    this.pkIntroTimer = 0;
+    this.pkFightShown = false;
+    this.pkTimer = PK_TIMER_MAX;
     this.hitPauseTimer = 0;
     this.score = 0;
     this.enemies = [];
@@ -216,16 +269,42 @@ export class GameScene extends Phaser.Scene {
     this.logLines.length = 0;
     this.pauseOverlay = undefined;
     this.resultOverlay = undefined;
+    this.pkStatusText = undefined;
+    this.atmosphereLayers.length = 0;
+    this.neonRain = undefined;
+    this.pauseOverlayButtons.length = 0;
+    this.resultOverlayButtons.length = 0;
     this.time.timeScale = 1;
     this.tweens.timeScale = 1;
   }
 
   private createPlayers() {
-    const heroIndex = Math.max(0, HEROES.findIndex((hero) => hero.id === this.selectedHero.id));
-    const p2Hero = HEROES[(heroIndex + 1) % HEROES.length];
+    if (this.gameMode === "pk") {
+      const p1 = new Player(this, 0, this.selectedHero, GAME_WIDTH / 2 - 220, PLATFORM_Y, {
+        maxHp: 360,
+        maxEnergy: 120,
+        energyRegen: 5,
+        initialUltimateCooldown: 4,
+      });
+      const p2 = new Player(this, 1, this.p2Hero, GAME_WIDTH / 2 + 220, PLATFORM_Y, {
+        maxHp: 360,
+        maxEnergy: 120,
+        energyRegen: 5,
+        initialUltimateCooldown: 4,
+      });
+      p1.energy = 80;
+      p2.energy = 80;
+      p1.setFacing(1);
+      p2.setFacing(-1);
+      p1.setHorizontalBounds(PK_ARENA_MIN, PK_ARENA_MAX);
+      p2.setHorizontalBounds(PK_ARENA_MIN, PK_ARENA_MAX);
+      this.players.push(p1, p2);
+      return;
+    }
+
     this.players.push(new Player(this, 0, this.selectedHero, PLAYER_START_X));
     if (this.playerCount === 2) {
-      this.players.push(new Player(this, 1, p2Hero, PLAYER_START_X + 130));
+      this.players.push(new Player(this, 1, this.p2Hero, PLAYER_START_X + 130));
     }
   }
 
@@ -235,9 +314,56 @@ export class GameScene extends Phaser.Scene {
       .tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, AssetKeys.backgroundCity)
       .setOrigin(0)
       .setScrollFactor(0)
-      .setTileScale(2.49)
+      .setTileScale(2.38)
       .setDepth(DEPTHS.background);
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.12).setOrigin(0).setScrollFactor(0).setDepth(DEPTHS.background + 1);
+    this.background.setTint(0xe6fbff);
+    this.createAtmosphereLayers();
+    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.08).setOrigin(0).setScrollFactor(0).setDepth(DEPTHS.background + 5);
+  }
+
+  private createAtmosphereLayers() {
+    const addLayer = (scale: number, alpha: number, tint: number, factor: number, speed: number, drift: number, depth: number) => {
+      const layer = this.add
+        .tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, AssetKeys.backgroundCity)
+        .setOrigin(0)
+        .setScrollFactor(0)
+        .setTileScale(scale)
+        .setDepth(depth)
+        .setTint(tint)
+        .setAlpha(alpha)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      this.atmosphereLayers.push({ layer, factor, speed, drift });
+    };
+
+    addLayer(2.95, 0.18, 0x18e6ff, 0.08, 3.2, 0.16, DEPTHS.background + 1);
+    addLayer(3.6, 0.1, 0xff4fff, 0.045, -1.4, 0.1, DEPTHS.background + 2);
+    addLayer(2.2, 0.11, 0xf6c65a, 0.14, 1.1, 0.08, DEPTHS.background + 3);
+
+    const haze = this.add.graphics().setScrollFactor(0).setDepth(DEPTHS.background + 4).setBlendMode(Phaser.BlendModes.ADD);
+    haze.fillStyle(0x18e6ff, 0.06);
+    haze.fillEllipse(GAME_WIDTH * 0.24, GAME_HEIGHT * 0.36, 540, 220);
+    haze.fillStyle(0xff4fff, 0.045);
+    haze.fillEllipse(GAME_WIDTH * 0.72, GAME_HEIGHT * 0.28, 430, 180);
+    haze.fillStyle(0xf6c65a, 0.045);
+    haze.fillEllipse(GAME_WIDTH * 0.58, GAME_HEIGHT * 0.72, 620, 90);
+
+    this.neonRain = this.add.graphics().setScrollFactor(0).setDepth(DEPTHS.background + 6).setBlendMode(Phaser.BlendModes.ADD);
+    for (let i = 0; i < 58; i++) {
+      const x = Phaser.Math.Between(0, GAME_WIDTH);
+      const y = Phaser.Math.Between(0, GAME_HEIGHT);
+      const length = Phaser.Math.Between(16, 44);
+      const color = i % 5 === 0 ? 0xf6c65a : i % 3 === 0 ? 0xff4fff : 0x18e6ff;
+      this.neonRain.lineStyle(1, color, Phaser.Math.FloatBetween(0.08, 0.24));
+      this.neonRain.lineBetween(x, y, x - 9, y + length);
+    }
+
+    const vignette = this.add.graphics().setScrollFactor(0).setDepth(DEPTHS.hud - 30);
+    vignette.fillStyle(0x02070d, 0.28);
+    vignette.fillRect(0, 0, GAME_WIDTH, 72);
+    vignette.fillRect(0, GAME_HEIGHT - 86, GAME_WIDTH, 86);
+    vignette.fillStyle(0x02070d, 0.16);
+    vignette.fillRect(0, 0, 72, GAME_HEIGHT);
+    vignette.fillRect(GAME_WIDTH - 72, 0, 72, GAME_HEIGHT);
   }
 
   private drawPlatform() {
@@ -246,18 +372,25 @@ export class GameScene extends Phaser.Scene {
         .tileSprite(0, PLATFORM_Y + 36, WORLD_WIDTH, 150, AssetKeys.cityTiles)
         .setOrigin(0, 0)
         .setTileScale(1.4)
-        .setAlpha(0.22)
+        .setAlpha(0.28)
+        .setTint(0x9feeff)
         .setDepth(DEPTHS.platformBack);
     }
 
     const g = this.add.graphics().setDepth(DEPTHS.platformBack + 1);
-    g.fillStyle(0x07121c, 0.96);
+    g.fillStyle(0x07121c, 0.98);
     g.fillRect(0, PLATFORM_Y, WORLD_WIDTH, GAME_HEIGHT - PLATFORM_Y);
+    g.fillStyle(0x18e6ff, 0.08);
+    g.fillRect(0, PLATFORM_Y - 18, WORLD_WIDTH, 18);
+    g.fillStyle(0x02070d, 0.3);
+    g.fillRect(0, PLATFORM_Y + 92, WORLD_WIDTH, GAME_HEIGHT - PLATFORM_Y - 92);
     g.fillStyle(0x10212e, 0.94);
     g.fillRect(0, PLATFORM_Y + 5, WORLD_WIDTH, 42);
-    g.lineStyle(4, 0x18e6ff, 0.92);
+    g.lineStyle(7, 0x18e6ff, 0.16);
+    g.lineBetween(0, PLATFORM_Y - 2, WORLD_WIDTH, PLATFORM_Y - 2);
+    g.lineStyle(4, 0x8cf8ff, 0.96);
     g.lineBetween(0, PLATFORM_Y, WORLD_WIDTH, PLATFORM_Y);
-    g.lineStyle(2, 0xf6c65a, 0.88);
+    g.lineStyle(2, 0xf6c65a, 0.9);
     g.lineBetween(0, PLATFORM_Y + 19, WORLD_WIDTH, PLATFORM_Y + 19);
     g.lineStyle(1, 0x2a5970, 0.42);
     for (let x = 0; x < WORLD_WIDTH; x += 154) {
@@ -266,10 +399,24 @@ export class GameScene extends Phaser.Scene {
       g.strokeRect(x + 7, PLATFORM_Y + 32, 136, 56);
       g.lineStyle(1, 0x18e6ff, 0.18);
       g.lineBetween(x + 22, PLATFORM_Y + 47, x + 126, PLATFORM_Y + 47);
+      if (x % 462 === 0) {
+        g.fillStyle(0x18e6ff, 0.42);
+        g.fillRoundedRect(x + 20, PLATFORM_Y + 12, 72, 5, 2);
+        g.fillStyle(0xf6c65a, 0.32);
+        g.fillRoundedRect(x + 102, PLATFORM_Y + 12, 32, 5, 2);
+      }
       g.lineStyle(1, 0x2a5970, 0.42);
     }
-    g.fillStyle(0x02070d, 0.28);
-    g.fillRect(0, PLATFORM_Y + 92, WORLD_WIDTH, GAME_HEIGHT - PLATFORM_Y - 92);
+    g.fillStyle(0x8cf8ff, 0.045);
+    for (let y = PLATFORM_Y + 54; y < GAME_HEIGHT; y += 18) {
+      g.fillRect(0, y, WORLD_WIDTH, 1);
+    }
+
+    const foreground = this.add.graphics().setDepth(DEPTHS.platformBack + 3).setBlendMode(Phaser.BlendModes.ADD);
+    foreground.fillStyle(0x18e6ff, 0.08);
+    foreground.fillEllipse(WORLD_WIDTH * 0.22, PLATFORM_Y + 18, WORLD_WIDTH * 0.18, 32);
+    foreground.fillStyle(0xf6c65a, 0.05);
+    foreground.fillEllipse(WORLD_WIDTH * 0.58, PLATFORM_Y + 20, WORLD_WIDTH * 0.22, 28);
   }
 
   private createKeyTracking() {
@@ -318,6 +465,19 @@ export class GameScene extends Phaser.Scene {
     };
   }
 
+  private emptyInput(): PlayerInput {
+    return {
+      left: false,
+      right: false,
+      jump: false,
+      dash: false,
+      basicAttack: false,
+      skill1: false,
+      skill2: false,
+      ultimate: false,
+    };
+  }
+
   private processPlayerInput(player: Player, input: PlayerInput) {
     if (input.dash && player.tryDash()) {
       this.spawnDashTrail(player);
@@ -352,6 +512,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.addLog(`P${player.id + 1} used ${skill.name}`);
+    if (this.gameMode === "pk") {
+      this.addLog(skill.input === "ultimate" ? `P${player.id + 1} used ultimate` : `P${player.id + 1} used skill`);
+    }
     if (skill.input === "ultimate") this.spawnUltimate(player, skill);
     else if (skill.type === "ranged") this.spawnPlayerProjectile(player, skill);
     else if (skill.id === "rising_blade") this.spawnRisingBlade(player, skill);
@@ -377,6 +540,10 @@ export class GameScene extends Phaser.Scene {
       this.applyBasicHit(enemy, attack.damage, player, attack, attack.knockback ?? 22);
       hit = true;
     }
+    for (const target of this.pkOpponents(player)) {
+      if (!overlaps(hitbox, target.getBounds())) continue;
+      if (this.applyBasicPlayerHit(target, player, attack)) hit = true;
+    }
     if (hit) this.hitPauseTimer = Math.max(this.hitPauseTimer, 0.06);
   }
 
@@ -395,6 +562,10 @@ export class GameScene extends Phaser.Scene {
       if (!enemy.alive || !overlaps(hitbox, enemy.getBounds())) continue;
       this.applySkillHit(enemy, skill.damage, player, skill, skill.knockback ?? 28);
       hit = true;
+    }
+    for (const target of this.pkOpponents(player)) {
+      if (!overlaps(hitbox, target.getBounds())) continue;
+      if (this.applySkillPlayerHit(target, player, skill, skill.knockback ?? 28)) hit = true;
     }
     if (hit) this.hitPauseTimer = Math.max(this.hitPauseTimer, 0.06);
   }
@@ -417,6 +588,14 @@ export class GameScene extends Phaser.Scene {
       enemy.launch(590);
       hit = true;
     }
+    for (const target of this.pkOpponents(player)) {
+      if (!overlaps(hitbox, target.getBounds())) continue;
+      if (this.applySkillPlayerHit(target, player, skill, 18)) {
+        target.vy = -520;
+        target.grounded = false;
+        hit = true;
+      }
+    }
     if (hit) this.hitPauseTimer = Math.max(this.hitPauseTimer, 0.06);
   }
 
@@ -438,6 +617,10 @@ export class GameScene extends Phaser.Scene {
       if (!enemy.alive || !overlaps(hitbox, enemy.getBounds())) continue;
       this.applySkillHit(enemy, skill.damage, player, skill, skill.knockback ?? 76);
       hit = true;
+    }
+    for (const target of this.pkOpponents(player)) {
+      if (!overlaps(hitbox, target.getBounds())) continue;
+      if (this.applySkillPlayerHit(target, player, skill, skill.knockback ?? 76)) hit = true;
     }
     if (hit) this.hitPauseTimer = Math.max(this.hitPauseTimer, 0.06);
   }
@@ -485,7 +668,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (skill.id === "crimson_meteor") {
-      const target = this.biggestEnemy() ?? { sprite: { x: player.sprite.x + player.facing * 230, y: PLATFORM_Y } };
+      const target = this.nearestPkOpponent(player, 900) ?? this.biggestEnemy() ?? { sprite: { x: player.sprite.x + player.facing * 230, y: PLATFORM_Y } };
       const impactX = Phaser.Math.Clamp(target.sprite.x, player.sprite.x - 360, player.sprite.x + 420);
       this.spawnMeteorWarning(impactX, skill.effectColor);
       this.time.delayedCall(400, () => this.spawnMeteor(impactX, skill));
@@ -501,16 +684,17 @@ export class GameScene extends Phaser.Scene {
     if (skill.id === "storm_breaker") {
       for (let i = 0; i < (skill.strikeCount ?? 4); i++) {
         this.time.delayedCall(i * 300, () => {
-          const target = this.nearestEnemy(player.sprite.x, skill.radius ?? 260);
+          const target = this.nearestPkOpponent(player, skill.radius ?? 260) ?? this.nearestEnemy(player.sprite.x, skill.radius ?? 260);
           if (!target) return;
           this.spawnLightningWarning(target.sprite.x, target.sprite.y - target.sprite.displayHeight * 0.5, skill.effectColor);
         });
         this.time.delayedCall(i * 300 + 95, () => {
-          const target = this.nearestEnemy(player.sprite.x, skill.radius ?? 280);
+          const target = this.nearestPkOpponent(player, skill.radius ?? 280) ?? this.nearestEnemy(player.sprite.x, skill.radius ?? 280);
           if (!target) return;
           this.cameras.main.shake(95, 0.004);
           this.spawnLightning(target.sprite.x, target.sprite.y - target.sprite.displayHeight * 0.55, skill.effectColor);
-          this.applySkillHit(target, skill.damage, player, skill, 22);
+          if (target instanceof Player) this.applySkillPlayerHit(target, player, skill, 22);
+          else this.applySkillHit(target, skill.damage, player, skill, 22);
         });
       }
       return;
@@ -521,7 +705,7 @@ export class GameScene extends Phaser.Scene {
       for (let i = 0; i < hits; i++) {
         this.time.delayedCall(i * 95, () => {
           const angle = (Math.PI * 2 * i) / hits;
-          const target = this.nearestEnemy(player.sprite.x, skill.radius ?? 230);
+          const target = this.nearestPkOpponent(player, skill.radius ?? 230) ?? this.nearestEnemy(player.sprite.x, skill.radius ?? 230);
           const centerX = target?.sprite.x ?? player.sprite.x;
           const centerY = target ? target.sprite.y - target.sprite.displayHeight * 0.48 : player.sprite.y - 96;
           const x = centerX + Math.cos(angle) * 92;
@@ -613,6 +797,23 @@ export class GameScene extends Phaser.Scene {
 
   private resolvePlayerProjectile(projectile: SkillProjectile, hitbox: RectLike) {
     if (!projectile.skill || !projectile.attacker || projectile.life <= 0) return;
+    for (const target of this.pkOpponents(projectile.attacker)) {
+      if (!overlaps(hitbox, target.getBounds())) continue;
+      this.applySkillPlayerHit(target, projectile.attacker, projectile.skill, projectile.skill.knockback ?? 18);
+      if (projectile.skill.explosionRadius) {
+        this.spawnExplosion(target.sprite.x, target.sprite.y - 88, false, projectile.skill.effectColor);
+        this.damagePlayersInRadius(
+          target.sprite.x,
+          target.sprite.y - 80,
+          projectile.skill.explosionRadius,
+          projectile.skill.damage * 0.65,
+          projectile.attacker,
+          projectile.skill,
+        );
+      }
+      projectile.life = 0;
+      return;
+    }
     for (const enemy of this.enemies) {
       if (!enemy.alive || !overlaps(hitbox, enemy.getBounds())) continue;
       this.applySkillHit(enemy, projectile.damage, projectile.attacker, projectile.skill, projectile.skill.knockback ?? 18);
@@ -657,6 +858,38 @@ export class GameScene extends Phaser.Scene {
     this.hitPauseTimer = Math.max(this.hitPauseTimer, 0.06);
   }
 
+  private pkOpponents(player: Player) {
+    if (this.gameMode !== "pk" || this.matchEnded) return [];
+    return this.players.filter((target) => target !== player && target.alive);
+  }
+
+  private applyBasicPlayerHit(target: Player, attacker: Player, attack: BasicAttackConfig) {
+    const damage = attack.damage * PK_DAMAGE_MULTIPLIER.basic;
+    const direction = attacker.sprite.x <= target.sprite.x ? 1 : -1;
+    const didHit = target.takeDamage(damage, direction);
+    if (!didHit) return false;
+    attacker.energize(attack.energyGainOnHit);
+    this.spawnHitSpark(target.sprite.x, target.sprite.y - 92, attack.effectColor);
+    this.addLog(`P${attacker.id + 1} hit P${target.id + 1}`);
+    this.addLog(`P${target.id + 1} HP ${Math.ceil(target.hp)}`);
+    this.hitPauseTimer = Math.max(this.hitPauseTimer, 0.04);
+    return true;
+  }
+
+  private applySkillPlayerHit(target: Player, attacker: Player, skill: SkillConfig, knockback = 24) {
+    const multiplier = skill.input === "ultimate" ? PK_DAMAGE_MULTIPLIER.ultimate : PK_DAMAGE_MULTIPLIER.skill;
+    const damage = skill.damage * multiplier;
+    const direction = attacker.sprite.x <= target.sprite.x ? 1 : -1;
+    const didHit = target.takeDamage(damage, direction);
+    if (!didHit) return false;
+    target.vx += direction * knockback * 5;
+    this.spawnHitSpark(target.sprite.x, target.sprite.y - 92, skill.effectColor);
+    this.addLog(`P${attacker.id + 1} hit P${target.id + 1}`);
+    this.addLog(`P${target.id + 1} HP ${Math.ceil(target.hp)}`);
+    this.hitPauseTimer = Math.max(this.hitPauseTimer, skill.input === "ultimate" ? 0.05 : 0.04);
+    return true;
+  }
+
   private logEnemyDefeated(enemy: Enemy) {
     if (this.defeatedLogged.has(enemy)) return;
     this.defeatedLogged.add(enemy);
@@ -676,7 +909,21 @@ export class GameScene extends Phaser.Scene {
       this.applySkillHit(enemy, damage, player, skill, skill.knockback ?? 42);
       hit = true;
     }
+    if (this.damagePlayersInRadius(x, y, radius, damage, player, skill)) hit = true;
     if (hit && pause) this.hitPauseTimer = Math.max(this.hitPauseTimer, 0.06);
+  }
+
+  private damagePlayersInRadius(x: number, y: number, radius: number, damage: number, attacker: Player, skill: SkillConfig) {
+    let hit = false;
+    for (const target of this.pkOpponents(attacker)) {
+      const bounds = target.getBounds();
+      const cx = bounds.x + bounds.width / 2;
+      const cy = bounds.y + bounds.height / 2;
+      if (Phaser.Math.Distance.Between(x, y, cx, cy) > radius) continue;
+      const syntheticSkill = { ...skill, damage };
+      if (this.applySkillPlayerHit(target, attacker, syntheticSkill, skill.knockback ?? 42)) hit = true;
+    }
+    return hit;
   }
 
   private chainLightning(origin: Enemy, player: Player, skill: SkillConfig) {
@@ -741,6 +988,14 @@ export class GameScene extends Phaser.Scene {
       enemy.pullToward(x, 24);
       this.applySkillHit(enemy, skill.damage, player, skill, 0);
     }
+    for (const target of this.pkOpponents(player)) {
+      const bounds = target.getBounds();
+      const cx = bounds.x + bounds.width / 2;
+      const cy = bounds.y + bounds.height / 2;
+      if (Phaser.Math.Distance.Between(x, y, cx, cy) > radius) continue;
+      target.vx += Math.sign(x - target.sprite.x) * (skill.pullStrength ?? 92) * 1.6;
+      this.applySkillPlayerHit(target, player, skill, 0);
+    }
   }
 
   private updateActiveAreas(dt: number) {
@@ -775,6 +1030,15 @@ export class GameScene extends Phaser.Scene {
       if (Phaser.Math.Distance.Between(area.x, area.y, cx, cy) > area.radius) continue;
       if (area.kind === "toxic_spiral") enemy.pullToward(area.x, (area.skill.pullStrength ?? 90) * 0.08);
       this.applySkillHit(enemy, area.damage, area.owner, area.skill, area.kind === "toxic_spiral" ? 0 : area.skill.knockback ?? 8);
+    }
+    for (const target of this.pkOpponents(area.owner)) {
+      const bounds = target.getBounds();
+      const cx = bounds.x + bounds.width / 2;
+      const cy = bounds.y + bounds.height / 2;
+      if (Phaser.Math.Distance.Between(area.x, area.y, cx, cy) > area.radius) continue;
+      if (area.kind === "toxic_spiral") target.vx += Math.sign(area.x - target.sprite.x) * (area.skill.pullStrength ?? 90) * 0.8;
+      const syntheticSkill = { ...area.skill, damage: area.damage };
+      this.applySkillPlayerHit(target, area.owner, syntheticSkill, area.kind === "toxic_spiral" ? 0 : area.skill.knockback ?? 8);
     }
   }
 
@@ -885,6 +1149,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private resolveBodySpacing() {
+    if (this.gameMode === "pk") {
+      this.resolvePkPlayerSpacing();
+      return;
+    }
+
     for (const enemy of this.enemies) {
       if (!enemy.alive || enemy.kind === "sky_hunter") continue;
       for (const player of this.players) {
@@ -909,9 +1178,85 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private resolvePkPlayerSpacing() {
+    if (this.players.length < 2) return;
+    const [p1, p2] = this.players;
+    const dx = p2.sprite.x - p1.sprite.x;
+    if (Math.abs(dx) < 88) {
+      const direction = dx >= 0 ? 1 : -1;
+      const push = (88 - Math.abs(dx)) * 0.5;
+      p1.sprite.x = Phaser.Math.Clamp(p1.sprite.x - direction * push, PK_ARENA_MIN, PK_ARENA_MAX);
+      p2.sprite.x = Phaser.Math.Clamp(p2.sprite.x + direction * push, PK_ARENA_MIN, PK_ARENA_MAX);
+    }
+    p1.setFacing(p1.sprite.x <= p2.sprite.x ? 1 : -1);
+    p2.setFacing(p2.sprite.x < p1.sprite.x ? 1 : -1);
+  }
+
   private checkGameOver() {
     if (this.players.some((player) => player.alive)) return;
     this.finishRun("GAME OVER", "Armor cores offline.");
+  }
+
+  private startPkMatch() {
+    this.score = 0;
+    this.pkTimer = PK_TIMER_MAX;
+    this.pkIntroTimer = 1.15;
+    this.pkFightShown = false;
+    this.matchEnded = false;
+    this.cameras.main.scrollX = 0;
+    this.showMessage("READY", 0.7);
+    this.addLog("PK match start");
+    this.addLog(`P1 selected hero: ${this.selectedHero.displayName}`);
+    this.addLog(`P2 selected hero: ${this.p2Hero.displayName}`);
+  }
+
+  private updatePkIntro(dt: number) {
+    this.pkIntroTimer = Math.max(0, this.pkIntroTimer - dt);
+    if (!this.pkFightShown && this.pkIntroTimer <= 0.55) {
+      this.pkFightShown = true;
+      this.showMessage("FIGHT", 0.7);
+    }
+  }
+
+  private updatePkTimer(dt: number) {
+    if (this.matchEnded) return;
+    this.pkTimer = Math.max(0, this.pkTimer - dt);
+    if (this.pkTimer <= 0) this.finishPkByTimer();
+  }
+
+  private checkPkEnd() {
+    if (this.matchEnded || this.players.length < 2) return;
+    const [p1, p2] = this.players;
+    if (!p1.alive && !p2.alive) {
+      this.finishPkMatch("DRAW", "Both armor cores are down.");
+      return;
+    }
+    if (!p1.alive) {
+      this.finishPkMatch("P2 WIN", `${p2.hero.displayName} wins!`);
+      return;
+    }
+    if (!p2.alive) this.finishPkMatch("P1 WIN", `${p1.hero.displayName} wins!`);
+  }
+
+  private finishPkByTimer() {
+    if (this.matchEnded || this.players.length < 2) return;
+    const [p1, p2] = this.players;
+    if (p1.hp > p2.hp) this.finishPkMatch("P1 WIN", `${p1.hero.displayName} wins by HP!`);
+    else if (p2.hp > p1.hp) this.finishPkMatch("P2 WIN", `${p2.hero.displayName} wins by HP!`);
+    else this.finishPkMatch("DRAW", "Equal armor integrity.");
+  }
+
+  private finishPkMatch(title: string, detail: string) {
+    if (!this.running || this.matchEnded) return;
+    this.setPaused(false, false);
+    this.running = false;
+    this.matchEnded = true;
+    this.stageClear = title !== "DRAW";
+    this.gameOver = false;
+    this.time.timeScale = 1;
+    this.tweens.timeScale = 1;
+    this.addLog(title.toLowerCase().includes("p1") ? "P1 win" : title.toLowerCase().includes("p2") ? "P2 win" : "Draw");
+    this.createResultOverlay(title, detail);
   }
 
   private finishRun(title: string, detail: string) {
@@ -927,11 +1272,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createResultOverlay(title: string, detail: string) {
-    this.resultOverlay?.destroy();
-    const overlay = this.add.container(0, 0).setScrollFactor(0).setDepth(DEPTHS.hud + 40);
+    this.destroyResultOverlay();
+    const overlay = this.add.container(0, 0).setScrollFactor(0).setDepth(OVERLAY_DEPTH);
     this.resultOverlay = overlay;
-    overlay.add(this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.72).setOrigin(0));
-    const panel = this.add.graphics();
+    overlay.add(this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.72).setOrigin(0).setDepth(OVERLAY_DEPTH));
+    const panel = this.add.graphics().setDepth(PANEL_DEPTH);
     panel.fillStyle(0x061727, 0.96);
     panel.fillRoundedRect(GAME_WIDTH / 2 - 235, GAME_HEIGHT / 2 - 130, 470, 260, 8);
     panel.lineStyle(2, this.stageClear ? 0x18e6ff : 0xff5b6d, 0.92);
@@ -944,7 +1289,7 @@ export class GameScene extends Phaser.Scene {
       color: this.stageClear ? "#8cf8ff" : "#ffb3b8",
       stroke: "#02070d",
       strokeThickness: 7,
-    }).setOrigin(0.5));
+    }).setOrigin(0.5).setDepth(PANEL_DEPTH + 1));
     overlay.add(this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 24, `${detail}\nSCORE ${this.score.toString().padStart(4, "0")}`, {
       fontFamily: "Arial, sans-serif",
       fontSize: "18px",
@@ -953,59 +1298,70 @@ export class GameScene extends Phaser.Scene {
       color: "#eaf8ff",
       stroke: "#02070d",
       strokeThickness: 4,
-    }).setOrigin(0.5));
-    overlay.add(this.createOverlayButton(GAME_WIDTH / 2 - 150, GAME_HEIGHT / 2 + 56, "Choi lai", () => this.restartRun()));
-    overlay.add(this.createOverlayButton(GAME_WIDTH / 2 + 18, GAME_HEIGHT / 2 + 56, "Ve menu", () => this.returnToMenu({ title, detail })));
+    }).setOrigin(0.5).setDepth(PANEL_DEPTH + 1));
+    this.resultOverlayButtons.push(
+      ...this.createMenuButton(GAME_WIDTH / 2 - 150, GAME_HEIGHT / 2 + 56, "Choi lai", () => this.restartRun()),
+      ...this.createMenuButton(GAME_WIDTH / 2 + 18, GAME_HEIGHT / 2 + 56, "Ve menu", () => this.returnToMenu({ title, detail })),
+    );
   }
 
-  private createOverlayButton(x: number, y: number, label: string, onClick: () => void) {
+  private createMenuButton(x: number, y: number, label: string, onClick: () => void) {
     const width = 132;
     const height = 46;
-    const container = this.add.container(x, y).setSize(width, height);
-    const bg = this.add.rectangle(0, 0, width, height, 0x0b2a46, 0.95).setOrigin(0).setStrokeStyle(1, 0x8cf8ff, 0.82);
-    const glow = this.add.rectangle(0, 0, width, height, 0x18e6ff, 0.14).setOrigin(0).setVisible(false);
-    const text = this.add.text(width / 2, height / 2, label, {
+    const glow = this.add
+      .rectangle(x, y, width, height, 0x18e6ff, 0.18)
+      .setOrigin(0)
+      .setScrollFactor(0)
+      .setDepth(BUTTON_DEPTH - 1)
+      .setVisible(false);
+    const bg = this.add
+      .rectangle(x, y, width, height, 0x0b2a46, 0.98)
+      .setOrigin(0)
+      .setScrollFactor(0)
+      .setDepth(BUTTON_DEPTH)
+      .setStrokeStyle(2, 0x55eaff, 0.92)
+      .setInteractive({
+        hitArea: new Phaser.Geom.Rectangle(0, 0, width, height),
+        hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+        useHandCursor: true,
+      });
+    const text = this.add.text(x + width / 2, y + height / 2, label, {
       fontFamily: "Arial, sans-serif",
       fontSize: "16px",
       fontStyle: "900",
       color: "#eaf8ff",
-    }).setOrigin(0.5);
-    container.add([glow, bg, text]);
-    let pressed = false;
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(BUTTON_DEPTH + 1);
+
     bg
-      .setInteractive(new Phaser.Geom.Rectangle(0, 0, width, height), Phaser.Geom.Rectangle.Contains)
       .on("pointerover", () => {
         glow.setVisible(true);
-        bg.setFillStyle(0x12577c, 1).setStrokeStyle(2, 0x8cf8ff, 1);
+        bg.setFillStyle(0x12577c, 1).setStrokeStyle(3, 0x8cf8ff, 1);
         text.setShadow(0, 0, "#8cf8ff", 8, true, true);
       })
       .on("pointerout", () => {
-        pressed = false;
         glow.setVisible(false);
-        bg.setFillStyle(0x0b2a46, 0.95).setStrokeStyle(1, 0x8cf8ff, 0.82);
+        bg.setFillStyle(0x0b2a46, 0.98).setStrokeStyle(2, 0x55eaff, 0.92);
         text.setShadow(0, 0, "#000000", 0, false, false);
-        container.setScale(1);
+        bg.setScale(1);
+        glow.setScale(1);
+        text.setScale(1);
       })
       .on("pointerdown", () => {
-        pressed = true;
-        container.setScale(0.97);
-      })
-      .on("pointerup", () => {
-        container.setScale(1);
-        if (!pressed) return;
-        pressed = false;
+        bg.setScale(0.97);
+        glow.setScale(0.97);
+        text.setScale(0.97);
         onClick();
       });
-    return container;
+    return [glow, bg, text];
   }
 
   private handlePauseToggle() {
-    if (!this.running || this.stageClear || this.gameOver) return;
+    if (!this.running || this.stageClear || this.gameOver || this.matchEnded) return;
     if (this.isJust("KeyP", "Escape")) this.setPaused(!this.paused);
   }
 
   private setPaused(paused: boolean, log = true) {
-    if (paused && (!this.running || this.stageClear || this.gameOver)) return;
+    if (paused && (!this.running || this.stageClear || this.gameOver || this.matchEnded)) return;
     if (this.paused === paused) return;
     this.paused = paused;
     this.time.timeScale = paused ? 0 : 1;
@@ -1014,19 +1370,18 @@ export class GameScene extends Phaser.Scene {
       this.createPauseOverlay();
       if (log) this.addLog("Pause");
     } else {
-      this.pauseOverlay?.destroy();
-      this.pauseOverlay = undefined;
+      this.destroyPauseOverlay();
       if (log) this.addLog("Resume");
     }
   }
 
   private createPauseOverlay() {
-    this.pauseOverlay?.destroy();
-    const overlay = this.add.container(0, 0).setScrollFactor(0).setDepth(DEPTHS.hud + 60);
+    this.destroyPauseOverlay();
+    const overlay = this.add.container(0, 0).setScrollFactor(0).setDepth(OVERLAY_DEPTH);
     this.pauseOverlay = overlay;
-    overlay.add(this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.62).setOrigin(0));
+    overlay.add(this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.62).setOrigin(0).setDepth(OVERLAY_DEPTH));
 
-    const panel = this.add.graphics();
+    const panel = this.add.graphics().setDepth(PANEL_DEPTH);
     panel.fillStyle(0x061727, 0.97);
     panel.fillRoundedRect(GAME_WIDTH / 2 - 210, GAME_HEIGHT / 2 - 154, 420, 308, 8);
     panel.lineStyle(2, 0x18e6ff, 0.95);
@@ -1042,36 +1397,88 @@ export class GameScene extends Phaser.Scene {
       color: "#8cf8ff",
       stroke: "#02070d",
       strokeThickness: 7,
-    }).setOrigin(0.5).setShadow(0, 0, "#18e6ff", 12, true, true));
+    }).setOrigin(0.5).setDepth(PANEL_DEPTH + 1).setShadow(0, 0, "#18e6ff", 12, true, true));
 
-    overlay.add(this.createOverlayButton(GAME_WIDTH / 2 - 66, GAME_HEIGHT / 2 - 40, "Tiep tuc", () => this.setPaused(false)));
-    overlay.add(this.createOverlayButton(GAME_WIDTH / 2 - 66, GAME_HEIGHT / 2 + 18, "Choi lai", () => this.restartRun()));
-    overlay.add(this.createOverlayButton(GAME_WIDTH / 2 - 66, GAME_HEIGHT / 2 + 76, "Ve menu", () => this.returnToMenu()));
+    this.pauseOverlayButtons.push(
+      ...this.createMenuButton(GAME_WIDTH / 2 - 66, GAME_HEIGHT / 2 - 40, "Tiep tuc", () => {
+        console.log("[UI] Resume clicked");
+        this.setPaused(false);
+      }),
+      ...this.createMenuButton(GAME_WIDTH / 2 - 66, GAME_HEIGHT / 2 + 18, "Choi lai", () => this.restartRun()),
+      ...this.createMenuButton(GAME_WIDTH / 2 - 66, GAME_HEIGHT / 2 + 76, "Ve menu", () => this.returnToMenu()),
+    );
+  }
+
+  private destroyPauseOverlay() {
+    this.pauseOverlay?.destroy();
+    this.pauseOverlay = undefined;
+    for (const object of this.pauseOverlayButtons) object.destroy();
+    this.pauseOverlayButtons.length = 0;
+  }
+
+  private destroyResultOverlay() {
+    this.resultOverlay?.destroy();
+    this.resultOverlay = undefined;
+    for (const object of this.resultOverlayButtons) object.destroy();
+    this.resultOverlayButtons.length = 0;
+  }
+
+  private cleanupForSceneChange() {
+    this.paused = false;
+    this.time.timeScale = 1;
+    this.tweens.timeScale = 1;
+    touchControls.clearJust();
+    this.downCodes.clear();
+    this.justCodes.clear();
+    this.destroyPauseOverlay();
+    this.destroyResultOverlay();
+    this.time.removeAllEvents();
+    this.tweens.killAll();
   }
 
   private restartRun() {
+    console.log("[UI] Restart clicked");
     this.addLog("Restart");
-    this.paused = false;
-    this.time.timeScale = 1;
-    this.tweens.timeScale = 1;
-    touchControls.clearJust();
-    this.justCodes.clear();
-    this.scene.restart({ heroId: this.selectedHero.id, playerCount: this.playerCount });
+    const data: GameSceneData = {
+      mode: this.gameMode,
+      heroId: this.selectedHero.id,
+      p1HeroId: this.selectedHero.id,
+      p2HeroId: this.p2Hero.id,
+      playerCount: this.playerCount,
+    };
+    this.cleanupForSceneChange();
+    this.scene.stop("GameScene");
+    this.scene.start("GameScene", data);
   }
 
   private returnToMenu(result?: { title: string; detail: string }) {
+    console.log("[UI] Back to menu clicked");
     this.addLog("Return menu");
-    this.paused = false;
-    this.time.timeScale = 1;
-    this.tweens.timeScale = 1;
-    touchControls.clearJust();
-    this.justCodes.clear();
+    const payload = result
+      ? {
+        title: result.title,
+        detail: result.detail,
+        score: this.score,
+        heroId: this.selectedHero.id,
+        p1HeroId: this.selectedHero.id,
+        p2HeroId: this.p2Hero.id,
+        mode: this.gameMode,
+        playerCount: this.playerCount,
+      }
+      : undefined;
+    const heroId = this.selectedHero.id;
+    const p2HeroId = this.p2Hero.id;
+    const playerCount = this.playerCount;
+    const mode = this.gameMode;
+    this.cleanupForSceneChange();
+    this.scene.stop("GameScene");
     this.scene.start("MenuScene", {
-      heroId: this.selectedHero.id,
-      playerCount: this.playerCount,
-      result: result
-        ? { title: result.title, detail: result.detail, score: this.score, heroId: this.selectedHero.id, playerCount: this.playerCount }
-        : undefined,
+      heroId,
+      p1HeroId: heroId,
+      p2HeroId,
+      mode,
+      playerCount,
+      result: payload,
     });
   }
 
@@ -1289,6 +1696,24 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnHitSpark(x: number, y: number, color: number) {
+    const burst = this.add.graphics().setDepth(DEPTHS.effect + 2).setBlendMode(Phaser.BlendModes.ADD);
+    for (let i = 0; i < 10; i++) {
+      const angle = (Math.PI * 2 * i) / 10 + Phaser.Math.FloatBetween(-0.18, 0.18);
+      const length = Phaser.Math.Between(20, 48);
+      burst.lineStyle(i % 3 === 0 ? 3 : 2, i % 4 === 0 ? 0xffffff : color, i % 3 === 0 ? 0.9 : 0.58);
+      burst.lineBetween(x, y, x + Math.cos(angle) * length, y + Math.sin(angle) * length * 0.62);
+    }
+    burst.fillStyle(color, 0.18);
+    burst.fillCircle(x, y, 34);
+    this.tweens.add({
+      targets: burst,
+      alpha: 0,
+      scaleX: 1.35,
+      scaleY: 1.35,
+      duration: 130,
+      onComplete: () => burst.destroy(),
+    });
+
     const spark = this.add
       .image(x, y, AssetKeys.hitSparksSheet)
       .setOrigin(0.5)
@@ -1308,6 +1733,39 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnExplosion(x: number, y: number, large: boolean, color: number) {
+    const ring = this.add.graphics().setDepth(DEPTHS.effect + 1).setBlendMode(Phaser.BlendModes.ADD);
+    const radius = large ? 124 : 78;
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: large ? 420 : 270,
+      onUpdate: (tween) => {
+        const value = tween.getValue() ?? 0;
+        ring.clear();
+        ring.lineStyle(large ? 6 : 4, color, 0.8 * (1 - value));
+        ring.strokeEllipse(x, y + 18, 28 + radius * value, 12 + radius * 0.46 * value);
+        ring.fillStyle(color, 0.11 * (1 - value));
+        ring.fillCircle(x, y, radius * (0.18 + value * 0.72));
+      },
+      onComplete: () => ring.destroy(),
+    });
+    for (let i = 0; i < (large ? 16 : 9); i++) {
+      const shard = this.add
+        .triangle(x, y + Phaser.Math.Between(-20, 22), 0, 12, 5, 0, 10, 12, i % 3 === 0 ? 0xffd36d : color, 0.72)
+        .setDepth(DEPTHS.effect + 3)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setRotation(Phaser.Math.FloatBetween(-Math.PI, Math.PI));
+      this.tweens.add({
+        targets: shard,
+        x: x + Phaser.Math.Between(-radius, radius),
+        y: y + Phaser.Math.Between(-radius, radius * 0.4),
+        alpha: 0,
+        rotation: shard.rotation + Phaser.Math.FloatBetween(-2, 2),
+        duration: large ? 460 : 310,
+        onComplete: () => shard.destroy(),
+      });
+    }
+
     const explosion = this.add
       .image(x, y, AssetKeys.explosionsSheet)
       .setOrigin(0.5)
@@ -1649,22 +2107,49 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnDashTrail(player: Player) {
-    const ghost = this.add
-      .image(player.sprite.x, player.sprite.y, player.sprite.texture.key)
-      .setOrigin(0.5, 1)
-      .setScale(player.sprite.scaleX, player.sprite.scaleY)
-      .setFlipX(player.facing < 0)
-      .setTint(player.hero.themeColor)
-      .setAlpha(0.38)
-      .setBlendMode(Phaser.BlendModes.ADD)
-      .setDepth(DEPTHS.player - 2);
-    this.tweens.add({
-      targets: ghost,
-      alpha: 0,
-      x: ghost.x - player.facing * 44,
-      duration: 230,
-      onComplete: () => ghost.destroy(),
-    });
+    for (let i = 0; i < 3; i++) {
+      const ghost = this.add
+        .image(player.sprite.x - player.facing * i * 24, player.sprite.y, player.sprite.texture.key)
+        .setOrigin(0.5, 1)
+        .setScale(player.sprite.scaleX, player.sprite.scaleY)
+        .setFlipX(player.facing < 0)
+        .setTint(i === 0 ? 0xffffff : player.hero.themeColor)
+        .setAlpha(0.32 - i * 0.07)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setDepth(DEPTHS.player - 2);
+      this.tweens.add({
+        targets: ghost,
+        alpha: 0,
+        x: ghost.x - player.facing * (48 + i * 26),
+        scaleX: ghost.scaleX * (1 + i * 0.08),
+        duration: 190 + i * 55,
+        onComplete: () => ghost.destroy(),
+      });
+    }
+
+    const streak = this.add.graphics().setDepth(DEPTHS.effect).setBlendMode(Phaser.BlendModes.ADD);
+    streak.lineStyle(5, player.hero.themeColor, 0.62);
+    streak.lineBetween(player.sprite.x - player.facing * 26, player.sprite.y - 92, player.sprite.x - player.facing * 210, player.sprite.y - 94);
+    streak.lineStyle(2, 0xffffff, 0.42);
+    streak.lineBetween(player.sprite.x - player.facing * 8, player.sprite.y - 118, player.sprite.x - player.facing * 154, player.sprite.y - 126);
+    this.tweens.add({ targets: streak, alpha: 0, duration: 180, onComplete: () => streak.destroy() });
+  }
+
+  private createPkStatusText() {
+    if (this.gameMode !== "pk") return;
+    this.pkStatusText = this.add
+      .text(GAME_WIDTH / 2, 20, "PK MODE  99", {
+        fontFamily: "Arial, sans-serif",
+        fontSize: "22px",
+        fontStyle: "900",
+        color: "#ffd66d",
+        stroke: "#02070d",
+        strokeThickness: 5,
+      })
+      .setOrigin(0.5, 0)
+      .setScrollFactor(0)
+      .setDepth(DEPTHS.hud + 9)
+      .setShadow(0, 0, "#ffd66d", 8, true, true);
   }
 
   private projectileBounds(image: Phaser.GameObjects.Image): RectLike {
@@ -1677,12 +2162,34 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateCamera(dt: number) {
+    if (this.gameMode === "pk") {
+      this.cameras.main.scrollX = Phaser.Math.Linear(this.cameras.main.scrollX, 0, Math.min(1, dt * 8));
+      this.updateParallax(0);
+      return;
+    }
+
     const alive = this.players.filter((player) => player.alive);
     const focus = alive.length > 0 ? alive.reduce((sum, player) => sum + player.sprite.x, 0) / alive.length : PLAYER_START_X;
     const front = alive.length > 0 ? Math.max(...alive.map((player) => player.sprite.x)) : focus;
     const target = Phaser.Math.Clamp(Math.max(focus - GAME_WIDTH * 0.4, front - GAME_WIDTH * 0.62), 0, WORLD_WIDTH - GAME_WIDTH);
     this.cameras.main.scrollX = Phaser.Math.Linear(this.cameras.main.scrollX, target, Math.min(1, dt * 5));
-    if (this.background) this.background.tilePositionX = this.cameras.main.scrollX * 0.18;
+    this.updateParallax(this.cameras.main.scrollX);
+  }
+
+  private updateParallax(scrollX: number) {
+    const time = this.time.now * 0.001;
+    if (this.background) {
+      this.background.tilePositionX = scrollX * 0.16 + time * 5;
+      this.background.tilePositionY = Math.sin(time * 0.35) * 3;
+    }
+    for (const item of this.atmosphereLayers) {
+      item.layer.tilePositionX = scrollX * item.factor + time * item.speed;
+      item.layer.tilePositionY = Math.sin(time * item.drift + item.factor * 40) * 9;
+    }
+    if (this.neonRain) {
+      this.neonRain.y = (Math.sin(time * 0.4) + 1) * 3;
+      this.neonRain.alpha = 0.75 + Math.sin(time * 0.9) * 0.15;
+    }
   }
 
   private updateHudAndMessage(dt: number) {
@@ -1692,10 +2199,12 @@ export class GameScene extends Phaser.Scene {
       this.messageText.setAlpha(Math.min(1, this.messageTimer));
     }
     this.updateLogText();
+    if (this.pkStatusText) this.pkStatusText.setText(`PK MODE  ${Math.ceil(this.pkTimer).toString().padStart(2, "0")}`);
     this.hud.update(this.players, this.score, this.enemyBarState());
   }
 
   private enemyBarState(): EnemyBarState | undefined {
+    if (this.gameMode === "pk") return undefined;
     const boss = this.enemies.find((enemy) => enemy.alive && enemy.isBoss());
     if (boss) return boss.getBarState();
     const elite = this.enemies
@@ -1770,6 +2279,12 @@ export class GameScene extends Phaser.Scene {
     return this.enemies
       .filter((enemy) => enemy.alive && Math.abs(enemy.sprite.x - x) <= radius)
       .sort((a, b) => Math.abs(a.sprite.x - x) - Math.abs(b.sprite.x - x))[0];
+  }
+
+  private nearestPkOpponent(player: Player, radius: number) {
+    return this.pkOpponents(player)
+      .filter((target) => Math.abs(target.sprite.x - player.sprite.x) <= radius)
+      .sort((a, b) => Math.abs(a.sprite.x - player.sprite.x) - Math.abs(b.sprite.x - player.sprite.x))[0];
   }
 
   private isDown(...codes: string[]) {

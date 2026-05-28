@@ -87,6 +87,7 @@ const ENEMY_DATA: Record<EnemyKind, EnemyData> = {
 export class Enemy {
   readonly sprite: Phaser.GameObjects.Image;
   readonly shadow: Phaser.GameObjects.Ellipse;
+  readonly aura: Phaser.GameObjects.Ellipse;
   readonly statusText: Phaser.GameObjects.Text;
   readonly statusVisuals: Phaser.GameObjects.Graphics;
   readonly data: EnemyData;
@@ -122,6 +123,17 @@ export class Enemy {
     this.shadow = scene.add
       .ellipse(x, PLATFORM_Y + 9, kind === "horned_mutant" ? 184 : 80, kind === "horned_mutant" ? 30 : 18, 0x000000, this.data.flying ? 0.16 : 0.32)
       .setDepth(DEPTHS.shadow);
+    this.aura = scene.add
+      .ellipse(
+        x,
+        this.data.flying ? PLATFORM_Y - 260 : PLATFORM_Y - this.data.targetHeight * 0.45,
+        kind === "horned_mutant" ? 230 : 92,
+        kind === "horned_mutant" ? 250 : 112,
+        kind === "horned_mutant" ? 0x356dff : 0x18e6ff,
+        kind === "horned_mutant" ? 0.11 : 0.06,
+      )
+      .setDepth(DEPTHS.enemy - 2)
+      .setBlendMode(Phaser.BlendModes.ADD);
     this.sprite = scene.add
       .image(x, this.data.flying ? PLATFORM_Y - 210 : PLATFORM_Y, this.data.idle)
       .setOrigin(0.5, 1)
@@ -255,6 +267,7 @@ export class Enemy {
   }
 
   destroy() {
+    this.aura.destroy();
     this.shadow.destroy();
     this.sprite.destroy();
     this.statusText.destroy();
@@ -405,6 +418,12 @@ export class Enemy {
   private refreshVisuals() {
     this.shadow.setPosition(this.sprite.x, PLATFORM_Y + 9);
     this.shadow.setScale(this.data.flying ? 0.76 : this.kind === "horned_mutant" ? 1.08 : 1, 1);
+    const pulse = 0.5 + Math.sin(this.scene.time.now * 0.008 + this.bob) * 0.5;
+    const auraColor = this.isEnraged() ? 0xff5b5b : this.statuses.some((status) => status.type === "poison") ? 0x58ff9c : 0x18e6ff;
+    this.aura
+      .setPosition(this.sprite.x, this.data.flying ? this.sprite.y - this.sprite.displayHeight * 0.38 : this.sprite.y - this.sprite.displayHeight * 0.46)
+      .setSize(this.sprite.displayWidth * (this.kind === "horned_mutant" ? 0.82 : 0.68), this.sprite.displayHeight * (this.kind === "horned_mutant" ? 0.88 : 0.74))
+      .setFillStyle(auraColor, this.hurtTimer > 0 ? 0.22 : this.isEnraged() ? 0.2 + pulse * 0.08 : 0.055 + pulse * 0.03);
     this.sprite.setFlipX(this.facing < 0);
     this.applyTexture(this.pickTexture());
 

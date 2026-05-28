@@ -24,6 +24,12 @@ Vercel settings:
 
 ## Controls
 
+Modes:
+
+- `1 Nguoi`: solo side-scrolling waves.
+- `2P Co-op`: P1 and P2 fight waves together.
+- `PK Mode`: P1 fights P2. No enemies or waves spawn.
+
 P1:
 
 - `A/D`: move
@@ -44,6 +50,18 @@ P2:
 - `Numpad 3`: Skill 2
 - `Numpad 4`: ultimate
 - `Right Shift` or `Numpad 0`: dash
+
+## PK Mode
+
+- Choose `PK Mode` in the menu, then press `Bat dau`.
+- P1 uses the selected hero.
+- P2 automatically uses the next hero in the roster so both players are different.
+- Both players start on opposite sides of the arena with 360 HP, 120 max energy, slower energy regen, and ultimate cooldown at round start.
+- Basic attacks deal 60% damage, skills deal 65% damage, and ultimates deal 55% damage against the other player.
+- The match starts with `READY` then `FIGHT`; controls are locked during the intro.
+- Timer starts at 99 seconds. If time runs out, the player with higher HP wins. Equal HP is `DRAW`.
+- Result overlay shows `P1 WIN`, `P2 WIN`, or `DRAW`, with working `Choi lai` and `Ve menu` buttons.
+- Pause works with `P` or `Esc` and supports Continue, Replay, and Back to Menu.
 
 Debug:
 

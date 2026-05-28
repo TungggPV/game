@@ -15,15 +15,23 @@ export type SkillUiState = {
   glow: number;
 };
 
+type PlayerOptions = {
+  maxHp?: number;
+  maxEnergy?: number;
+  energyRegen?: number;
+  initialUltimateCooldown?: number;
+};
+
 export class Player {
   readonly sprite: Phaser.GameObjects.Image;
   readonly shadow: Phaser.GameObjects.Ellipse;
+  readonly aura: Phaser.GameObjects.Ellipse;
   readonly hero: HeroConfig;
-  readonly maxHp = 220;
-  readonly maxEnergy = 120;
+  readonly maxHp: number;
+  readonly maxEnergy: number;
 
-  hp = this.maxHp;
-  energy = this.maxEnergy;
+  hp: number;
+  energy: number;
   facing: Direction = 1;
   vx = 0;
   vy = 0;
@@ -42,6 +50,10 @@ export class Player {
   private hurtTimer = 0;
   private invulnTimer = 0;
   private dashCooldown = 0;
+  private energyRegen = 17;
+  private boundsMin = 52;
+  private boundsMax = WORLD_WIDTH - 52;
+  private spriteBaseScale = 1;
   private readonly skillCooldowns: Record<SkillInput, number> = {
     skill1: 0,
     skill2: 0,
@@ -64,11 +76,25 @@ export class Player {
     hero: HeroConfig,
     x: number,
     y = PLATFORM_Y,
+    options: PlayerOptions = {},
   ) {
     this.hero = hero;
+    this.maxHp = options.maxHp ?? 220;
+    this.maxEnergy = options.maxEnergy ?? 120;
+    this.energyRegen = options.energyRegen ?? 17;
+    this.hp = this.maxHp;
+    this.energy = this.maxEnergy;
+    if (options.initialUltimateCooldown) {
+      this.skillCooldowns.ultimate = options.initialUltimateCooldown;
+      this.skillCooldownMax.ultimate = options.initialUltimateCooldown;
+    }
     this.shadow = scene.add
       .ellipse(x, y + 9, 92, 20, 0x000000, 0.34)
       .setDepth(DEPTHS.shadow);
+    this.aura = scene.add
+      .ellipse(x, y - hero.targetHeight * 0.5, hero.targetHeight * 0.78, hero.targetHeight * 1.12, hero.themeColor, 0.1)
+      .setDepth(DEPTHS.player + id - 1)
+      .setBlendMode(Phaser.BlendModes.ADD);
     this.sprite = scene.add
       .image(x, y, heroTextureKey(hero, "idle"))
       .setOrigin(0.5, 1)
@@ -83,7 +109,7 @@ export class Player {
       return;
     }
 
-    this.energy = Math.min(this.maxEnergy, this.energy + dt * 17);
+    this.energy = Math.min(this.maxEnergy, this.energy + dt * this.energyRegen);
 
     let targetVx = 0;
     if (input.left) targetVx -= 290 * this.hero.speed;
@@ -98,7 +124,7 @@ export class Player {
     }
 
     this.vy += GRAVITY * dt;
-    this.sprite.x = Phaser.Math.Clamp(this.sprite.x + this.vx * dt, 52, WORLD_WIDTH - 52);
+    this.sprite.x = Phaser.Math.Clamp(this.sprite.x + this.vx * dt, this.boundsMin, this.boundsMax);
     this.sprite.y += this.vy * dt;
     if (this.sprite.y >= PLATFORM_Y) {
       this.sprite.y = PLATFORM_Y;
@@ -111,9 +137,11 @@ export class Player {
     this.shadow.setPosition(this.sprite.x, PLATFORM_Y + 9);
     this.shadow.setScale(Phaser.Math.Clamp(1 - Math.abs(this.sprite.y - PLATFORM_Y) / 360, 0.62, 1), 1);
     this.shadow.setAlpha(this.grounded ? 0.34 : 0.18);
+    this.refreshAura();
     this.sprite.setFlipX(this.facing < 0);
     this.sprite.setAlpha(this.invulnTimer > 0 && Math.floor(this.scene.time.now * 0.03) % 2 === 0 ? 0.58 : 1);
     this.applySprite(this.pickSprite());
+    this.applyPoseSmoothing();
   }
 
   canUseSkill(skill: SkillConfig): SkillUseResult {
@@ -169,6 +197,17 @@ export class Player {
     this.dashTimer = 0.18;
     this.invulnTimer = 0.18;
     return true;
+  }
+
+  setFacing(direction: Direction) {
+    this.facing = direction;
+    this.sprite.setFlipX(direction < 0);
+  }
+
+  setHorizontalBounds(min: number, max: number) {
+    this.boundsMin = min;
+    this.boundsMax = max;
+    this.sprite.x = Phaser.Math.Clamp(this.sprite.x, min, max);
   }
 
   takeDamage(amount: number, direction: Direction) {
@@ -227,6 +266,7 @@ export class Player {
   }
 
   destroy() {
+    this.aura.destroy();
     this.shadow.destroy();
     this.sprite.destroy();
   }
@@ -269,6 +309,30 @@ export class Player {
     }
     const source = this.scene.textures.get(key).getSourceImage() as { height?: number };
     const sourceHeight = source.height && source.height > 0 ? source.height : this.sprite.height;
-    this.sprite.setScale(this.hero.targetHeight / sourceHeight);
+    this.spriteBaseScale = this.hero.targetHeight / sourceHeight;
+    this.sprite.setScale(this.spriteBaseScale);
+  }
+
+  private refreshAura() {
+    const air = Phaser.Math.Clamp((PLATFORM_Y - this.sprite.y) / 320, 0, 1);
+    const speed = Phaser.Math.Clamp(Math.abs(this.vx) / 760, 0, 1);
+    const pulse = 0.5 + Math.sin(this.scene.time.now * 0.008 + this.id) * 0.5;
+    const active = this.dashTimer > 0 || this.attackTimer > 0 || this.blastPoseTimer > 0 || this.ultimatePoseTimer > 0;
+    this.aura
+      .setPosition(this.sprite.x - this.facing * 8, this.sprite.y - this.hero.targetHeight * 0.52)
+      .setScale(1 + speed * 0.18 + air * 0.12, 1 + pulse * 0.05)
+      .setAlpha(active ? 0.28 : 0.08 + speed * 0.08 + air * 0.05);
+    this.shadow.setFillStyle(this.hero.themeColor, this.grounded ? 0.18 : 0.08);
+  }
+
+  private applyPoseSmoothing() {
+    const speed = Phaser.Math.Clamp(Math.abs(this.vx) / 760, 0, 1);
+    const dash = this.dashTimer > 0 ? 1 : 0;
+    const air = this.grounded ? 0 : 1;
+    const squashX = 1 + speed * 0.025 + dash * 0.09 - air * 0.015;
+    const squashY = 1 - speed * 0.012 - dash * 0.045 + air * 0.022;
+    const targetRotation = this.grounded ? Phaser.Math.Clamp(this.vx / 6400, -0.045, 0.045) : this.facing * 0.035;
+    this.sprite.setScale(this.spriteBaseScale * squashX, this.spriteBaseScale * squashY);
+    this.sprite.setRotation(Phaser.Math.Linear(this.sprite.rotation, targetRotation, 0.16));
   }
 }

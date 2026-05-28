@@ -8,7 +8,7 @@ import { bindTouchControls } from "./utils/touchControls";
 bindTouchControls();
 
 new Phaser.Game({
-  type: Phaser.CANVAS,
+  type: Phaser.AUTO,
   parent: "gameMount",
   width: GAME_WIDTH,
   height: GAME_HEIGHT,
@@ -19,8 +19,10 @@ new Phaser.Game({
   },
   render: {
     antialias: true,
+    antialiasGL: true,
     pixelArt: false,
     roundPixels: false,
+    powerPreference: "high-performance",
   },
   scene: [BootScene, MenuScene, GameScene],
 });
