@@ -1,14 +1,18 @@
 import Phaser from "phaser";
 import { DEPTHS, Direction, GRAVITY, PLATFORM_Y, PlayerInput, WORLD_WIDTH } from "../config/gameConfig";
 import { HeroConfig, HeroSpriteName, heroTextureKey } from "../config/heroes";
+import { BasicAttackConfig, SkillConfig, SkillInput } from "../config/skills";
 import { RectLike } from "../utils/geometry";
 
-export type BlastSpawn = {
-  x: number;
-  y: number;
-  facing: Direction;
-  damage: number;
-  color: number;
+export type SkillUseResult =
+  | { ok: true }
+  | { ok: false; reason: "cooldown" | "energy" | "dead"; remaining?: number };
+
+export type SkillUiState = {
+  cooldownRemaining: number;
+  cooldownPct: number;
+  enoughEnergy: boolean;
+  glow: number;
 };
 
 export class Player {
@@ -30,14 +34,37 @@ export class Player {
   private currentSprite: HeroSpriteName = "idle";
   private attackTimer = 0;
   private blastPoseTimer = 0;
+  private ultimatePoseTimer = 0;
+  private basicCooldown = 0;
+  private basicCooldownMax = 1;
+  private basicGlow = 0;
   private dashTimer = 0;
   private hurtTimer = 0;
   private invulnTimer = 0;
-  private slashCooldown = 0;
-  private blastCooldown = 0;
   private dashCooldown = 0;
+  private readonly skillCooldowns: Record<SkillInput, number> = {
+    skill1: 0,
+    skill2: 0,
+    ultimate: 0,
+  };
+  private readonly skillCooldownMax: Record<SkillInput, number> = {
+    skill1: 1,
+    skill2: 1,
+    ultimate: 1,
+  };
+  private readonly skillGlow: Record<SkillInput, number> = {
+    skill1: 0,
+    skill2: 0,
+    ultimate: 0,
+  };
 
-  constructor(private readonly scene: Phaser.Scene, hero: HeroConfig, x: number, y = PLATFORM_Y) {
+  constructor(
+    private readonly scene: Phaser.Scene,
+    readonly id: number,
+    hero: HeroConfig,
+    x: number,
+    y = PLATFORM_Y,
+  ) {
     this.hero = hero;
     this.shadow = scene.add
       .ellipse(x, y + 9, 92, 20, 0x000000, 0.34)
@@ -45,33 +72,26 @@ export class Player {
     this.sprite = scene.add
       .image(x, y, heroTextureKey(hero, "idle"))
       .setOrigin(0.5, 1)
-      .setDepth(DEPTHS.player);
+      .setDepth(DEPTHS.player + id);
     this.applySprite("idle");
   }
 
   update(dt: number, input: PlayerInput) {
+    this.updateTimers(dt);
     if (!this.alive) {
       this.shadow.setAlpha(0.18);
       return;
     }
 
-    this.slashCooldown = Math.max(0, this.slashCooldown - dt);
-    this.blastCooldown = Math.max(0, this.blastCooldown - dt);
-    this.dashCooldown = Math.max(0, this.dashCooldown - dt);
-    this.attackTimer = Math.max(0, this.attackTimer - dt);
-    this.blastPoseTimer = Math.max(0, this.blastPoseTimer - dt);
-    this.dashTimer = Math.max(0, this.dashTimer - dt);
-    this.hurtTimer = Math.max(0, this.hurtTimer - dt);
-    this.invulnTimer = Math.max(0, this.invulnTimer - dt);
-    this.energy = Math.min(this.maxEnergy, this.energy + dt * 18);
+    this.energy = Math.min(this.maxEnergy, this.energy + dt * 17);
 
     let targetVx = 0;
     if (input.left) targetVx -= 290 * this.hero.speed;
     if (input.right) targetVx += 290 * this.hero.speed;
     if (targetVx !== 0) this.facing = targetVx > 0 ? 1 : -1;
-    if (this.dashTimer > 0) targetVx = this.facing * 720;
+    if (this.dashTimer > 0) targetVx = this.facing * 760;
 
-    this.vx = Phaser.Math.Linear(this.vx, targetVx, this.grounded ? 0.22 : 0.11);
+    this.vx = Phaser.Math.Linear(this.vx, targetVx, this.grounded ? 0.23 : 0.11);
     if (input.jump && this.grounded) {
       this.vy = -780;
       this.grounded = false;
@@ -96,47 +116,66 @@ export class Player {
     this.applySprite(this.pickSprite());
   }
 
-  trySlash(): RectLike | undefined {
-    if (!this.alive || this.slashCooldown > 0) return undefined;
-    this.slashCooldown = 0.3;
-    this.attackTimer = 0.18;
-    return {
-      x: this.sprite.x + this.facing * 78 - 74,
-      y: this.sprite.y - 138,
-      width: 148,
-      height: 112,
-    };
+  canUseSkill(skill: SkillConfig): SkillUseResult {
+    if (!this.alive) return { ok: false, reason: "dead" };
+    const cooldown = this.skillCooldowns[skill.input];
+    if (cooldown > 0) return { ok: false, reason: "cooldown", remaining: cooldown };
+    if (this.energy < skill.energyCost) return { ok: false, reason: "energy" };
+    return { ok: true };
   }
 
-  tryBlast(): BlastSpawn | undefined {
-    if (!this.alive || this.blastCooldown > 0 || this.energy < 18) return undefined;
-    this.energy -= 18;
-    this.blastCooldown = 0.42;
-    this.attackTimer = 0.22;
-    this.blastPoseTimer = 0.22;
-    return {
-      x: this.sprite.x + this.facing * 76,
-      y: this.sprite.y - 92,
-      facing: this.facing,
-      damage: this.hero.blastDamage,
-      color: this.hero.themeColor,
-    };
+  canUseBasicAttack(attack: BasicAttackConfig): SkillUseResult {
+    if (!this.alive) return { ok: false, reason: "dead" };
+    if (this.basicCooldown > 0) return { ok: false, reason: "cooldown", remaining: this.basicCooldown };
+    this.basicCooldownMax = attack.cooldown;
+    return { ok: true };
+  }
+
+  startBasicAttack(attack: BasicAttackConfig): SkillUseResult {
+    const check = this.canUseBasicAttack(attack);
+    if (!check.ok) return check;
+    this.basicCooldown = attack.cooldown;
+    this.basicCooldownMax = attack.cooldown;
+    this.basicGlow = 0.22;
+    this.attackTimer = 0.16;
+    return { ok: true };
+  }
+
+  startSkill(skill: SkillConfig): SkillUseResult {
+    const check = this.canUseSkill(skill);
+    if (!check.ok) return check;
+
+    this.energy = Math.max(0, this.energy - skill.energyCost);
+    this.skillCooldowns[skill.input] = skill.cooldown;
+    this.skillCooldownMax[skill.input] = skill.cooldown;
+    this.skillGlow[skill.input] = 0.34;
+
+    if (skill.input === "ultimate") {
+      this.ultimatePoseTimer = 0.34;
+      this.invulnTimer = Math.max(this.invulnTimer, 0.22);
+    } else if (skill.type === "ranged") {
+      this.attackTimer = 0.22;
+      this.blastPoseTimer = 0.22;
+    } else {
+      this.attackTimer = 0.18;
+    }
+
+    return { ok: true };
   }
 
   tryDash(): boolean {
-    if (!this.alive || this.dashCooldown > 0 || this.energy < 12) return false;
-    this.energy -= 12;
-    this.dashCooldown = 0.62;
+    if (!this.alive || this.dashCooldown > 0) return false;
+    this.dashCooldown = 0.56;
     this.dashTimer = 0.18;
     this.invulnTimer = 0.18;
     return true;
   }
 
   takeDamage(amount: number, direction: Direction) {
-    if (!this.alive || this.invulnTimer > 0) return;
+    if (!this.alive || this.invulnTimer > 0) return false;
     this.hp = Math.max(0, this.hp - amount);
-    this.hurtTimer = 0.22;
-    this.invulnTimer = 0.34;
+    this.hurtTimer = 0.28;
+    this.invulnTimer = 0.6;
     this.vx = direction * 360;
     this.vy = Math.min(this.vy, -120);
     if (this.hp <= 0) {
@@ -144,10 +183,36 @@ export class Player {
       this.applySprite("hitReaction");
       this.sprite.setAlpha(0.7).setRotation(-0.55);
     }
+    return true;
   }
 
   energize(amount: number) {
     this.energy = Math.min(this.maxEnergy, this.energy + amount);
+  }
+
+  getSkillState(skill: SkillConfig): SkillUiState {
+    const remaining = this.skillCooldowns[skill.input];
+    const max = Math.max(0.01, this.skillCooldownMax[skill.input]);
+    return {
+      cooldownRemaining: remaining,
+      cooldownPct: Phaser.Math.Clamp(remaining / max, 0, 1),
+      enoughEnergy: this.energy >= skill.energyCost,
+      glow: this.skillGlow[skill.input],
+    };
+  }
+
+  getBasicAttackState(): SkillUiState {
+    const max = Math.max(0.01, this.basicCooldownMax);
+    return {
+      cooldownRemaining: this.basicCooldown,
+      cooldownPct: Phaser.Math.Clamp(this.basicCooldown / max, 0, 1),
+      enoughEnergy: true,
+      glow: this.basicGlow,
+    };
+  }
+
+  getDashCooldownPct() {
+    return Phaser.Math.Clamp(this.dashCooldown / 0.56, 0, 1);
   }
 
   getBounds(): RectLike {
@@ -166,10 +231,26 @@ export class Player {
     this.sprite.destroy();
   }
 
+  private updateTimers(dt: number) {
+    this.basicCooldown = Math.max(0, this.basicCooldown - dt);
+    this.basicGlow = Math.max(0, this.basicGlow - dt);
+    this.dashCooldown = Math.max(0, this.dashCooldown - dt);
+    this.attackTimer = Math.max(0, this.attackTimer - dt);
+    this.blastPoseTimer = Math.max(0, this.blastPoseTimer - dt);
+    this.ultimatePoseTimer = Math.max(0, this.ultimatePoseTimer - dt);
+    this.dashTimer = Math.max(0, this.dashTimer - dt);
+    this.hurtTimer = Math.max(0, this.hurtTimer - dt);
+    this.invulnTimer = Math.max(0, this.invulnTimer - dt);
+    for (const input of Object.keys(this.skillCooldowns) as SkillInput[]) {
+      this.skillCooldowns[input] = Math.max(0, this.skillCooldowns[input] - dt);
+      this.skillGlow[input] = Math.max(0, this.skillGlow[input] - dt);
+    }
+  }
+
   private pickSprite(): HeroSpriteName {
     if (this.hurtTimer > 0) return "hitReaction";
     if (this.blastPoseTimer > 0) return "attackBlast";
-    if (this.attackTimer > 0) return "attackSlash";
+    if (this.attackTimer > 0 || this.ultimatePoseTimer > 0) return "attackSlash";
     if (this.dashTimer > 0) return "dash";
     if (!this.grounded) return "jump";
     if (Math.abs(this.vx) > 35) {

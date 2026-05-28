@@ -1,0 +1,90 @@
+{
+  "source": "a_high_detail_glossy_sci_fi_fantasy_game_ui_infog_1.png",
+  "recommendedTarget": "public/assets/skills/",
+  "heroes": {
+    "nova_blade": {
+      "displayName": "Nova Blade",
+      "files": {
+        "column": "nova_blade/sheet/nova_blade_column.png",
+        "header": "nova_blade/sheet/nova_blade_header.png"
+      },
+      "entries": {
+        "l_skill2": {
+          "label": "Skill 2",
+          "card": "nova_blade/cards/l_skill2_card.png",
+          "icon": "nova_blade/icons/l_skill2_icon.png",
+          "effectArt": "nova_blade/cards/l_skill2_effect_art.png"
+        },
+        "u_ultimate": {
+          "label": "Ultimate",
+          "card": "nova_blade/cards/u_ultimate_card.png",
+          "icon": "nova_blade/icons/u_ultimate_icon.png",
+          "effectArt": "nova_blade/cards/u_ultimate_effect_art.png"
+        }
+      }
+    },
+    "crimson_flare": {
+      "displayName": "Crimson Flare",
+      "files": {
+        "column": "crimson_flare/sheet/crimson_flare_column.png",
+        "header": "crimson_flare/sheet/crimson_flare_header.png"
+      },
+      "entries": {
+        "l_skill2": {
+          "label": "Skill 2",
+          "card": "crimson_flare/cards/l_skill2_card.png",
+          "icon": "crimson_flare/icons/l_skill2_icon.png",
+          "effectArt": "crimson_flare/cards/l_skill2_effect_art.png"
+        },
+        "u_ultimate": {
+          "label": "Ultimate",
+          "card": "crimson_flare/cards/u_ultimate_card.png",
+          "icon": "crimson_flare/icons/u_ultimate_icon.png",
+          "effectArt": "crimson_flare/cards/u_ultimate_effect_art.png"
+        }
+      }
+    },
+    "volt_sentinel": {
+      "displayName": "Volt Sentinel",
+      "files": {
+        "column": "volt_sentinel/sheet/volt_sentinel_column.png",
+        "header": "volt_sentinel/sheet/volt_sentinel_header.png"
+      },
+      "entries": {
+        "l_skill2": {
+          "label": "Skill 2",
+          "card": "volt_sentinel/cards/l_skill2_card.png",
+          "icon": "volt_sentinel/icons/l_skill2_icon.png",
+          "effectArt": "volt_sentinel/cards/l_skill2_effect_art.png"
+        },
+        "u_ultimate": {
+          "label": "Ultimate",
+          "card": "volt_sentinel/cards/u_ultimate_card.png",
+          "icon": "volt_sentinel/icons/u_ultimate_icon.png",
+          "effectArt": "volt_sentinel/cards/u_ultimate_effect_art.png"
+        }
+      }
+    },
+    "emerald_phantom": {
+      "displayName": "Emerald Phantom",
+      "files": {
+        "column": "emerald_phantom/sheet/emerald_phantom_column.png",
+        "header": "emerald_phantom/sheet/emerald_phantom_header.png"
+      },
+      "entries": {
+        "l_skill2": {
+          "label": "Skill 2",
+          "card": "emerald_phantom/cards/l_skill2_card.png",
+          "icon": "emerald_phantom/icons/l_skill2_icon.png",
+          "effectArt": "emerald_phantom/cards/l_skill2_effect_art.png"
+        },
+        "u_ultimate": {
+          "label": "Ultimate",
+          "card": "emerald_phantom/cards/u_ultimate_card.png",
+          "icon": "emerald_phantom/icons/u_ultimate_icon.png",
+          "effectArt": "emerald_phantom/cards/u_ultimate_effect_art.png"
+        }
+      }
+    }
+  }
+}

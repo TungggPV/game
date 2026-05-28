@@ -1,4 +1,14 @@
-export type TouchAction = "left" | "right" | "jump" | "slash" | "blast" | "dash";
+export type TouchAction =
+  | "left"
+  | "right"
+  | "jump"
+  | "basic"
+  | "skill1"
+  | "skill2"
+  | "ultimate"
+  | "slash"
+  | "blast"
+  | "dash";
 
 const held = new Set<TouchAction>();
 const justPressed = new Set<TouchAction>();

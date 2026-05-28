@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { AssetKeys, REQUIRED_RUNTIME_ASSETS } from "../config/assets";
 import { HEROES, HeroSpriteName, allHeroAssets, heroDynamicKey, heroTextureKey } from "../config/heroes";
+import { allSkillAssets } from "../config/skills";
 
 type LoadableAsset = {
   key: string;
@@ -15,7 +16,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload() {
-    const assets: LoadableAsset[] = [...REQUIRED_RUNTIME_ASSETS, ...allHeroAssets()];
+    const assets: LoadableAsset[] = [...REQUIRED_RUNTIME_ASSETS, ...allHeroAssets(), ...allSkillAssets()];
     this.load.on("loaderror", (file: Phaser.Loader.File) => {
       const src = typeof file.src === "string" ? file.src : String(file.url);
       this.missingAssets.push(src);

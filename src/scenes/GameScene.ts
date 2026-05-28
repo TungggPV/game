@@ -1,86 +1,123 @@
 import Phaser from "phaser";
 import { AssetKeys } from "../config/assets";
-import { DEPTHS, GAME_HEIGHT, GAME_WIDTH, GRAVITY, PLATFORM_Y, PLAYER_START_X, PlayerInput, WORLD_WIDTH } from "../config/gameConfig";
-import { HeroConfig, getHeroById } from "../config/heroes";
-import { Enemy, EnemyKind } from "../entities/Enemy";
-import { BlastSpawn, Player } from "../entities/Player";
-import { HUD } from "../ui/HUD";
+import {
+  DEPTHS,
+  GAME_HEIGHT,
+  GAME_WIDTH,
+  PLAYER_START_X,
+  PLATFORM_Y,
+  PlayerInput,
+  WORLD_WIDTH,
+} from "../config/gameConfig";
+import { HEROES, HeroConfig, getHeroById } from "../config/heroes";
+import { BasicAttackConfig, SkillConfig, SkillInput, getBasicAttackForHero, getSkillForHeroInput } from "../config/skills";
+import { Enemy, EnemyAction, EnemyKind } from "../entities/Enemy";
+import { Player } from "../entities/Player";
+import { EnemyBarState, HUD } from "../ui/HUD";
 import { RectLike, overlaps } from "../utils/geometry";
 import { touchControls } from "../utils/touchControls";
 
 type GameSceneData = {
   heroId?: string;
+  playerCount?: 1 | 2;
 };
 
-type BlastProjectile = {
+type SkillProjectile = {
   image: Phaser.GameObjects.Image;
   vx: number;
+  vy: number;
   damage: number;
   life: number;
+  trailTimer: number;
+  color: number;
   facing: -1 | 1;
+  owner: "player" | "enemy";
+  attacker?: Player;
+  skill?: SkillConfig;
 };
 
-type WaveSpawn = {
-  triggerX: number;
-  spawned: boolean;
-  enemies: Array<{ kind: EnemyKind; x: number }>;
+type ActiveArea = {
+  kind: "electric_cage" | "toxic_spiral";
+  x: number;
+  y: number;
+  radius: number;
+  life: number;
+  maxLife: number;
+  tick: number;
+  tickRate: number;
+  damage: number;
+  owner: Player;
+  skill: SkillConfig;
+  visual: Phaser.GameObjects.Graphics;
+};
+
+type WaveConfig = {
+  label: string;
+  enemies: EnemyKind[];
+};
+
+type DebugRect = {
+  rect: RectLike;
+  color: number;
+  life: number;
 };
 
 export class GameScene extends Phaser.Scene {
-  private hero!: HeroConfig;
-  private player!: Player;
+  private selectedHero!: HeroConfig;
+  private playerCount: 1 | 2 = 1;
+  private players: Player[] = [];
   private hud!: HUD;
   private background?: Phaser.GameObjects.TileSprite;
   private enemies: Enemy[] = [];
-  private projectiles: BlastProjectile[] = [];
-  private waves: WaveSpawn[] = [];
+  private projectiles: SkillProjectile[] = [];
+  private activeAreas: ActiveArea[] = [];
+  private defeatedLogged = new Set<Enemy>();
+  private enrageLogged = new Set<Enemy>();
+  private failLogCooldowns = new Map<string, number>();
   private score = 0;
   private running = true;
+  private paused = false;
+  private stageClear = false;
+  private gameOver = false;
+  private hitPauseTimer = 0;
   private messageText?: Phaser.GameObjects.Text;
   private messageTimer = 0;
-  private keys!: Record<"leftA" | "rightD" | "left" | "right" | "space" | "up" | "slash" | "blast" | "dash", Phaser.Input.Keyboard.Key>;
+  private waveIndex = -1;
+  private waitingNextWave = false;
+  private waveWait = 0;
+  private debugHitboxes = false;
+  private playtestLogEnabled = false;
+  private readonly logLines: string[] = [];
+  private logText?: Phaser.GameObjects.Text;
+  private debugGraphics?: Phaser.GameObjects.Graphics;
+  private readonly debugRects: DebugRect[] = [];
+  private readonly downCodes = new Set<string>();
+  private readonly justCodes = new Set<string>();
+  private readonly waves: WaveConfig[] = [
+    { label: "WAVE 1 / 3", enemies: ["crawler", "crawler"] },
+    { label: "WAVE 2 / 3", enemies: ["crawler", "crawler", "sky_hunter"] },
+    { label: "WAVE 3 / 3", enemies: ["horned_mutant", "crawler"] },
+  ];
+  private pauseOverlay?: Phaser.GameObjects.Container;
+  private resultOverlay?: Phaser.GameObjects.Container;
 
   constructor() {
     super("GameScene");
   }
 
   init(data: GameSceneData) {
-    this.hero = getHeroById(data.heroId ?? "");
+    this.selectedHero = getHeroById(data.heroId ?? "");
+    this.playerCount = data.playerCount === 2 ? 2 : 1;
   }
 
   create() {
-    this.running = true;
-    this.score = 0;
-    this.enemies = [];
-    this.projectiles = [];
-    this.waves = [
-      {
-        triggerX: 980,
-        spawned: false,
-        enemies: [
-          { kind: "crawler", x: 1320 },
-          { kind: "horned_mutant", x: 1540 },
-        ],
-      },
-      {
-        triggerX: 1780,
-        spawned: false,
-        enemies: [
-          { kind: "crawler", x: 2160 },
-          { kind: "crawler", x: 2320 },
-          { kind: "horned_mutant", x: 2520 },
-        ],
-      },
-    ];
-
+    this.resetState();
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, GAME_HEIGHT);
     this.createBackground();
     this.drawPlatform();
-    this.createKeys();
-    this.player = new Player(this, this.hero, PLAYER_START_X);
-    this.spawnEnemy("crawler", 820);
-    this.spawnEnemy("horned_mutant", 1110);
-    this.hud = new HUD(this, this.hero);
+    this.createKeyTracking();
+    this.createPlayers();
+    this.hud = new HUD(this, this.players);
     this.messageText = this.add
       .text(GAME_WIDTH / 2, 142, "", {
         fontFamily: "Arial, sans-serif",
@@ -92,37 +129,104 @@ export class GameScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setScrollFactor(0)
-      .setDepth(DEPTHS.hud + 4);
-    this.showMessage("ARMOR CORE ONLINE", 1.1);
+      .setDepth(DEPTHS.hud + 7);
+    this.logText = this.add
+      .text(GAME_WIDTH - 24, 78, "", {
+        fontFamily: "Arial, sans-serif",
+        fontSize: "12px",
+        fontStyle: "700",
+        color: "#dffcff",
+        align: "right",
+        stroke: "#02070d",
+        strokeThickness: 3,
+        wordWrap: { width: 390 },
+      })
+      .setOrigin(1, 0)
+      .setScrollFactor(0)
+      .setDepth(DEPTHS.hud + 8)
+      .setVisible(false);
+    this.debugGraphics = this.add.graphics().setDepth(DEPTHS.hud + 20);
+    this.showMessage(this.playerCount === 2 ? "CO-OP ARMOR SYNC" : "ARMOR CORE ONLINE", 1);
+    this.addLog("Run start: SCORE 0000");
+    this.startNextWave();
   }
 
   update(_time: number, deltaMs: number) {
     const dt = Math.min(0.033, deltaMs / 1000);
-    const input = this.readInput();
+    this.handleDebugToggles();
+    this.handlePauseToggle();
+
+    if (this.paused) {
+      this.updateHudAndMessage(dt);
+      this.drawDebug();
+      touchControls.clearJust();
+      this.justCodes.clear();
+      return;
+    }
+
+    if (this.hitPauseTimer > 0) {
+      this.hitPauseTimer = Math.max(0, this.hitPauseTimer - dt);
+      this.updateHudAndMessage(dt);
+      this.drawDebug();
+      touchControls.clearJust();
+      this.justCodes.clear();
+      return;
+    }
 
     if (this.running) {
-      if (input.dash && this.player.tryDash()) this.spawnDashTrail();
-
-      const slashHitbox = input.slash ? this.player.trySlash() : undefined;
-      if (slashHitbox) {
-        this.spawnSlashEffect();
-        this.hitEnemies(slashHitbox, this.hero.meleeDamage);
+      for (let i = 0; i < this.players.length; i++) {
+        const input = this.readInput(i);
+        this.processPlayerInput(this.players[i], input);
+        this.players[i].update(dt, input);
       }
-
-      const blast = input.blast ? this.player.tryBlast() : undefined;
-      if (blast) this.spawnBlastProjectile(blast);
-
-      this.player.update(dt, input);
       this.updateEnemies(dt);
       this.updateProjectiles(dt);
+      this.updateActiveAreas(dt);
+      this.resolveBodySpacing();
       this.cleanupDeadEnemies();
-      this.spawnWaves();
+      this.updateWaveFlow(dt);
       this.updateCamera(dt);
-      this.checkRunState();
+      this.checkGameOver();
     }
 
     this.updateHudAndMessage(dt);
+    this.drawDebug();
     touchControls.clearJust();
+    this.justCodes.clear();
+  }
+
+  private resetState() {
+    this.running = true;
+    this.paused = false;
+    this.stageClear = false;
+    this.gameOver = false;
+    this.hitPauseTimer = 0;
+    this.score = 0;
+    this.enemies = [];
+    this.projectiles = [];
+    this.activeAreas = [];
+    this.defeatedLogged = new Set();
+    this.enrageLogged = new Set();
+    this.failLogCooldowns = new Map();
+    this.players = [];
+    this.waveIndex = -1;
+    this.waitingNextWave = false;
+    this.waveWait = 0;
+    this.debugRects.length = 0;
+    this.logLines.length = 0;
+    this.pauseOverlay = undefined;
+    this.resultOverlay = undefined;
+    this.time.timeScale = 1;
+    this.tweens.timeScale = 1;
+  }
+
+  private createPlayers() {
+    const heroIndex = Math.max(0, HEROES.findIndex((hero) => hero.id === this.selectedHero.id));
+    const p2Hero = HEROES[(heroIndex + 1) % HEROES.length];
+    this.players.push(new Player(this, 0, this.selectedHero, PLAYER_START_X));
+    if (this.playerCount === 2) {
+      this.players.push(new Player(this, 1, p2Hero, PLAYER_START_X + 130));
+    }
   }
 
   private createBackground() {
@@ -168,74 +272,509 @@ export class GameScene extends Phaser.Scene {
     g.fillRect(0, PLATFORM_Y + 92, WORLD_WIDTH, GAME_HEIGHT - PLATFORM_Y - 92);
   }
 
-  private createKeys() {
-    const keyboard = this.input.keyboard!;
-    this.keys = {
-      leftA: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A),
-      rightD: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
-      left: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.LEFT),
-      right: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT),
-      space: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
-      up: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP),
-      slash: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.J),
-      blast: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.K),
-      dash: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT),
+  private createKeyTracking() {
+    this.input.keyboard?.on("keydown", this.onKeyDown);
+    this.input.keyboard?.on("keyup", this.onKeyUp);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.input.keyboard?.off("keydown", this.onKeyDown);
+      this.input.keyboard?.off("keyup", this.onKeyUp);
+      this.downCodes.clear();
+      this.justCodes.clear();
+    });
+  }
+
+  private readonly onKeyDown = (event: KeyboardEvent) => {
+    if (!this.downCodes.has(event.code)) this.justCodes.add(event.code);
+    this.downCodes.add(event.code);
+  };
+
+  private readonly onKeyUp = (event: KeyboardEvent) => {
+    this.downCodes.delete(event.code);
+  };
+
+  private readInput(playerIndex: number): PlayerInput {
+    if (playerIndex === 1) {
+      return {
+        left: this.isDown("ArrowLeft"),
+        right: this.isDown("ArrowRight"),
+        jump: this.isJust("ArrowUp"),
+        dash: this.isJust("ShiftRight", "Numpad0"),
+        basicAttack: this.isJust("Numpad1"),
+        skill1: this.isJust("Numpad2"),
+        skill2: this.isJust("Numpad3"),
+        ultimate: this.isJust("Numpad4"),
+      };
+    }
+
+    return {
+      left: this.isDown("KeyA") || touchControls.isHeld("left"),
+      right: this.isDown("KeyD") || touchControls.isHeld("right"),
+      jump: this.isJust("KeyW", "Space") || touchControls.consumeJust("jump"),
+      dash: this.isJust("ShiftLeft", "KeyF") || touchControls.consumeJust("dash"),
+      basicAttack: this.isJust("KeyJ") || touchControls.consumeJust("basic") || touchControls.consumeJust("slash"),
+      skill1: this.isJust("KeyK") || touchControls.consumeJust("skill1") || touchControls.consumeJust("blast"),
+      skill2: this.isJust("KeyL") || touchControls.consumeJust("skill2"),
+      ultimate: this.isJust("KeyU", "KeyI") || touchControls.consumeJust("ultimate"),
     };
   }
 
-  private readInput(): PlayerInput {
-    return {
-      left: this.keys.leftA.isDown || this.keys.left.isDown || touchControls.isHeld("left"),
-      right: this.keys.rightD.isDown || this.keys.right.isDown || touchControls.isHeld("right"),
-      jump:
-        Phaser.Input.Keyboard.JustDown(this.keys.space) ||
-        Phaser.Input.Keyboard.JustDown(this.keys.up) ||
-        touchControls.consumeJust("jump"),
-      slash: Phaser.Input.Keyboard.JustDown(this.keys.slash) || touchControls.consumeJust("slash"),
-      blast: Phaser.Input.Keyboard.JustDown(this.keys.blast) || touchControls.consumeJust("blast"),
-      dash: Phaser.Input.Keyboard.JustDown(this.keys.dash) || touchControls.consumeJust("dash"),
+  private processPlayerInput(player: Player, input: PlayerInput) {
+    if (input.dash && player.tryDash()) {
+      this.spawnDashTrail(player);
+      this.addLog(`P${player.id + 1} dash`);
+    }
+    if (input.basicAttack) this.tryBasicAttack(player);
+    if (input.skill1) this.tryUseSkill(player, "skill1");
+    if (input.skill2) this.tryUseSkill(player, "skill2");
+    if (input.ultimate) this.tryUseSkill(player, "ultimate");
+  }
+
+  private tryBasicAttack(player: Player) {
+    const attack = getBasicAttackForHero(player.hero.id);
+    if (!attack) return;
+    const result = player.startBasicAttack(attack);
+    if (!result.ok) {
+      if (result.reason === "cooldown") this.addThrottledLog(`basic-${player.id}`, `${attack.name} failed: cooldown`, 0.75);
+      return;
+    }
+    this.addLog(`P${player.id + 1} used ${attack.name}`);
+    this.resolveBasicAttack(player, attack);
+  }
+
+  private tryUseSkill(player: Player, input: SkillInput) {
+    const skill = getSkillForHeroInput(player.hero.id, input);
+    if (!skill) return;
+    const result = player.startSkill(skill);
+    if (!result.ok) {
+      const reason = result.reason === "energy" ? "not enough energy" : result.reason === "cooldown" ? "cooldown" : "dead";
+      this.addThrottledLog(`skill-${player.id}-${skill.id}-${reason}`, `${skill.name} failed: ${reason}`, reason === "cooldown" ? 0.8 : 0.35);
+      return;
+    }
+
+    this.addLog(`P${player.id + 1} used ${skill.name}`);
+    if (skill.input === "ultimate") this.spawnUltimate(player, skill);
+    else if (skill.type === "ranged") this.spawnPlayerProjectile(player, skill);
+    else if (skill.id === "rising_blade") this.spawnRisingBlade(player, skill);
+    else if (skill.id === "inferno_arc") this.spawnInfernoArc(player, skill);
+    else if (skill.id === "electric_cage") this.spawnElectricCage(player, skill);
+    else if (skill.id === "toxic_spiral") this.spawnToxicSpiral(player, skill);
+    else this.resolveMeleeSkill(player, skill);
+  }
+
+  private resolveBasicAttack(player: Player, attack: BasicAttackConfig) {
+    const range = attack.range;
+    const hitbox = {
+      x: player.sprite.x + player.facing * (range * 0.5) - range / 2,
+      y: player.sprite.y - 132,
+      width: range,
+      height: 104,
     };
+    this.debugRects.push({ rect: hitbox, color: attack.effectColor, life: 0.13 });
+    this.spawnBasicSlashEffect(player, attack);
+    let hit = false;
+    for (const enemy of this.enemies) {
+      if (!enemy.alive || !overlaps(hitbox, enemy.getBounds())) continue;
+      this.applyBasicHit(enemy, attack.damage, player, attack, attack.knockback ?? 22);
+      hit = true;
+    }
+    if (hit) this.hitPauseTimer = Math.max(this.hitPauseTimer, 0.06);
+  }
+
+  private resolveMeleeSkill(player: Player, skill: SkillConfig) {
+    const range = skill.range ?? 140;
+    const hitbox = {
+      x: player.sprite.x + player.facing * (range * 0.52) - range / 2,
+      y: player.sprite.y - 142,
+      width: range,
+      height: 118,
+    };
+    this.debugRects.push({ rect: hitbox, color: skill.effectColor, life: 0.15 });
+    this.spawnSlashEffect(player, skill, range);
+    let hit = false;
+    for (const enemy of this.enemies) {
+      if (!enemy.alive || !overlaps(hitbox, enemy.getBounds())) continue;
+      this.applySkillHit(enemy, skill.damage, player, skill, skill.knockback ?? 28);
+      hit = true;
+    }
+    if (hit) this.hitPauseTimer = Math.max(this.hitPauseTimer, 0.06);
+  }
+
+  private spawnRisingBlade(player: Player, skill: SkillConfig) {
+    const x = player.sprite.x + player.facing * 112;
+    const hitbox = {
+      x: x - 58,
+      y: PLATFORM_Y - 272,
+      width: 116,
+      height: 272,
+    };
+    this.debugRects.push({ rect: hitbox, color: skill.effectColor, life: 0.22 });
+    this.spawnRisingBladeColumn(x, skill.effectColor);
+
+    let hit = false;
+    for (const enemy of this.enemies) {
+      if (!enemy.alive || !overlaps(hitbox, enemy.getBounds())) continue;
+      this.applySkillHit(enemy, skill.damage, player, skill, 18);
+      enemy.launch(590);
+      hit = true;
+    }
+    if (hit) this.hitPauseTimer = Math.max(this.hitPauseTimer, 0.06);
+  }
+
+  private spawnInfernoArc(player: Player, skill: SkillConfig) {
+    const range = skill.range ?? 210;
+    const x = player.sprite.x + player.facing * (range * 0.52);
+    const hitbox = {
+      x: player.facing > 0 ? player.sprite.x + 8 : player.sprite.x - range - 8,
+      y: player.sprite.y - 188,
+      width: range,
+      height: 188,
+    };
+    this.debugRects.push({ rect: hitbox, color: skill.effectColor, life: 0.18 });
+    this.spawnInfernoArcVisual(player, skill, range);
+    this.spawnFireTrail(player.sprite.x + player.facing * 125, player.facing, skill);
+
+    let hit = false;
+    for (const enemy of this.enemies) {
+      if (!enemy.alive || !overlaps(hitbox, enemy.getBounds())) continue;
+      this.applySkillHit(enemy, skill.damage, player, skill, skill.knockback ?? 76);
+      hit = true;
+    }
+    if (hit) this.hitPauseTimer = Math.max(this.hitPauseTimer, 0.06);
+  }
+
+  private spawnPlayerProjectile(player: Player, skill: SkillConfig) {
+    const image = this.add
+      .image(player.sprite.x + player.facing * 76, player.sprite.y - 92, AssetKeys.energyBlastSheet)
+      .setOrigin(0.5)
+      .setDepth(DEPTHS.projectile)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setFlipX(player.facing < 0)
+      .setTint(skill.effectColor);
+    const projectileWidth = skill.id === "fire_burst" ? 164 : skill.id === "thunder_bolt" ? 184 : 174;
+    const projectileHeight = skill.id === "fire_burst" ? 66 : skill.id === "wind_pulse" ? 60 : 50;
+    image.setCrop(246, 0, 190, 145).setDisplaySize(projectileWidth, projectileHeight);
+    this.projectiles.push({
+      image,
+      vx: player.facing * (skill.projectileSpeed ?? 820),
+      vy: 0,
+      damage: skill.damage,
+      life: 1.15,
+      trailTimer: 0,
+      color: skill.effectColor,
+      facing: player.facing,
+      owner: "player",
+      attacker: player,
+      skill,
+    });
+  }
+
+  private spawnUltimate(player: Player, skill: SkillConfig) {
+    this.cameras.main.shake(skill.id === "crimson_meteor" ? 430 : 260, skill.id === "crimson_meteor" ? 0.011 : 0.005);
+    this.flashUltimate(skill.effectColor, skill.id === "crimson_meteor" ? 190 : 130);
+    this.showMessage(skill.name.toUpperCase(), 0.9);
+
+    if (skill.id === "nova_overdrive") {
+      this.spawnNovaCharge(player, skill.effectColor);
+      this.time.delayedCall(200, () => {
+        this.spawnPlasmaRing(player.sprite.x, player.sprite.y - 88, skill.radius ?? 240, skill.effectColor);
+        this.spawnPlasmaDome(player.sprite.x, player.sprite.y - 86, skill.radius ?? 240, skill.effectColor);
+        this.spawnExplosion(player.sprite.x, player.sprite.y - 86, true, skill.effectColor);
+        this.damageEnemiesInRadius(player.sprite.x, player.sprite.y - 92, skill.radius ?? 240, skill.damage, player, skill);
+      });
+      return;
+    }
+
+    if (skill.id === "crimson_meteor") {
+      const target = this.biggestEnemy() ?? { sprite: { x: player.sprite.x + player.facing * 230, y: PLATFORM_Y } };
+      const impactX = Phaser.Math.Clamp(target.sprite.x, player.sprite.x - 360, player.sprite.x + 420);
+      this.spawnMeteorWarning(impactX, skill.effectColor);
+      this.time.delayedCall(400, () => this.spawnMeteor(impactX, skill));
+      this.time.delayedCall(620, () => {
+        this.cameras.main.shake(260, 0.012);
+        this.spawnExplosion(impactX, PLATFORM_Y - 88, true, skill.effectColor);
+        this.spawnFirePillar(impactX, skill.effectColor);
+        this.damageEnemiesInRadius(impactX, PLATFORM_Y - 84, skill.radius ?? 280, skill.damage, player, skill);
+      });
+      return;
+    }
+
+    if (skill.id === "storm_breaker") {
+      for (let i = 0; i < (skill.strikeCount ?? 4); i++) {
+        this.time.delayedCall(i * 300, () => {
+          const target = this.nearestEnemy(player.sprite.x, skill.radius ?? 260);
+          if (!target) return;
+          this.spawnLightningWarning(target.sprite.x, target.sprite.y - target.sprite.displayHeight * 0.5, skill.effectColor);
+        });
+        this.time.delayedCall(i * 300 + 95, () => {
+          const target = this.nearestEnemy(player.sprite.x, skill.radius ?? 280);
+          if (!target) return;
+          this.cameras.main.shake(95, 0.004);
+          this.spawnLightning(target.sprite.x, target.sprite.y - target.sprite.displayHeight * 0.55, skill.effectColor);
+          this.applySkillHit(target, skill.damage, player, skill, 22);
+        });
+      }
+      return;
+    }
+
+    if (skill.id === "emerald_mirage") {
+      const hits = skill.hitCount ?? 5;
+      for (let i = 0; i < hits; i++) {
+        this.time.delayedCall(i * 95, () => {
+          const angle = (Math.PI * 2 * i) / hits;
+          const target = this.nearestEnemy(player.sprite.x, skill.radius ?? 230);
+          const centerX = target?.sprite.x ?? player.sprite.x;
+          const centerY = target ? target.sprite.y - target.sprite.displayHeight * 0.48 : player.sprite.y - 96;
+          const x = centerX + Math.cos(angle) * 92;
+          const y = centerY + Math.sin(angle) * 46;
+          this.spawnHeroAfterimage(player, x, PLATFORM_Y, skill.effectColor, centerX);
+          this.spawnSlashAt((x + centerX) / 2, (y + centerY) / 2, skill.effectColor, angle + Math.PI * 0.45);
+          this.damageEnemiesInRadius(centerX, centerY, skill.radius ?? 230, skill.damage, player, skill, false);
+        });
+      }
+    }
   }
 
   private updateEnemies(dt: number) {
     for (const enemy of this.enemies) {
-      const hitbox = enemy.update(dt, this.player.sprite.x);
-      if (hitbox && this.player.alive && overlaps(hitbox, this.player.getBounds())) {
-        this.player.takeDamage(enemy.data.damage, enemy.facing);
-        this.spawnHitSpark(this.player.sprite.x - enemy.facing * 26, this.player.sprite.y - 92);
+      const actions = enemy.update(dt, this.players);
+      if (enemy.isEnragedState() && !this.enrageLogged.has(enemy)) {
+        this.enrageLogged.add(enemy);
+        this.addLog("Boss enrage");
+        this.spawnBossEnrage(enemy);
+      }
+      for (const action of actions) this.handleEnemyAction(action);
+    }
+  }
+
+  private handleEnemyAction(action: EnemyAction) {
+    if (action.type === "shot") {
+      this.spawnEnemyProjectile(action);
+      return;
+    }
+    if (action.type === "slam") {
+      this.spawnShockwave(action.impactX, action.source.facing);
+      this.cameras.main.shake(150, 0.007);
+      this.addLog("Boss Ground Slam");
+    }
+    this.debugRects.push({ rect: action.hitbox, color: 0xff5b6d, life: 0.18 });
+    for (const player of this.players) {
+      if (!player.alive || !overlaps(action.hitbox, player.getBounds())) continue;
+      if (player.takeDamage(action.damage, action.source.facing)) {
+        this.spawnHitSpark(player.sprite.x - action.source.facing * 24, player.sprite.y - 92, 0xff6d57);
+        this.addLog(`P${player.id + 1} took ${Math.ceil(action.damage)} damage`);
       }
     }
+  }
+
+  private spawnEnemyProjectile(action: Extract<EnemyAction, { type: "shot" }>) {
+    const image = this.add
+      .image(action.x, action.y, AssetKeys.energyBlastSheet)
+      .setOrigin(0.5)
+      .setDepth(DEPTHS.projectile)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setFlipX(action.facing < 0)
+      .setTint(0x67f6ff);
+    image.setCrop(74, 0, 82, 145).setDisplaySize(86, 38);
+    this.projectiles.push({
+      image,
+      vx: action.facing * 430,
+      vy: 0,
+      damage: action.damage,
+      life: 1.35,
+      trailTimer: 0,
+      color: 0x67f6ff,
+      facing: action.facing,
+      owner: "enemy",
+    });
   }
 
   private updateProjectiles(dt: number) {
     for (const projectile of this.projectiles) {
       projectile.life -= dt;
       projectile.image.x += projectile.vx * dt;
+      projectile.image.y += projectile.vy * dt;
       projectile.image.rotation += projectile.facing * dt * 4;
-      const hitbox = this.projectileBounds(projectile.image);
-      for (const enemy of this.enemies) {
-        if (enemy.alive && overlaps(hitbox, enemy.getBounds())) {
-          enemy.takeDamage(projectile.damage, projectile.facing);
-          this.player.energize(5);
-          this.spawnHitSpark(enemy.sprite.x, enemy.sprite.y - enemy.sprite.displayHeight * 0.48);
-          projectile.life = 0;
-          break;
-        }
+      projectile.trailTimer -= dt;
+      if (projectile.trailTimer <= 0) {
+        projectile.trailTimer = projectile.owner === "player" ? 0.028 : 0.045;
+        this.spawnProjectileTrail(projectile);
       }
+      const hitbox = this.projectileBounds(projectile.image);
+      if (this.debugHitboxes) this.debugRects.push({ rect: hitbox, color: projectile.owner === "player" ? 0xffef72 : 0xff5b6d, life: 0.02 });
+
+      if (projectile.owner === "player") this.resolvePlayerProjectile(projectile, hitbox);
+      else this.resolveEnemyProjectile(projectile, hitbox);
+
       if (projectile.image.x < -80 || projectile.image.x > WORLD_WIDTH + 80) projectile.life = 0;
     }
     for (const projectile of this.projectiles.filter((item) => item.life <= 0)) projectile.image.destroy();
     this.projectiles = this.projectiles.filter((item) => item.life > 0);
   }
 
-  private hitEnemies(hitbox: RectLike, damage: number) {
+  private resolvePlayerProjectile(projectile: SkillProjectile, hitbox: RectLike) {
+    if (!projectile.skill || !projectile.attacker || projectile.life <= 0) return;
+    for (const enemy of this.enemies) {
+      if (!enemy.alive || !overlaps(hitbox, enemy.getBounds())) continue;
+      this.applySkillHit(enemy, projectile.damage, projectile.attacker, projectile.skill, projectile.skill.knockback ?? 18);
+      if (projectile.skill.explosionRadius) {
+        this.spawnExplosion(enemy.sprite.x, enemy.sprite.y - enemy.sprite.displayHeight * 0.48, false, projectile.skill.effectColor);
+        this.damageEnemiesInRadius(enemy.sprite.x, enemy.sprite.y - 80, projectile.skill.explosionRadius, projectile.skill.damage * 0.65, projectile.attacker, projectile.skill, false);
+      }
+      if (projectile.skill.chainRadius) this.chainLightning(enemy, projectile.attacker, projectile.skill);
+      projectile.life = 0;
+      break;
+    }
+  }
+
+  private resolveEnemyProjectile(projectile: SkillProjectile, hitbox: RectLike) {
+    for (const player of this.players) {
+      if (!player.alive || !overlaps(hitbox, player.getBounds())) continue;
+      if (player.takeDamage(projectile.damage, projectile.facing)) {
+        this.spawnHitSpark(player.sprite.x, player.sprite.y - 90, 0xff6d57);
+        this.addLog(`P${player.id + 1} took ${projectile.damage} shot damage`);
+      }
+      projectile.life = 0;
+      break;
+    }
+  }
+
+  private applyBasicHit(enemy: Enemy, damage: number, player: Player, attack: BasicAttackConfig, knockback = 22) {
+    enemy.takeDamage(damage, player.facing, knockback);
+    player.energize(attack.energyGainOnHit);
+    this.spawnHitSpark(enemy.sprite.x, enemy.sprite.y - enemy.sprite.displayHeight * 0.48, attack.effectColor);
+    if (!enemy.alive) this.logEnemyDefeated(enemy);
+    this.hitPauseTimer = Math.max(this.hitPauseTimer, 0.06);
+  }
+
+  private applySkillHit(enemy: Enemy, damage: number, player: Player, skill: SkillConfig, knockback = 24) {
+    enemy.takeDamage(damage, player.facing, knockback);
+    this.spawnHitSpark(enemy.sprite.x, enemy.sprite.y - enemy.sprite.displayHeight * 0.48, skill.effectColor);
+    if (skill.status && Math.random() <= (skill.statusChance ?? 1)) {
+      const applied = enemy.applyStatus(skill.status, skill.statusDuration);
+      if (applied) this.addLog(`${enemy.data.displayName} ${skill.status}`);
+    }
+    if (!enemy.alive) this.logEnemyDefeated(enemy);
+    this.hitPauseTimer = Math.max(this.hitPauseTimer, 0.06);
+  }
+
+  private logEnemyDefeated(enemy: Enemy) {
+    if (this.defeatedLogged.has(enemy)) return;
+    this.defeatedLogged.add(enemy);
+    this.addLog(`${enemy.data.displayName} defeated`);
+  }
+
+  private damageEnemiesInRadius(x: number, y: number, radius: number, damage: number, player: Player, skill: SkillConfig, pause = true) {
+    const hitbox = { x: x - radius, y: y - radius, width: radius * 2, height: radius * 2 };
+    this.debugRects.push({ rect: hitbox, color: skill.effectColor, life: 0.22 });
+    let hit = false;
     for (const enemy of this.enemies) {
       if (!enemy.alive) continue;
-      if (overlaps(hitbox, enemy.getBounds())) {
-        enemy.takeDamage(damage, this.player.facing);
-        this.player.energize(4);
-        this.spawnHitSpark(enemy.sprite.x, enemy.sprite.y - enemy.sprite.displayHeight * 0.48);
+      const bounds = enemy.getBounds();
+      const cx = bounds.x + bounds.width / 2;
+      const cy = bounds.y + bounds.height / 2;
+      if (Phaser.Math.Distance.Between(x, y, cx, cy) > radius) continue;
+      this.applySkillHit(enemy, damage, player, skill, skill.knockback ?? 42);
+      hit = true;
+    }
+    if (hit && pause) this.hitPauseTimer = Math.max(this.hitPauseTimer, 0.06);
+  }
+
+  private chainLightning(origin: Enemy, player: Player, skill: SkillConfig) {
+    const radius = skill.chainRadius ?? 170;
+    const target = this.enemies
+      .filter((enemy) => enemy !== origin && enemy.alive)
+      .sort((a, b) => Math.abs(a.sprite.x - origin.sprite.x) - Math.abs(b.sprite.x - origin.sprite.x))
+      .find((enemy) => Phaser.Math.Distance.Between(origin.sprite.x, origin.sprite.y, enemy.sprite.x, enemy.sprite.y) <= radius);
+    if (!target) return;
+    this.spawnLightning(target.sprite.x, target.sprite.y - target.sprite.displayHeight * 0.48, skill.effectColor);
+    this.applySkillHit(target, skill.damage * (skill.chainDamageMultiplier ?? 0.5), player, skill, 12);
+  }
+
+  private spawnElectricCage(player: Player, skill: SkillConfig) {
+    const radius = skill.radius ?? 170;
+    const x = player.sprite.x + player.facing * 118;
+    const y = PLATFORM_Y - 78;
+    const visual = this.add.graphics().setDepth(DEPTHS.effect + 2);
+    this.drawElectricCageVisual(visual, x, y, radius, skill.effectColor, 1);
+    this.activeAreas.push({
+      kind: "electric_cage",
+      x,
+      y,
+      radius,
+      life: skill.duration ?? 2.2,
+      maxLife: skill.duration ?? 2.2,
+      tick: 0,
+      tickRate: skill.tickRate ?? 0.45,
+      damage: skill.damage,
+      owner: player,
+      skill,
+      visual,
+    });
+    this.addLog("Electric Cage active");
+  }
+
+  private spawnToxicSpiral(player: Player, skill: SkillConfig) {
+    const radius = skill.radius ?? 165;
+    const x = player.sprite.x;
+    const y = player.sprite.y - 92;
+    this.spawnSpiralBurst(x, y, radius, skill.effectColor);
+    this.activeAreas.push({
+      kind: "toxic_spiral",
+      x,
+      y,
+      radius,
+      life: skill.duration ?? 1.8,
+      maxLife: skill.duration ?? 1.8,
+      tick: 0,
+      tickRate: skill.tickRate ?? 0.3,
+      damage: Math.max(4, skill.damage * 0.28),
+      owner: player,
+      skill,
+      visual: this.add.graphics().setDepth(DEPTHS.effect + 2),
+    });
+    for (const enemy of this.enemies) {
+      if (!enemy.alive) continue;
+      const bounds = enemy.getBounds();
+      const cx = bounds.x + bounds.width / 2;
+      const cy = bounds.y + bounds.height / 2;
+      if (Phaser.Math.Distance.Between(x, y, cx, cy) > radius) continue;
+      enemy.pullToward(x, 24);
+      this.applySkillHit(enemy, skill.damage, player, skill, 0);
+    }
+  }
+
+  private updateActiveAreas(dt: number) {
+    for (const area of this.activeAreas) {
+      area.life -= dt;
+      area.tick -= dt;
+      const alpha = Phaser.Math.Clamp(area.life / area.maxLife, 0, 1);
+      if (area.kind === "electric_cage") this.drawElectricCageVisual(area.visual, area.x, area.y, area.radius, area.skill.effectColor, alpha);
+      else this.drawToxicSpiralVisual(area.visual, area.x, area.y, area.radius, area.skill.effectColor, alpha);
+      if (area.tick <= 0) {
+        area.tick += area.tickRate;
+        this.tickActiveArea(area);
       }
+    }
+    for (const area of this.activeAreas.filter((item) => item.life <= 0)) area.visual.destroy();
+    this.activeAreas = this.activeAreas.filter((item) => item.life > 0);
+  }
+
+  private tickActiveArea(area: ActiveArea) {
+    const hitbox = {
+      x: area.x - area.radius,
+      y: area.y - area.radius,
+      width: area.radius * 2,
+      height: area.radius * 2,
+    };
+    this.debugRects.push({ rect: hitbox, color: area.skill.effectColor, life: 0.08 });
+    for (const enemy of this.enemies) {
+      if (!enemy.alive) continue;
+      const bounds = enemy.getBounds();
+      const cx = bounds.x + bounds.width / 2;
+      const cy = bounds.y + bounds.height / 2;
+      if (Phaser.Math.Distance.Between(area.x, area.y, cx, cy) > area.radius) continue;
+      if (area.kind === "toxic_spiral") enemy.pullToward(area.x, (area.skill.pullStrength ?? 90) * 0.08);
+      this.applySkillHit(enemy, area.damage, area.owner, area.skill, area.kind === "toxic_spiral" ? 0 : area.skill.knockback ?? 8);
     }
   }
 
@@ -243,69 +782,519 @@ export class GameScene extends Phaser.Scene {
     const dead = this.enemies.filter((enemy) => !enemy.alive);
     for (const enemy of dead) {
       this.score += enemy.scoreValue;
-      this.spawnExplosion(enemy.sprite.x, enemy.sprite.y - enemy.sprite.displayHeight * 0.45, enemy.kind === "horned_mutant");
+      this.logEnemyDefeated(enemy);
+      if (enemy.isBoss()) {
+        this.cameras.main.shake(360, 0.01);
+        this.addLog("Boss defeated bonus");
+        this.spawnExplosion(enemy.sprite.x, enemy.sprite.y - enemy.sprite.displayHeight * 0.45, true, 0x18e6ff);
+        this.spawnExplosion(enemy.sprite.x - 74, enemy.sprite.y - enemy.sprite.displayHeight * 0.34, true, 0xff7a32);
+        this.spawnExplosion(enemy.sprite.x + 82, enemy.sprite.y - enemy.sprite.displayHeight * 0.58, true, 0x67f6ff);
+      } else {
+        this.spawnExplosion(enemy.sprite.x, enemy.sprite.y - enemy.sprite.displayHeight * 0.45, false, 0x18e6ff);
+      }
       enemy.destroy();
     }
     this.enemies = this.enemies.filter((enemy) => enemy.alive);
   }
 
-  private spawnWaves() {
-    for (const wave of this.waves) {
-      if (wave.spawned || this.player.sprite.x < wave.triggerX) continue;
-      wave.spawned = true;
-      for (const entry of wave.enemies) this.spawnEnemy(entry.kind, entry.x);
-      this.showMessage("ENEMY CONTACT", 0.9);
+  private updateWaveFlow(dt: number) {
+    if (this.enemies.length > 0 || this.stageClear || this.gameOver) return;
+
+    if (this.waitingNextWave) {
+      this.waveWait -= dt;
+      if (this.waveWait <= 0) {
+        this.waitingNextWave = false;
+        this.startNextWave();
+      }
+      return;
     }
+
+    if (this.waveIndex >= this.waves.length - 1) {
+      this.finishRun("STAGE CLEAR", "Neon sector secured.");
+      return;
+    }
+
+    this.addLog(`Wave ${this.waveIndex + 1} clear`);
+    this.waitingNextWave = true;
+    this.waveWait = 0.9;
   }
 
-  private spawnEnemy(kind: EnemyKind, x: number) {
-    this.enemies.push(new Enemy(this, kind, x));
+  private startNextWave() {
+    this.waveIndex += 1;
+    const wave = this.waves[this.waveIndex];
+    if (!wave) return;
+    this.showMessage(wave.label, 1);
+    this.addLog(`Wave start: ${wave.label}`);
+    wave.enemies.forEach((kind, index) => this.spawnWaveEnemy(kind, index, this.waveIndex));
   }
 
-  private spawnBlastProjectile(spawn: BlastSpawn) {
-    const image = this.add
-      .image(spawn.x, spawn.y, AssetKeys.energyBlastSheet)
-      .setOrigin(0.5)
-      .setDepth(DEPTHS.projectile)
-      .setBlendMode(Phaser.BlendModes.ADD)
-      .setFlipX(spawn.facing < 0);
-    image.setCrop(246, 0, 190, 145).setDisplaySize(174, 50);
-    image.setTint(spawn.color);
-    this.projectiles.push({
-      image,
-      vx: spawn.facing * 830,
-      damage: spawn.damage,
-      life: 1.05,
-      facing: spawn.facing,
+  private spawnWaveEnemy(kind: EnemyKind, index: number, waveLevel: number) {
+    const front = Math.max(...this.players.map((player) => player.sprite.x));
+    let x = Phaser.Math.Clamp(front + 620 + index * 180, PLAYER_START_X + 620, WORLD_WIDTH - 260);
+    while (this.enemies.some((enemy) => Math.abs(enemy.sprite.x - x) < 145)) x += 145;
+    this.spawnEnemy(kind, x, waveLevel);
+  }
+
+  private spawnEnemy(kind: EnemyKind, x: number, waveLevel = 0) {
+    const playerFront = Math.max(...this.players.map((player) => player.sprite.x));
+    const safeX = Math.abs(x - playerFront) < 600 ? playerFront + 620 : x;
+    const enemy = new Enemy(this, kind, Phaser.Math.Clamp(safeX, 160, WORLD_WIDTH - 160), waveLevel);
+    this.enemies.push(enemy);
+    if (enemy.isBoss()) this.spawnBossIntro(enemy);
+  }
+
+  private spawnBossIntro(enemy: Enemy) {
+    this.addLog("Boss spawn: Horned Mutant");
+    this.showMessage("BOSS APPROACHING", 1);
+    this.cameras.main.shake(210, 0.006);
+    const ring = this.add.graphics().setDepth(DEPTHS.effect + 2).setBlendMode(Phaser.BlendModes.ADD);
+    const x = enemy.sprite.x;
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: 620,
+      onUpdate: (tween) => {
+        const value = tween.getValue() ?? 0;
+        ring.clear();
+        ring.lineStyle(5, 0x18e6ff, 1 - value);
+        ring.strokeEllipse(x, PLATFORM_Y + 2, 90 + value * 240, 14 + value * 42);
+        ring.fillStyle(0x18e6ff, 0.12 * (1 - value));
+        ring.fillEllipse(x, PLATFORM_Y - 72, 130 + value * 180, 180 + value * 120);
+      },
+      onComplete: () => ring.destroy(),
     });
   }
 
-  private spawnSlashEffect() {
-    const key = this.textures.exists(AssetKeys.slash2) ? AssetKeys.slash2 : AssetKeys.slash1;
+  private spawnBossEnrage(enemy: Enemy) {
+    this.cameras.main.shake(220, 0.007);
+    const aura = this.add.graphics().setDepth(DEPTHS.effect + 1).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: 520,
+      onUpdate: (tween) => {
+        const value = tween.getValue() ?? 0;
+        aura.clear();
+        aura.lineStyle(4, 0xff4c4c, 0.88 * (1 - value));
+        aura.strokeEllipse(enemy.sprite.x, PLATFORM_Y - 6, 122 + value * 180, 26 + value * 38);
+        aura.fillStyle(0xff2f2f, 0.13 * (1 - value));
+        aura.fillEllipse(enemy.sprite.x, enemy.sprite.y - enemy.sprite.displayHeight * 0.48, enemy.sprite.displayWidth * 0.82, enemy.sprite.displayHeight * 0.84);
+      },
+      onComplete: () => aura.destroy(),
+    });
+  }
+
+  private resolveBodySpacing() {
+    for (const enemy of this.enemies) {
+      if (!enemy.alive || enemy.kind === "sky_hunter") continue;
+      for (const player of this.players) {
+        if (!player.alive) continue;
+        const dx = enemy.sprite.x - player.sprite.x;
+        if (Math.abs(dx) < 76) enemy.sprite.x += (dx >= 0 ? 1 : -1) * (76 - Math.abs(dx)) * 0.42;
+      }
+    }
+    for (let i = 0; i < this.enemies.length; i++) {
+      const a = this.enemies[i];
+      if (a.kind === "sky_hunter") continue;
+      for (let j = i + 1; j < this.enemies.length; j++) {
+        const b = this.enemies[j];
+        if (b.kind === "sky_hunter") continue;
+        const dx = b.sprite.x - a.sprite.x;
+        if (Math.abs(dx) < 92) {
+          const push = (92 - Math.abs(dx)) * 0.28;
+          a.sprite.x -= (dx >= 0 ? 1 : -1) * push;
+          b.sprite.x += (dx >= 0 ? 1 : -1) * push;
+        }
+      }
+    }
+  }
+
+  private checkGameOver() {
+    if (this.players.some((player) => player.alive)) return;
+    this.finishRun("GAME OVER", "Armor cores offline.");
+  }
+
+  private finishRun(title: string, detail: string) {
+    if (!this.running) return;
+    this.setPaused(false, false);
+    this.running = false;
+    this.stageClear = title === "STAGE CLEAR";
+    this.gameOver = title !== "STAGE CLEAR";
+    this.time.timeScale = 1;
+    this.tweens.timeScale = 1;
+    this.addLog(`${title}: SCORE ${this.score}`);
+    this.createResultOverlay(title, detail);
+  }
+
+  private createResultOverlay(title: string, detail: string) {
+    this.resultOverlay?.destroy();
+    const overlay = this.add.container(0, 0).setScrollFactor(0).setDepth(DEPTHS.hud + 40);
+    this.resultOverlay = overlay;
+    overlay.add(this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.72).setOrigin(0));
+    const panel = this.add.graphics();
+    panel.fillStyle(0x061727, 0.96);
+    panel.fillRoundedRect(GAME_WIDTH / 2 - 235, GAME_HEIGHT / 2 - 130, 470, 260, 8);
+    panel.lineStyle(2, this.stageClear ? 0x18e6ff : 0xff5b6d, 0.92);
+    panel.strokeRoundedRect(GAME_WIDTH / 2 - 235, GAME_HEIGHT / 2 - 130, 470, 260, 8);
+    overlay.add(panel);
+    overlay.add(this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 82, title, {
+      fontFamily: "Arial, sans-serif",
+      fontSize: "42px",
+      fontStyle: "900",
+      color: this.stageClear ? "#8cf8ff" : "#ffb3b8",
+      stroke: "#02070d",
+      strokeThickness: 7,
+    }).setOrigin(0.5));
+    overlay.add(this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 24, `${detail}\nSCORE ${this.score.toString().padStart(4, "0")}`, {
+      fontFamily: "Arial, sans-serif",
+      fontSize: "18px",
+      fontStyle: "900",
+      align: "center",
+      color: "#eaf8ff",
+      stroke: "#02070d",
+      strokeThickness: 4,
+    }).setOrigin(0.5));
+    overlay.add(this.createOverlayButton(GAME_WIDTH / 2 - 150, GAME_HEIGHT / 2 + 56, "Choi lai", () => this.restartRun()));
+    overlay.add(this.createOverlayButton(GAME_WIDTH / 2 + 18, GAME_HEIGHT / 2 + 56, "Ve menu", () => this.returnToMenu({ title, detail })));
+  }
+
+  private createOverlayButton(x: number, y: number, label: string, onClick: () => void) {
+    const width = 132;
+    const height = 46;
+    const container = this.add.container(x, y).setSize(width, height);
+    const bg = this.add.rectangle(0, 0, width, height, 0x0b2a46, 0.95).setOrigin(0).setStrokeStyle(1, 0x8cf8ff, 0.82);
+    const glow = this.add.rectangle(0, 0, width, height, 0x18e6ff, 0.14).setOrigin(0).setVisible(false);
+    const text = this.add.text(width / 2, height / 2, label, {
+      fontFamily: "Arial, sans-serif",
+      fontSize: "16px",
+      fontStyle: "900",
+      color: "#eaf8ff",
+    }).setOrigin(0.5);
+    container.add([glow, bg, text]);
+    let pressed = false;
+    bg
+      .setInteractive(new Phaser.Geom.Rectangle(0, 0, width, height), Phaser.Geom.Rectangle.Contains)
+      .on("pointerover", () => {
+        glow.setVisible(true);
+        bg.setFillStyle(0x12577c, 1).setStrokeStyle(2, 0x8cf8ff, 1);
+        text.setShadow(0, 0, "#8cf8ff", 8, true, true);
+      })
+      .on("pointerout", () => {
+        pressed = false;
+        glow.setVisible(false);
+        bg.setFillStyle(0x0b2a46, 0.95).setStrokeStyle(1, 0x8cf8ff, 0.82);
+        text.setShadow(0, 0, "#000000", 0, false, false);
+        container.setScale(1);
+      })
+      .on("pointerdown", () => {
+        pressed = true;
+        container.setScale(0.97);
+      })
+      .on("pointerup", () => {
+        container.setScale(1);
+        if (!pressed) return;
+        pressed = false;
+        onClick();
+      });
+    return container;
+  }
+
+  private handlePauseToggle() {
+    if (!this.running || this.stageClear || this.gameOver) return;
+    if (this.isJust("KeyP", "Escape")) this.setPaused(!this.paused);
+  }
+
+  private setPaused(paused: boolean, log = true) {
+    if (paused && (!this.running || this.stageClear || this.gameOver)) return;
+    if (this.paused === paused) return;
+    this.paused = paused;
+    this.time.timeScale = paused ? 0 : 1;
+    this.tweens.timeScale = paused ? 0 : 1;
+    if (paused) {
+      this.createPauseOverlay();
+      if (log) this.addLog("Pause");
+    } else {
+      this.pauseOverlay?.destroy();
+      this.pauseOverlay = undefined;
+      if (log) this.addLog("Resume");
+    }
+  }
+
+  private createPauseOverlay() {
+    this.pauseOverlay?.destroy();
+    const overlay = this.add.container(0, 0).setScrollFactor(0).setDepth(DEPTHS.hud + 60);
+    this.pauseOverlay = overlay;
+    overlay.add(this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.62).setOrigin(0));
+
+    const panel = this.add.graphics();
+    panel.fillStyle(0x061727, 0.97);
+    panel.fillRoundedRect(GAME_WIDTH / 2 - 210, GAME_HEIGHT / 2 - 154, 420, 308, 8);
+    panel.lineStyle(2, 0x18e6ff, 0.95);
+    panel.strokeRoundedRect(GAME_WIDTH / 2 - 210, GAME_HEIGHT / 2 - 154, 420, 308, 8);
+    panel.lineStyle(1, 0xf6c65a, 0.72);
+    panel.strokeRoundedRect(GAME_WIDTH / 2 - 198, GAME_HEIGHT / 2 - 142, 396, 284, 6);
+    overlay.add(panel);
+
+    overlay.add(this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 98, "PAUSED", {
+      fontFamily: "Arial, sans-serif",
+      fontSize: "42px",
+      fontStyle: "900",
+      color: "#8cf8ff",
+      stroke: "#02070d",
+      strokeThickness: 7,
+    }).setOrigin(0.5).setShadow(0, 0, "#18e6ff", 12, true, true));
+
+    overlay.add(this.createOverlayButton(GAME_WIDTH / 2 - 66, GAME_HEIGHT / 2 - 40, "Tiep tuc", () => this.setPaused(false)));
+    overlay.add(this.createOverlayButton(GAME_WIDTH / 2 - 66, GAME_HEIGHT / 2 + 18, "Choi lai", () => this.restartRun()));
+    overlay.add(this.createOverlayButton(GAME_WIDTH / 2 - 66, GAME_HEIGHT / 2 + 76, "Ve menu", () => this.returnToMenu()));
+  }
+
+  private restartRun() {
+    this.addLog("Restart");
+    this.paused = false;
+    this.time.timeScale = 1;
+    this.tweens.timeScale = 1;
+    touchControls.clearJust();
+    this.justCodes.clear();
+    this.scene.restart({ heroId: this.selectedHero.id, playerCount: this.playerCount });
+  }
+
+  private returnToMenu(result?: { title: string; detail: string }) {
+    this.addLog("Return menu");
+    this.paused = false;
+    this.time.timeScale = 1;
+    this.tweens.timeScale = 1;
+    touchControls.clearJust();
+    this.justCodes.clear();
+    this.scene.start("MenuScene", {
+      heroId: this.selectedHero.id,
+      playerCount: this.playerCount,
+      result: result
+        ? { title: result.title, detail: result.detail, score: this.score, heroId: this.selectedHero.id, playerCount: this.playerCount }
+        : undefined,
+    });
+  }
+
+  private spawnBasicSlashEffect(player: Player, attack: BasicAttackConfig) {
     const slash = this.add
-      .image(this.player.sprite.x + this.player.facing * 82, this.player.sprite.y - 90, key)
+      .image(player.sprite.x + player.facing * (attack.range * 0.45), player.sprite.y - 86, AssetKeys.slash1)
       .setOrigin(0.5)
       .setDepth(DEPTHS.effect)
       .setBlendMode(Phaser.BlendModes.ADD)
-      .setFlipX(this.player.facing < 0)
-      .setTint(this.hero.themeColor)
-      .setDisplaySize(168, 116);
+      .setFlipX(player.facing < 0)
+      .setTint(attack.effectColor)
+      .setDisplaySize(attack.range + 18, 92);
+    this.tweens.add({
+      targets: slash,
+      alpha: 0,
+      scaleX: slash.scaleX * 1.18,
+      scaleY: slash.scaleY * 1.18,
+      duration: 160,
+      onComplete: () => slash.destroy(),
+    });
+  }
+
+  private spawnRisingBladeColumn(x: number, color: number) {
+    const column = this.add.graphics().setDepth(DEPTHS.effect + 3).setBlendMode(Phaser.BlendModes.ADD);
+    const shards: Phaser.GameObjects.GameObject[] = [];
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: 330,
+      onUpdate: (tween) => {
+        const value = tween.getValue() ?? 0;
+        const alpha = 1 - value;
+        column.clear();
+        column.fillStyle(color, 0.16 * alpha);
+        column.fillEllipse(x, PLATFORM_Y - 122, 92 + value * 58, 285 + value * 70);
+        column.lineStyle(7, color, 0.95 * alpha);
+        column.lineBetween(x, PLATFORM_Y - 8, x + Math.sin(value * 16) * 12, PLATFORM_Y - 270 - value * 18);
+        column.lineStyle(3, 0xffffff, 0.68 * alpha);
+        column.lineBetween(x - 20, PLATFORM_Y - 18, x - 6, PLATFORM_Y - 235);
+        column.lineBetween(x + 23, PLATFORM_Y - 26, x + 6, PLATFORM_Y - 252);
+      },
+      onComplete: () => column.destroy(),
+    });
+    for (let i = 0; i < 12; i++) {
+      const shard = this.add
+        .triangle(x + Phaser.Math.Between(-36, 36), PLATFORM_Y - 8, 0, 12, 6, 0, 12, 12, i % 3 === 0 ? 0xffffff : color, 0.86)
+        .setDepth(DEPTHS.effect + 2)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setRotation(Phaser.Math.FloatBetween(-0.8, 0.8));
+      shards.push(shard);
+      this.tweens.add({
+        targets: shard,
+        x: shard.x + Phaser.Math.Between(-58, 58),
+        y: shard.y - Phaser.Math.Between(82, 190),
+        alpha: 0,
+        rotation: shard.rotation + Phaser.Math.FloatBetween(-2.2, 2.2),
+        duration: 360 + i * 18,
+        onComplete: () => shard.destroy(),
+      });
+    }
+  }
+
+  private spawnInfernoArcVisual(player: Player, skill: SkillConfig, range: number) {
+    const x = player.sprite.x + player.facing * (range * 0.48);
+    const y = player.sprite.y - 92;
+    const slash = this.add
+      .image(x, y, AssetKeys.slash2)
+      .setOrigin(0.5)
+      .setDepth(DEPTHS.effect + 2)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setFlipX(player.facing < 0)
+      .setTint(skill.effectColor)
+      .setRotation(player.facing * -0.18)
+      .setDisplaySize(range + 118, 214);
+    const arc = this.add.graphics().setDepth(DEPTHS.effect + 1).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: 260,
+      onUpdate: (tween) => {
+        const value = tween.getValue() ?? 0;
+        arc.clear();
+        arc.lineStyle(14, skill.effectColor, 0.68 * (1 - value));
+        arc.beginPath();
+        const start = player.facing > 0 ? -1.35 : Math.PI + 1.35;
+        const end = player.facing > 0 ? 1.35 : Math.PI - 1.35;
+        arc.arc(player.sprite.x, y + 30, range * (0.64 + value * 0.22), start, end, player.facing < 0);
+        arc.strokePath();
+        arc.lineStyle(5, 0xfff0a2, 0.42 * (1 - value));
+        arc.beginPath();
+        arc.arc(player.sprite.x, y + 30, range * (0.45 + value * 0.16), start, end, player.facing < 0);
+        arc.strokePath();
+      },
+      onComplete: () => arc.destroy(),
+    });
+    this.tweens.add({
+      targets: slash,
+      alpha: 0,
+      scaleX: slash.scaleX * 1.28,
+      scaleY: slash.scaleY * 1.12,
+      duration: 260,
+      onComplete: () => slash.destroy(),
+    });
+    this.spawnFlameWisps(x, y, skill.effectColor);
+  }
+
+  private spawnFireTrail(x: number, facing: -1 | 1, skill: SkillConfig) {
+    const fire = this.add.graphics().setDepth(DEPTHS.effect).setBlendMode(Phaser.BlendModes.ADD);
+    const startX = x - facing * 118;
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: 600,
+      onUpdate: (tween) => {
+        const value = tween.getValue() ?? 0;
+        fire.clear();
+        for (let i = 0; i < 9; i++) {
+          const px = startX + facing * i * 28;
+          const flameHeight = 22 + Math.sin(this.time.now * 0.018 + i) * 8;
+          fire.fillStyle(i % 2 === 0 ? skill.effectColor : 0xffd35a, 0.72 * (1 - value));
+          fire.fillTriangle(px - 10, PLATFORM_Y - 5, px, PLATFORM_Y - flameHeight, px + 10, PLATFORM_Y - 5);
+        }
+        fire.lineStyle(3, skill.effectColor, 0.42 * (1 - value));
+        fire.lineBetween(startX - facing * 14, PLATFORM_Y - 7, startX + facing * 252, PLATFORM_Y - 7);
+      },
+      onComplete: () => fire.destroy(),
+    });
+  }
+
+  private spawnSlashEffect(player: Player, skill: SkillConfig, range: number) {
+    const key = this.textures.exists(AssetKeys.slash2) ? AssetKeys.slash2 : AssetKeys.slash1;
+    const height = skill.id === "inferno_arc" ? 156 : skill.id === "rising_blade" ? 146 : 118;
+    const slash = this.add
+      .image(player.sprite.x + player.facing * (range * 0.46), player.sprite.y - 90, key)
+      .setOrigin(0.5)
+      .setDepth(DEPTHS.effect)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setFlipX(player.facing < 0)
+      .setTint(skill.effectColor)
+      .setDisplaySize(range + 36, height);
+    if (skill.id === "rising_blade") slash.setRotation(player.facing * -0.18);
+    if (skill.id === "inferno_arc") this.spawnFlameWisps(player.sprite.x + player.facing * 88, player.sprite.y - 96, skill.effectColor);
     this.tweens.add({
       targets: slash,
       alpha: 0,
       scaleX: slash.scaleX * 1.22,
       scaleY: slash.scaleY * 1.22,
-      duration: 260,
+      duration: 240,
       onComplete: () => slash.destroy(),
     });
   }
 
-  private spawnHitSpark(x: number, y: number) {
+  private spawnProjectileTrail(projectile: SkillProjectile) {
+    const color = projectile.color;
+    const x = projectile.image.x - projectile.facing * 58;
+    const y = projectile.image.y + Phaser.Math.Between(-5, 5);
+
+    if (projectile.skill?.id === "thunder_bolt") {
+      const g = this.add.graphics().setDepth(DEPTHS.effect).setBlendMode(Phaser.BlendModes.ADD);
+      g.lineStyle(2, color, 0.78);
+      g.lineBetween(x - projectile.facing * 28, y - 8, x, y + 7);
+      g.lineBetween(x, y + 7, x + projectile.facing * 28, y - 4);
+      this.tweens.add({ targets: g, alpha: 0, duration: 120, onComplete: () => g.destroy() });
+      return;
+    }
+
+    const trail = this.add
+      .ellipse(x, y, projectile.skill?.id === "fire_burst" ? 28 : 22, projectile.skill?.id === "wind_pulse" ? 18 : 12, color, projectile.owner === "enemy" ? 0.38 : 0.52)
+      .setDepth(DEPTHS.effect)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: trail,
+      alpha: 0,
+      scaleX: projectile.skill?.id === "wind_pulse" ? 1.9 : 1.45,
+      scaleY: 0.4,
+      duration: projectile.skill?.id === "fire_burst" ? 180 : 140,
+      onComplete: () => trail.destroy(),
+    });
+  }
+
+  private spawnFlameWisps(x: number, y: number, color: number) {
+    for (let i = 0; i < 7; i++) {
+      const ember = this.add
+        .ellipse(x + Phaser.Math.Between(-48, 48), y + Phaser.Math.Between(-28, 20), 12, 18, i % 2 === 0 ? 0xffd45f : color, 0.78)
+        .setDepth(DEPTHS.effect + 1)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({
+        targets: ember,
+        y: ember.y - Phaser.Math.Between(22, 54),
+        alpha: 0,
+        scaleX: 0.45,
+        duration: 260 + i * 18,
+        onComplete: () => ember.destroy(),
+      });
+    }
+  }
+
+  private spawnSlashAt(x: number, y: number, color: number, rotation: number) {
+    const slash = this.add
+      .image(x, y, AssetKeys.slash1)
+      .setOrigin(0.5)
+      .setDepth(DEPTHS.effect)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(color)
+      .setRotation(rotation)
+      .setDisplaySize(150, 110);
+    this.tweens.add({
+      targets: slash,
+      alpha: 0,
+      scaleX: slash.scaleX * 1.25,
+      scaleY: slash.scaleY * 1.25,
+      duration: 220,
+      onComplete: () => slash.destroy(),
+    });
+  }
+
+  private spawnHitSpark(x: number, y: number, color: number) {
     const spark = this.add
       .image(x, y, AssetKeys.hitSparksSheet)
       .setOrigin(0.5)
       .setDepth(DEPTHS.effect + 1)
-      .setBlendMode(Phaser.BlendModes.ADD);
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(color);
     const frame = Phaser.Math.Between(0, 4);
     spark.setCrop(frame * 71, 0, 71, 145).setDisplaySize(74, 58);
     this.tweens.add({
@@ -318,37 +1307,361 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private spawnExplosion(x: number, y: number, large: boolean) {
+  private spawnExplosion(x: number, y: number, large: boolean, color: number) {
     const explosion = this.add
       .image(x, y, AssetKeys.explosionsSheet)
       .setOrigin(0.5)
       .setDepth(DEPTHS.effect + 2)
-      .setBlendMode(Phaser.BlendModes.ADD);
-    explosion.setCrop(330, 0, 155, 155).setDisplaySize(large ? 190 : 132, large ? 164 : 116);
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(color);
+    explosion.setCrop(330, 0, 155, 155).setDisplaySize(large ? 220 : 132, large ? 188 : 116);
     this.tweens.add({
       targets: explosion,
       alpha: 0,
       scaleX: explosion.scaleX * 1.45,
       scaleY: explosion.scaleY * 1.45,
-      duration: large ? 360 : 260,
+      duration: large ? 380 : 260,
       onComplete: () => explosion.destroy(),
     });
   }
 
-  private spawnDashTrail() {
+  private spawnNovaCharge(player: Player, color: number) {
+    const aura = this.add.graphics().setDepth(DEPTHS.effect + 2).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: 200,
+      onUpdate: (tween) => {
+        const value = tween.getValue() ?? 0;
+        aura.clear();
+        aura.lineStyle(3, color, 0.82);
+        aura.strokeCircle(player.sprite.x, player.sprite.y - 92, 72 - value * 30);
+        aura.fillStyle(color, 0.13 + value * 0.16);
+        aura.fillCircle(player.sprite.x, player.sprite.y - 92, 44 + value * 18);
+      },
+      onComplete: () => aura.destroy(),
+    });
+    for (let i = 0; i < 10; i++) {
+      const angle = (Math.PI * 2 * i) / 10;
+      const shard = this.add
+        .triangle(
+          player.sprite.x + Math.cos(angle) * 118,
+          player.sprite.y - 92 + Math.sin(angle) * 62,
+          0,
+          10,
+          5,
+          0,
+          10,
+          10,
+          color,
+          0.78,
+        )
+        .setDepth(DEPTHS.effect + 2)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setRotation(angle);
+      this.tweens.add({
+        targets: shard,
+        x: player.sprite.x,
+        y: player.sprite.y - 92,
+        alpha: 0,
+        duration: 190,
+        onComplete: () => shard.destroy(),
+      });
+    }
+  }
+
+  private spawnPlasmaRing(x: number, y: number, radius: number, color: number) {
+    const ring = this.add.graphics().setDepth(DEPTHS.effect + 3).setBlendMode(Phaser.BlendModes.ADD);
+    ring.lineStyle(5, color, 0.9);
+    ring.strokeCircle(x, y, 38);
+    ring.lineStyle(2, 0xffffff, 0.56);
+    ring.strokeCircle(x, y, 20);
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: 360,
+      onUpdate: (tween) => {
+        const value = tween.getValue();
+        if (value === null) return;
+        ring.clear();
+        ring.lineStyle(5, color, 0.9 * (1 - value));
+        ring.strokeCircle(x, y, 38 + radius * value);
+        ring.lineStyle(2, 0xffffff, 0.42 * (1 - value));
+        ring.strokeCircle(x, y, 22 + radius * 0.62 * value);
+      },
+      onComplete: () => ring.destroy(),
+    });
+  }
+
+  private spawnPlasmaDome(x: number, y: number, radius: number, color: number) {
+    const dome = this.add.graphics().setDepth(DEPTHS.effect + 1).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: 420,
+      onUpdate: (tween) => {
+        const value = tween.getValue() ?? 0;
+        dome.clear();
+        dome.fillStyle(color, 0.2 * (1 - value));
+        dome.fillCircle(x, y, radius * (0.25 + value * 0.75));
+        dome.lineStyle(2, 0xffffff, 0.32 * (1 - value));
+        for (let i = 0; i < 14; i++) {
+          const angle = (Math.PI * 2 * i) / 14 + value * 0.8;
+          const inner = radius * value * 0.45;
+          const outer = radius * value;
+          dome.lineBetween(x + Math.cos(angle) * inner, y + Math.sin(angle) * inner, x + Math.cos(angle) * outer, y + Math.sin(angle) * outer);
+        }
+      },
+      onComplete: () => dome.destroy(),
+    });
+  }
+
+  private spawnSpiralBurst(x: number, y: number, radius: number, color: number) {
+    const g = this.add.graphics().setDepth(DEPTHS.effect + 2).setBlendMode(Phaser.BlendModes.ADD);
+    const turns = 2.35;
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: 300,
+      onUpdate: (tween) => {
+        const value = tween.getValue();
+        if (value === null) return;
+        g.clear();
+        g.lineStyle(4, color, 0.75 * (1 - value));
+        for (let arm = 0; arm < 3; arm++) {
+          let lastX = x;
+          let lastY = y;
+          for (let i = 1; i < 18; i++) {
+            const pct = i / 18;
+            const angle = arm * 2.1 + pct * Math.PI * turns + value * 2.2;
+            const px = x + Math.cos(angle) * radius * pct;
+            const py = y + Math.sin(angle) * radius * pct * 0.52;
+            g.lineBetween(lastX, lastY, px, py);
+            lastX = px;
+            lastY = py;
+          }
+        }
+      },
+      onComplete: () => g.destroy(),
+    });
+  }
+
+  private drawElectricCageVisual(graphics: Phaser.GameObjects.Graphics, x: number, y: number, radius: number, color: number, alpha: number) {
+    graphics.clear();
+    const nodes: Phaser.Math.Vector2[] = [];
+    graphics.lineStyle(3, color, 0.72 * alpha);
+    graphics.strokeEllipse(x, y + 38, radius * 1.72, radius * 0.52);
+    for (let i = 0; i < 8; i++) {
+      const angle = (Math.PI * 2 * i) / 8 + this.time.now * 0.004;
+      nodes.push(new Phaser.Math.Vector2(x + Math.cos(angle) * radius * 0.82, y + 38 + Math.sin(angle) * radius * 0.25));
+    }
+    graphics.lineStyle(2, 0xc9fbff, 0.48 * alpha);
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i];
+      const next = nodes[(i + 1) % nodes.length];
+      const midX = (node.x + next.x) / 2 + Math.sin(this.time.now * 0.02 + i) * 12;
+      const midY = (node.y + next.y) / 2 + Math.cos(this.time.now * 0.018 + i) * 8;
+      graphics.lineBetween(node.x, node.y, midX, midY);
+      graphics.lineBetween(midX, midY, next.x, next.y);
+      graphics.fillStyle(i % 2 === 0 ? color : 0xffffff, 0.86 * alpha);
+      graphics.fillCircle(node.x, node.y, 5 + Math.sin(this.time.now * 0.014 + i) * 1.5);
+      graphics.lineStyle(2, color, 0.34 * alpha);
+      graphics.lineBetween(node.x, node.y, x, y - 72);
+      graphics.lineStyle(2, 0xc9fbff, 0.48 * alpha);
+    }
+  }
+
+  private drawToxicSpiralVisual(graphics: Phaser.GameObjects.Graphics, x: number, y: number, radius: number, color: number, alpha: number) {
+    graphics.clear();
+    const time = this.time.now * 0.006;
+    graphics.fillStyle(color, 0.08 * alpha);
+    graphics.fillCircle(x, y, radius * 0.82);
+    for (let arm = 0; arm < 4; arm++) {
+      graphics.lineStyle(5, arm % 2 === 0 ? color : 0x9fffd2, 0.68 * alpha);
+      let lastX = x;
+      let lastY = y;
+      for (let i = 1; i <= 20; i++) {
+        const pct = i / 20;
+        const angle = arm * Math.PI * 0.5 + pct * Math.PI * 2.6 - time * 2.1;
+        const px = x + Math.cos(angle) * radius * pct;
+        const py = y + Math.sin(angle) * radius * pct * 0.58;
+        graphics.lineBetween(lastX, lastY, px, py);
+        lastX = px;
+        lastY = py;
+      }
+    }
+    graphics.lineStyle(2, 0xb6ffd4, 0.42 * alpha);
+    graphics.strokeCircle(x, y, radius * (0.45 + Math.sin(time * 2) * 0.08));
+  }
+
+  private flashUltimate(color: number, duration: number) {
+    const rgb = Phaser.Display.Color.IntegerToColor(color);
+    this.cameras.main.flash(duration, rgb.red, rgb.green, rgb.blue, false);
+  }
+
+  private spawnMeteor(x: number, skill: SkillConfig) {
+    const column = this.add.graphics().setDepth(DEPTHS.effect + 3).setBlendMode(Phaser.BlendModes.ADD);
+    column.fillStyle(0xffd45f, 0.18);
+    column.fillEllipse(x, PLATFORM_Y - 70, 128, 260);
+    column.lineStyle(4, skill.effectColor, 0.75);
+    column.strokeEllipse(x, PLATFORM_Y - 70, 96, 245);
+    const beam = this.add
+      .image(x, PLATFORM_Y - 300, AssetKeys.energyBlastSheet)
+      .setOrigin(0.5)
+      .setDepth(DEPTHS.effect + 4)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(skill.effectColor)
+      .setRotation(Math.PI / 2);
+    beam.setCrop(286, 0, 214, 145).setDisplaySize(310, 86);
+    this.tweens.add({
+      targets: beam,
+      y: PLATFORM_Y - 96,
+      alpha: 0,
+      duration: 220,
+      onComplete: () => {
+        beam.destroy();
+        this.spawnFlameWisps(x, PLATFORM_Y - 92, skill.effectColor);
+      },
+    });
+    this.tweens.add({ targets: column, alpha: 0, duration: 340, onComplete: () => column.destroy() });
+  }
+
+  private spawnMeteorWarning(x: number, color: number) {
+    const marker = this.add.graphics().setDepth(DEPTHS.effect + 1).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: 400,
+      onUpdate: (tween) => {
+        const value = tween.getValue() ?? 0;
+        marker.clear();
+        marker.lineStyle(3, color, 0.88);
+        marker.strokeEllipse(x, PLATFORM_Y - 8, 138 - value * 32, 32 - value * 8);
+        marker.lineStyle(2, 0xfff0a2, 0.62);
+        marker.lineBetween(x - 58, PLATFORM_Y - 8, x + 58, PLATFORM_Y - 8);
+        marker.lineBetween(x, PLATFORM_Y - 36, x, PLATFORM_Y + 12);
+      },
+      onComplete: () => marker.destroy(),
+    });
+  }
+
+  private spawnFirePillar(x: number, color: number) {
+    const pillar = this.add.graphics().setDepth(DEPTHS.effect + 4).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: 480,
+      onUpdate: (tween) => {
+        const value = tween.getValue() ?? 0;
+        const alpha = 1 - value;
+        pillar.clear();
+        pillar.fillStyle(color, 0.26 * alpha);
+        pillar.fillEllipse(x, PLATFORM_Y - 126, 118 + value * 36, 292 + value * 90);
+        pillar.fillStyle(0xfff0a2, 0.18 * alpha);
+        pillar.fillEllipse(x, PLATFORM_Y - 135, 54, 280);
+        for (let i = 0; i < 8; i++) {
+          const px = x - 48 + i * 14;
+          pillar.fillStyle(i % 2 === 0 ? color : 0xffd35a, 0.72 * alpha);
+          pillar.fillTriangle(px - 8, PLATFORM_Y - 6, px + Math.sin(this.time.now * 0.02 + i) * 18, PLATFORM_Y - 166 - value * 80, px + 12, PLATFORM_Y - 6);
+        }
+      },
+      onComplete: () => pillar.destroy(),
+    });
+  }
+
+  private spawnLightningWarning(x: number, y: number, color: number) {
+    const marker = this.add.graphics().setDepth(DEPTHS.effect + 3).setBlendMode(Phaser.BlendModes.ADD);
+    marker.lineStyle(3, color, 0.82);
+    marker.strokeCircle(x, y + 45, 34);
+    marker.lineStyle(2, 0xffffff, 0.5);
+    marker.lineBetween(x, y - 190, x, y + 48);
+    this.tweens.add({ targets: marker, alpha: 0, duration: 95, onComplete: () => marker.destroy() });
+  }
+
+  private spawnLightning(x: number, y: number, color: number) {
+    const zigzag = this.add.graphics().setDepth(DEPTHS.effect + 5).setBlendMode(Phaser.BlendModes.ADD);
+    zigzag.lineStyle(4, color, 0.95);
+    let lastX = x + Phaser.Math.Between(-18, 18);
+    let lastY = y - 260;
+    for (let i = 1; i <= 7; i++) {
+      const nextX = x + Phaser.Math.Between(-30, 30);
+      const nextY = y - 260 + i * 38;
+      zigzag.lineBetween(lastX, lastY, nextX, nextY);
+      lastX = nextX;
+      lastY = nextY;
+    }
+    this.tweens.add({ targets: zigzag, alpha: 0, duration: 180, onComplete: () => zigzag.destroy() });
+    const bolt = this.add
+      .image(x, y - 90, AssetKeys.energyBlastSheet)
+      .setOrigin(0.5)
+      .setDepth(DEPTHS.effect + 4)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(color)
+      .setRotation(Math.PI / 2);
+    bolt.setCrop(286, 0, 214, 145).setDisplaySize(240, 58);
+    this.tweens.add({
+      targets: bolt,
+      alpha: 0,
+      scaleX: bolt.scaleX * 1.1,
+      scaleY: bolt.scaleY * 1.25,
+      duration: 180,
+      onComplete: () => bolt.destroy(),
+    });
+    this.spawnHitSpark(x, y, color);
+  }
+
+  private spawnHeroAfterimage(player: Player, x: number, groundY: number, color: number, targetX: number) {
     const ghost = this.add
-      .image(this.player.sprite.x, this.player.sprite.y, this.player.sprite.texture.key)
+      .image(x, groundY, player.sprite.texture.key)
       .setOrigin(0.5, 1)
-      .setScale(this.player.sprite.scaleX, this.player.sprite.scaleY)
-      .setFlipX(this.player.facing < 0)
-      .setTint(this.hero.themeColor)
+      .setScale(player.sprite.scaleX, player.sprite.scaleY)
+      .setFlipX(targetX < x)
+      .setTint(color)
+      .setAlpha(0.54)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setDepth(DEPTHS.player + 4);
+    this.tweens.add({
+      targets: ghost,
+      x: targetX,
+      alpha: 0,
+      duration: 170,
+      onComplete: () => ghost.destroy(),
+    });
+  }
+
+  private spawnShockwave(x: number, facing: -1 | 1) {
+    const shock = this.add
+      .image(x, PLATFORM_Y - 42, AssetKeys.slash2)
+      .setOrigin(0.5)
+      .setDepth(DEPTHS.effect)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setFlipX(facing < 0)
+      .setTint(0x67f6ff)
+      .setDisplaySize(190, 86);
+    this.tweens.add({
+      targets: shock,
+      alpha: 0,
+      x: x + facing * 70,
+      scaleX: shock.scaleX * 1.2,
+      duration: 260,
+      onComplete: () => shock.destroy(),
+    });
+  }
+
+  private spawnDashTrail(player: Player) {
+    const ghost = this.add
+      .image(player.sprite.x, player.sprite.y, player.sprite.texture.key)
+      .setOrigin(0.5, 1)
+      .setScale(player.sprite.scaleX, player.sprite.scaleY)
+      .setFlipX(player.facing < 0)
+      .setTint(player.hero.themeColor)
       .setAlpha(0.38)
       .setBlendMode(Phaser.BlendModes.ADD)
       .setDepth(DEPTHS.player - 2);
     this.tweens.add({
       targets: ghost,
       alpha: 0,
-      x: ghost.x - this.player.facing * 44,
+      x: ghost.x - player.facing * 44,
       duration: 230,
       onComplete: () => ghost.destroy(),
     });
@@ -364,7 +1677,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateCamera(dt: number) {
-    const target = Phaser.Math.Clamp(this.player.sprite.x - GAME_WIDTH * 0.38, 0, WORLD_WIDTH - GAME_WIDTH);
+    const alive = this.players.filter((player) => player.alive);
+    const focus = alive.length > 0 ? alive.reduce((sum, player) => sum + player.sprite.x, 0) / alive.length : PLAYER_START_X;
+    const front = alive.length > 0 ? Math.max(...alive.map((player) => player.sprite.x)) : focus;
+    const target = Phaser.Math.Clamp(Math.max(focus - GAME_WIDTH * 0.4, front - GAME_WIDTH * 0.62), 0, WORLD_WIDTH - GAME_WIDTH);
     this.cameras.main.scrollX = Phaser.Math.Linear(this.cameras.main.scrollX, target, Math.min(1, dt * 5));
     if (this.background) this.background.tilePositionX = this.cameras.main.scrollX * 0.18;
   }
@@ -375,21 +1691,70 @@ export class GameScene extends Phaser.Scene {
       this.messageText.setVisible(this.messageTimer > 0);
       this.messageText.setAlpha(Math.min(1, this.messageTimer));
     }
-    const bossLike = this.enemies
-      .filter((enemy) => enemy.kind === "horned_mutant")
-      .sort((a, b) => b.hp / b.maxHp - a.hp / a.maxHp)[0];
-    this.hud.update(this.hero, this.player.hp, this.player.maxHp, this.player.energy, this.player.maxEnergy, this.score, bossLike?.getBarState());
+    this.updateLogText();
+    this.hud.update(this.players, this.score, this.enemyBarState());
   }
 
-  private checkRunState() {
-    if (!this.player.alive) {
-      this.finishRun("ARMOR DOWN", "Core offline.");
-      return;
+  private enemyBarState(): EnemyBarState | undefined {
+    const boss = this.enemies.find((enemy) => enemy.alive && enemy.isBoss());
+    if (boss) return boss.getBarState();
+    const elite = this.enemies
+      .filter((enemy) => enemy.alive && enemy.hp / enemy.maxHp > 0.65)
+      .sort((a, b) => b.maxHp - a.maxHp)[0];
+    return elite?.getBarState();
+  }
+
+  private drawDebug() {
+    if (!this.debugGraphics) return;
+    this.debugGraphics.clear();
+    for (let i = this.debugRects.length - 1; i >= 0; i--) {
+      this.debugRects[i].life -= 1 / 60;
+      if (this.debugRects[i].life <= 0) this.debugRects.splice(i, 1);
     }
-    const allWavesSpawned = this.waves.every((wave) => wave.spawned);
-    if (allWavesSpawned && this.enemies.length === 0) {
-      this.finishRun("STAGE CLEAR", "Neon sector secured.");
+    if (!this.debugHitboxes) return;
+    this.debugGraphics.setScrollFactor(0);
+    const cameraX = this.cameras.main.scrollX;
+    const drawRect = (rect: RectLike, color: number) => {
+      this.debugGraphics!.lineStyle(2, color, 0.9);
+      this.debugGraphics!.strokeRect(rect.x - cameraX, rect.y, rect.width, rect.height);
+    };
+    for (const player of this.players) drawRect(player.getBounds(), 0x4ef3a5);
+    for (const enemy of this.enemies) drawRect(enemy.getBounds(), 0xff5b6d);
+    for (const projectile of this.projectiles) drawRect(this.projectileBounds(projectile.image), 0xffef72);
+    for (const item of this.debugRects) drawRect(item.rect, item.color);
+  }
+
+  private handleDebugToggles() {
+    if (this.isJust("KeyH")) {
+      this.debugHitboxes = !this.debugHitboxes;
+      this.addLog(`Hitbox debug ${this.debugHitboxes ? "ON" : "OFF"}`);
     }
+    if (this.isJust("F10")) {
+      this.playtestLogEnabled = !this.playtestLogEnabled;
+      this.updateLogText();
+    }
+  }
+
+  private addLog(message: string) {
+    const line = `[${((this.time.now / 1000) % 999).toFixed(1)}] ${message}`;
+    this.logLines.unshift(line);
+    this.logLines.length = Math.min(this.logLines.length, 7);
+    if (this.playtestLogEnabled) console.info(line);
+    this.updateLogText();
+  }
+
+  private addThrottledLog(key: string, message: string, seconds: number) {
+    const last = this.failLogCooldowns.get(key) ?? -Infinity;
+    const now = this.time.now;
+    if (now - last < seconds * 1000) return;
+    this.failLogCooldowns.set(key, now);
+    this.addLog(message);
+  }
+
+  private updateLogText() {
+    if (!this.logText) return;
+    this.logText.setVisible(this.playtestLogEnabled);
+    if (this.playtestLogEnabled) this.logText.setText(["PLAYTEST LOG", ...this.logLines].join("\n"));
   }
 
   private showMessage(message: string, seconds: number) {
@@ -397,20 +1762,21 @@ export class GameScene extends Phaser.Scene {
     this.messageTimer = seconds;
   }
 
-  private finishRun(title: string, detail: string) {
-    if (!this.running) return;
-    this.running = false;
-    this.showMessage(title, 1.2);
-    this.time.delayedCall(1300, () => {
-      this.scene.start("MenuScene", {
-        heroId: this.hero.id,
-        result: {
-          title,
-          detail,
-          score: this.score,
-          heroId: this.hero.id,
-        },
-      });
-    });
+  private biggestEnemy() {
+    return this.enemies.filter((enemy) => enemy.alive).sort((a, b) => b.maxHp - a.maxHp)[0];
+  }
+
+  private nearestEnemy(x: number, radius: number) {
+    return this.enemies
+      .filter((enemy) => enemy.alive && Math.abs(enemy.sprite.x - x) <= radius)
+      .sort((a, b) => Math.abs(a.sprite.x - x) - Math.abs(b.sprite.x - x))[0];
+  }
+
+  private isDown(...codes: string[]) {
+    return codes.some((code) => this.downCodes.has(code));
+  }
+
+  private isJust(...codes: string[]) {
+    return codes.some((code) => this.justCodes.has(code));
   }
 }

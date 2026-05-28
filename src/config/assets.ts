@@ -18,6 +18,12 @@ export const AssetKeys = {
   mutantWalk1: "enemy-mutant-walk-1",
   mutantWalk2: "enemy-mutant-walk-2",
   mutantAttack: "enemy-mutant-attack",
+  bossMain: "enemy-boss-main",
+  bossIdle: "enemy-boss-idle",
+  bossSlam: "enemy-boss-slam",
+  bossRage: "enemy-boss-rage",
+  skyHunterIdle: "enemy-sky-hunter-idle",
+  skyHunterFire: "enemy-sky-hunter-fire",
   cityTiles: "tiles-city-platform",
 };
 
@@ -46,6 +52,12 @@ export const StaticAssets = {
     { key: AssetKeys.mutantWalk1, path: assetPath("enemies/horned_mutant/walk_1.png") },
     { key: AssetKeys.mutantWalk2, path: assetPath("enemies/horned_mutant/walk_2.png") },
     { key: AssetKeys.mutantAttack, path: assetPath("enemies/horned_mutant/attack_punch.png") },
+    { key: AssetKeys.bossMain, path: assetPath("enemies/boss/abyssal_colossus_main.png") },
+    { key: AssetKeys.bossIdle, path: assetPath("enemies/boss/idle.png") },
+    { key: AssetKeys.bossSlam, path: assetPath("enemies/boss/slam.png") },
+    { key: AssetKeys.bossRage, path: assetPath("enemies/boss/rage.png") },
+    { key: AssetKeys.skyHunterIdle, path: assetPath("enemies/sky_hunter/sky_hunter_main.png") },
+    { key: AssetKeys.skyHunterFire, path: assetPath("enemies/sky_hunter/fire.png") },
   ],
   tiles: [
     { key: AssetKeys.cityTiles, path: assetPath("tiles/city_platform_tiles.png") },

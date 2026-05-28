@@ -1,0 +1,55 @@
+Tôi đã thêm bộ asset mới cho Skill 2 và Ultimate vào project tại:
+
+public/assets/skills/
+├── nova_blade/
+├── crimson_flare/
+├── volt_sentinel/
+└── emerald_phantom/
+
+Mỗi hero hiện có asset mới cho:
+- icons/l_skill2_icon.png
+- icons/u_ultimate_icon.png
+- cards/l_skill2_card.png
+- cards/l_skill2_effect_art.png
+- cards/u_ultimate_card.png
+- cards/u_ultimate_effect_art.png
+
+Hãy cập nhật game để Skill 2 và Ultimate của mỗi hero có gameplay và hoạt ảnh khác nhau rõ ràng, không được chỉ đổi màu hay thay skin.
+
+YÊU CẦU CHUNG
+1. J là basic attack, giữ nguyên logic hiện tại.
+2. K là Skill 1, giữ nguyên hoặc tinh chỉnh nhẹ.
+3. L là Skill 2, phải có cơ chế và hoạt ảnh riêng, không chỉ là projectile đơn thuần.
+4. U/I là Ultimate, phải có cơ chế lớn, AOE hoặc nhiều hit rõ ràng, có camera shake/flash nhẹ.
+5. Dùng icon trong icons/ cho skill bar, dùng effect_art/card làm reference cho VFX/UI preview.
+6. Trong gameplay, nên tạo hiệu ứng bằng Phaser particles, slash arcs, shockwave, beam segments, afterimages hoặc tinted common effects; không chỉ hiển thị card image.
+
+THIẾT KẾ GAMEPLAY CHO SKILL 2 VÀ ULTIMATE
+
+Nova Blade
+- L Rising Blade: một cột chém plasma dựng đứng từ mặt đất, launch enemy lên, hitbox dọc rõ ràng, tạo các mảnh đá và energy shards bật lên.
+- U Nova Overdrive: hero đứng trung tâm, sạc 0.2s rồi bung ra một vòng sóng plasma tròn mở rộng ra ngoài, đẩy lui và gây damage cho tất cả enemy trong bán kính. Có shockwave ring, dome glow, debris bật ra.
+
+Crimson Flare
+- L Inferno Arc: chém vòng cung lửa cực lớn theo nửa hình tròn trước mặt, quét trúng nhiều enemy, để lại vệt lửa ngắn trên mặt đất 0.6s.
+- U Crimson Meteor: đánh dấu điểm rơi trước mặt hoặc gần enemy mạnh nhất, sau 0.4s gọi thiên thạch rơi xuống, nổ trụ lửa lớn, tạo vụ nổ AOE và burn.
+
+Volt Sentinel
+- L Electric Cage: dựng một lồng điện hình vòm/khung đa giác giam enemy bên trong 2.2s, gây tick damage và slow. Có các node điện nối nhau bằng tia sét.
+- U Storm Breaker: gọi 4 tia sét lớn đánh liên tiếp xuống vùng mục tiêu trong 1.2s, mỗi tia là một hit riêng, có warning marker rất ngắn trước khi sét giáng.
+
+Emerald Phantom
+- L Toxic Spiral: tạo một xoáy độc/gió quanh hero, hút nhẹ enemy vào trong vùng, gây poison và nhiều tick damage.
+- U Emerald Mirage: tạo nhiều ảo ảnh của hero xuất hiện ở các hướng khác nhau, chém liên hoàn vào enemy trong vùng, thể hiện bằng afterimages và nhiều slash streaks xanh.
+
+UI / LOGIC
+- Skill bar hiển thị đúng icon mới cho L và U.
+- Cooldown overlay rõ.
+- Thiếu energy thì icon mờ.
+- Khi dùng skill thì icon glow theo màu hero.
+- Nếu enemy chết thì status phải bị clear và không log spam.
+
+BUILD
+- Format code.
+- npm run build.
+- Sửa mọi lỗi TypeScript nếu có.

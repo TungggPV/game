@@ -1,13 +1,8 @@
 import Phaser from "phaser";
 import { AssetKeys } from "../config/assets";
 import { GAME_HEIGHT, GAME_WIDTH, GameOverPayload } from "../config/gameConfig";
-import { DEFAULT_HERO_ID, HEROES, HeroConfig, getHeroById, heroDynamicKey, heroPortraitKey } from "../config/heroes";
-
-type MenuButton = {
-  bg: Phaser.GameObjects.Rectangle;
-  text: Phaser.GameObjects.Text;
-  enabled: boolean;
-};
+import { DEFAULT_HERO_ID, HEROES, getHeroById, heroDynamicKey, heroPortraitKey } from "../config/heroes";
+import { padScore } from "../utils/geometry";
 
 type HeroCard = {
   bg: Phaser.GameObjects.Rectangle;
@@ -15,14 +10,23 @@ type HeroCard = {
   label: Phaser.GameObjects.Text;
 };
 
+type ModeButton = {
+  mode: 1 | 2;
+  bg: Phaser.GameObjects.Rectangle;
+  text: Phaser.GameObjects.Text;
+};
+
 type MenuData = {
   result?: GameOverPayload;
   heroId?: string;
+  playerCount?: 1 | 2;
 };
 
 export class MenuScene extends Phaser.Scene {
   private selectedHeroIndex = 0;
+  private selectedPlayerCount: 1 | 2 = 1;
   private heroCards: HeroCard[] = [];
+  private modeButtons: ModeButton[] = [];
   private heroName!: Phaser.GameObjects.Text;
   private dynamicArt!: Phaser.GameObjects.Image;
   private resultText!: Phaser.GameObjects.Text;
@@ -41,6 +45,7 @@ export class MenuScene extends Phaser.Scene {
   init(data: MenuData) {
     const defaultId = data.heroId ?? data.result?.heroId ?? DEFAULT_HERO_ID;
     this.selectedHeroIndex = Math.max(0, HEROES.findIndex((hero) => hero.id === defaultId));
+    this.selectedPlayerCount = data.playerCount ?? data.result?.playerCount ?? 1;
     this.result = data.result;
   }
 
@@ -51,6 +56,7 @@ export class MenuScene extends Phaser.Scene {
     this.createButtons();
     this.createKeys();
     this.refreshSelection();
+    this.refreshModeButtons();
   }
 
   update() {
@@ -73,18 +79,18 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0)
       .setTileScale(2.49)
       .setDepth(-20);
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.46).setOrigin(0).setDepth(-10);
+    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.48).setOrigin(0).setDepth(-10);
     this.add.rectangle(0, GAME_HEIGHT - 118, GAME_WIDTH, 118, 0x02070d, 0.36).setOrigin(0).setDepth(-9);
   }
 
   private createChrome() {
     const panel = this.add.graphics();
-    panel.fillStyle(0x020d1e, 0.76);
-    panel.fillRoundedRect(52, 56, 512, 590, 8);
+    panel.fillStyle(0x020d1e, 0.78);
+    panel.fillRoundedRect(52, 56, 536, 590, 8);
     panel.lineStyle(1, 0x18e6ff, 0.34);
-    panel.strokeRoundedRect(52, 56, 512, 590, 8);
+    panel.strokeRoundedRect(52, 56, 536, 590, 8);
     panel.lineStyle(2, 0xf6c65a, 0.68);
-    panel.lineBetween(82, 172, 522, 172);
+    panel.lineBetween(82, 172, 546, 172);
 
     this.add
       .text(82, 82, "ELEMENT ARMOR", {
@@ -97,7 +103,7 @@ export class MenuScene extends Phaser.Scene {
       })
       .setShadow(0, 0, "#18e6ff", 8, true, true);
     this.add
-      .text(80, 108, "Hào Quang Giáp", {
+      .text(80, 108, "Hao Quang Giap", {
         fontFamily: "Arial, sans-serif",
         fontSize: "42px",
         fontStyle: "900",
@@ -107,7 +113,7 @@ export class MenuScene extends Phaser.Scene {
       })
       .setShadow(0, 0, "#18e6ff", 10, true, true);
 
-    this.resultText = this.add.text(82, 188, this.result ? `${this.result.title}  SCORE ${this.result.score}` : "", {
+    this.resultText = this.add.text(82, 188, this.result ? `${this.result.title}  SCORE ${padScore(this.result.score)}` : "", {
       fontFamily: "Arial, sans-serif",
       fontSize: "16px",
       fontStyle: "900",
@@ -117,7 +123,7 @@ export class MenuScene extends Phaser.Scene {
     });
 
     this.heroName = this.add
-      .text(82, 232, "", {
+      .text(82, 230, "", {
         fontFamily: "Arial, sans-serif",
         fontSize: "25px",
         fontStyle: "900",
@@ -127,6 +133,23 @@ export class MenuScene extends Phaser.Scene {
       })
       .setShadow(0, 0, "#18e6ff", 8, true, true);
 
+    this.add.text(82, 266, "P1: A/D move  W/Space jump  J basic  K/L skills  U/I ultimate  Shift/F dash  P/Esc pause", {
+      fontFamily: "Arial, sans-serif",
+      fontSize: "12px",
+      fontStyle: "700",
+      color: "#bfefff",
+      stroke: "#02070d",
+      strokeThickness: 3,
+    });
+    this.add.text(82, 286, "P2: Arrows move/jump  N1 basic  N2/N3 skills  N4 ultimate  Right Shift/N0 dash", {
+      fontFamily: "Arial, sans-serif",
+      fontSize: "12px",
+      fontStyle: "700",
+      color: "#bfefff",
+      stroke: "#02070d",
+      strokeThickness: 3,
+    });
+
     const initialHero = HEROES[this.selectedHeroIndex];
     this.dynamicArt = this.add
       .image(930, 646, heroDynamicKey(initialHero))
@@ -134,21 +157,19 @@ export class MenuScene extends Phaser.Scene {
       .setDisplaySize(430, 430)
       .setDepth(10);
 
-    this.missingText = this.add.text(82, 612, "", {
+    this.missingText = this.add.text(82, 618, "", {
       fontFamily: "Arial, sans-serif",
       fontSize: "12px",
       color: "#ffb4aa",
-      wordWrap: { width: 432 },
+      wordWrap: { width: 456 },
     });
     const missing = (this.registry.get("missingAssets") as string[] | undefined) ?? [];
-    if (missing.length > 0) {
-      this.missingText.setText(`Thiếu asset: ${missing.slice(0, 4).join(", ")}${missing.length > 4 ? "..." : ""}`);
-    }
+    if (missing.length > 0) this.missingText.setText(`Missing asset fallback used: ${missing.slice(0, 4).join(", ")}${missing.length > 4 ? "..." : ""}`);
   }
 
   private createHeroSelector() {
     const startX = 92;
-    const y = 330;
+    const y = 370;
     for (let i = 0; i < HEROES.length; i++) {
       const hero = HEROES[i];
       const x = startX + i * 112;
@@ -175,10 +196,10 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private createButtons() {
-    this.createButton(82, 468, 126, 42, "1 Người", true, () => undefined, true);
-    this.createButton(222, 468, 126, 42, "2 Người", false, () => undefined);
-    this.createButton(82, 532, 154, 48, "Bắt đầu", true, () => this.startGame(), true);
-    this.createButton(252, 532, 154, 48, "Chơi lại", Boolean(this.result), () => this.startGame());
+    this.modeButtons.push(this.createModeButton(82, 498, 126, 42, "1 Nguoi", 1));
+    this.modeButtons.push(this.createModeButton(222, 498, 126, 42, "2 Nguoi", 2));
+    this.createButton(82, 560, 154, 48, "Bat dau", () => this.startGame());
+    this.createButton(252, 560, 154, 48, "Choi lai", () => this.startGame(), Boolean(this.result));
   }
 
   private createKeys() {
@@ -193,30 +214,78 @@ export class MenuScene extends Phaser.Scene {
     this.rightKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT);
   }
 
-  private createButton(x: number, y: number, width: number, height: number, label: string, enabled: boolean, onClick: () => void, selected = false): MenuButton {
-    const bg = this.add
-      .rectangle(x, y, width, height, selected ? 0x18e6ff : 0x071a2c, enabled ? 0.92 : 0.42)
+  private createModeButton(x: number, y: number, width: number, height: number, label: string, mode: 1 | 2): ModeButton {
+    const hit = this.add.zone(x, y, width, height).setOrigin(0).setDepth(22).setInteractive({ useHandCursor: true });
+    const bg = this.add.rectangle(x, y, width, height, 0x071a2c, 0.92).setOrigin(0).setDepth(20).setStrokeStyle(1, 0x8cf8ff, 0.78);
+    const text = this.add.text(x + width / 2, y + height / 2, label, {
+      fontFamily: "Arial, sans-serif",
+      fontSize: "16px",
+      fontStyle: "900",
+      color: "#eaf8ff",
+    }).setOrigin(0.5).setDepth(21);
+    const selectMode = () => {
+      this.selectedPlayerCount = mode;
+      this.refreshModeButtons();
+    };
+    hit
+      .on("pointerover", () => bg.setStrokeStyle(2, 0x8cf8ff, 1))
+      .on("pointerout", () => {
+        bg.setScale(1);
+        this.refreshModeButtons();
+      })
+      .on("pointerdown", () => bg.setScale(0.98))
+      .on("pointerup", () => {
+        bg.setScale(1);
+        selectMode();
+      });
+    return { mode, bg, text };
+  }
+
+  private createButton(x: number, y: number, width: number, height: number, label: string, onClick: () => void, enabled = true) {
+    const glow = this.add
+      .rectangle(x, y, width, height, 0x18e6ff, 0.16)
       .setOrigin(0)
+      .setDepth(19)
+      .setVisible(false);
+    const bg = this.add
+      .rectangle(x, y, width, height, 0x071a2c, enabled ? 0.92 : 0.42)
+      .setOrigin(0)
+      .setDepth(20)
       .setStrokeStyle(1, enabled ? 0x8cf8ff : 0x4a6170, enabled ? 0.78 : 0.28);
     const text = this.add
       .text(x + width / 2, y + height / 2, label, {
         fontFamily: "Arial, sans-serif",
         fontSize: "16px",
         fontStyle: "900",
-        color: selected ? "#02101e" : "#eaf8ff",
+        color: "#eaf8ff",
       })
-      .setOrigin(0.5);
-    if (enabled) {
-      bg.setInteractive({ useHandCursor: true });
-      bg.on("pointerover", () => bg.setFillStyle(selected ? 0x67f6ff : 0x0b2a46, 1));
-      bg.on("pointerout", () => bg.setFillStyle(selected ? 0x18e6ff : 0x071a2c, 0.92));
-      bg.on("pointerdown", onClick);
-      text.setInteractive({ useHandCursor: true });
-      text.on("pointerdown", onClick);
-    } else {
-      text.setAlpha(0.42);
-    }
-    return { bg, text, enabled };
+      .setOrigin(0.5)
+      .setDepth(21)
+      .setAlpha(enabled ? 1 : 0.42);
+    if (!enabled) return;
+    const hit = this.add.zone(x, y, width, height).setOrigin(0).setDepth(22).setInteractive({ useHandCursor: true });
+    hit
+      .on("pointerover", () => {
+        glow.setVisible(true);
+        bg.setFillStyle(0x0b2a46, 1).setStrokeStyle(2, 0x8cf8ff, 1);
+        text.setShadow(0, 0, "#8cf8ff", 8, true, true);
+      })
+      .on("pointerout", () => {
+        glow.setVisible(false);
+        bg.setFillStyle(0x071a2c, 0.92).setStrokeStyle(1, 0x8cf8ff, 0.78);
+        text.setShadow(0, 0, "#000000", 0, false, false);
+        bg.setScale(1);
+        text.setScale(1);
+      })
+      .on("pointerdown", () => {
+        bg.setScale(0.985);
+        text.setScale(0.985);
+      })
+      .on("pointerup", () => {
+        bg.setScale(1);
+        text.setScale(1);
+        onClick();
+      });
   }
 
   private changeHero(delta: number) {
@@ -229,11 +298,8 @@ export class MenuScene extends Phaser.Scene {
     this.heroName.setText(hero.displayName.toUpperCase());
     this.heroName.setColor(hero.themeCss);
     const dynamicKey = heroDynamicKey(hero);
-    if (this.textures.exists(dynamicKey)) {
-      this.dynamicArt.setTexture(dynamicKey).setDisplaySize(430, 430).setVisible(true);
-    } else {
-      this.dynamicArt.setVisible(false);
-    }
+    if (this.textures.exists(dynamicKey)) this.dynamicArt.setTexture(dynamicKey).setDisplaySize(430, 430).setVisible(true);
+    else this.dynamicArt.setVisible(false);
     for (let i = 0; i < this.heroCards.length; i++) {
       const card = this.heroCards[i];
       const cardHero = HEROES[i];
@@ -246,8 +312,18 @@ export class MenuScene extends Phaser.Scene {
     }
   }
 
+  private refreshModeButtons() {
+    for (const button of this.modeButtons) {
+      const selected = button.mode === this.selectedPlayerCount;
+      button.bg
+        .setFillStyle(selected ? 0x18e6ff : 0x071a2c, selected ? 0.94 : 0.92)
+        .setStrokeStyle(selected ? 3 : 1, selected ? 0xf6c65a : 0x8cf8ff, selected ? 0.95 : 0.78);
+      button.text.setColor(selected ? "#02101e" : "#eaf8ff");
+    }
+  }
+
   private startGame() {
     const selected = getHeroById(HEROES[this.selectedHeroIndex].id);
-    this.scene.start("GameScene", { heroId: selected.id });
+    this.scene.start("GameScene", { heroId: selected.id, playerCount: this.selectedPlayerCount });
   }
 }

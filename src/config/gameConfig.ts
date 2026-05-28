@@ -4,6 +4,7 @@ export const WORLD_WIDTH = 3600;
 export const GRAVITY = 2300;
 export const PLATFORM_Y = Math.round(GAME_HEIGHT * 0.812);
 export const PLAYER_START_X = 188;
+export const MAX_PLAYERS = 2;
 
 export const DEPTHS = {
   background: -50,
@@ -22,9 +23,11 @@ export type PlayerInput = {
   left: boolean;
   right: boolean;
   jump: boolean;
-  slash: boolean;
-  blast: boolean;
   dash: boolean;
+  basicAttack: boolean;
+  skill1: boolean;
+  skill2: boolean;
+  ultimate: boolean;
 };
 
 export type GameOverPayload = {
@@ -32,4 +35,5 @@ export type GameOverPayload = {
   detail: string;
   score: number;
   heroId: string;
+  playerCount: 1 | 2;
 };
