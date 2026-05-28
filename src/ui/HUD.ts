@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { AssetKeys, basicAttackCardKey, skillCardKey as skillPreviewCardKey } from "../config/assets";
 import { DEPTHS, GAME_HEIGHT, GAME_WIDTH, GameMode } from "../config/gameConfig";
 import { HeroConfig, heroPortraitKey } from "../config/heroes";
 import {
@@ -32,12 +33,16 @@ export class HUD {
   private readonly graphics: Phaser.GameObjects.Graphics;
   private readonly portraitFrames: Phaser.GameObjects.Image[] = [];
   private readonly portraits: Phaser.GameObjects.Image[] = [];
+  private readonly healthFrames: Phaser.GameObjects.Image[] = [];
+  private readonly energyFrames: Phaser.GameObjects.Image[] = [];
   private readonly nameTexts: Phaser.GameObjects.Text[] = [];
   private readonly hpTexts: Phaser.GameObjects.Text[] = [];
   private readonly scoreText: Phaser.GameObjects.Text;
   private readonly bossText: Phaser.GameObjects.Text;
+  private readonly bossFrame: Phaser.GameObjects.Image;
   private readonly dashHint: Phaser.GameObjects.Text;
   private readonly p2DashHint: Phaser.GameObjects.Text;
+  private previewCard?: Phaser.GameObjects.Image;
   private basicSlot?: Omit<SkillSlot, "skill"> & { attack: BasicAttackConfig };
   private skillSlots: SkillSlot[] = [];
   private skillHeroId = "";
@@ -73,6 +78,12 @@ export class HUD {
       .setOrigin(0.5, 0)
       .setScrollFactor(0)
       .setDepth(DEPTHS.hud + 6);
+    this.bossFrame = scene.add
+      .image(GAME_WIDTH / 2, 51, AssetKeys.uiBossBar)
+      .setDisplaySize(535, 85)
+      .setScrollFactor(0)
+      .setDepth(DEPTHS.hud + 1)
+      .setVisible(false);
     this.dashHint = scene.add
       .text(0, 0, "SHIFT/F\nDASH", {
         fontFamily: "Arial, sans-serif",
@@ -120,9 +131,11 @@ export class HUD {
     this.graphics.destroy();
     this.scoreText.destroy();
     this.bossText.destroy();
+    this.bossFrame.destroy();
     this.dashHint.destroy();
     this.p2DashHint.destroy();
-    for (const item of [...this.portraitFrames, ...this.portraits, ...this.nameTexts, ...this.hpTexts]) item.destroy();
+    this.previewCard?.destroy();
+    for (const item of [...this.portraitFrames, ...this.portraits, ...this.healthFrames, ...this.energyFrames, ...this.nameTexts, ...this.hpTexts]) item.destroy();
     this.destroySkillSlots();
     this.destroyP2SkillSlots();
   }
@@ -139,6 +152,18 @@ export class HUD {
       .setDisplaySize(index === 0 ? 64 : 52, index === 0 ? 64 : 52)
       .setScrollFactor(0)
       .setDepth(DEPTHS.hud + 4);
+    const healthFrame = this.scene.add
+      .image(206, y + 36, AssetKeys.uiHealthBar)
+      .setDisplaySize(index === 0 ? 250 : 212, index === 0 ? 44 : 38)
+      .setAlpha(index === 0 ? 0.88 : 0.68)
+      .setScrollFactor(0)
+      .setDepth(DEPTHS.hud + 1);
+    const energyFrame = this.scene.add
+      .image(196, y + 56, AssetKeys.uiEnergyBar)
+      .setDisplaySize(index === 0 ? 218 : 184, index === 0 ? 36 : 30)
+      .setAlpha(index === 0 ? 0.72 : 0.55)
+      .setScrollFactor(0)
+      .setDepth(DEPTHS.hud + 1);
     const name = this.scene.add
       .text(116, y + 4, "", {
         fontFamily: "Arial, sans-serif",
@@ -164,6 +189,8 @@ export class HUD {
       .setDepth(DEPTHS.hud + 6);
     this.portraitFrames.push(frame);
     this.portraits.push(portrait);
+    this.healthFrames.push(healthFrame);
+    this.energyFrames.push(energyFrame);
     this.nameTexts.push(name);
     this.hpTexts.push(hp);
   }
@@ -185,6 +212,8 @@ export class HUD {
       const portraitKey = heroPortraitKey(hero);
       this.portraitFrames[i].setPosition(60, y + h / 2);
       this.portraits[i].setPosition(60, y + h / 2);
+      this.healthFrames[i]?.setPosition(206, y + 39).setDisplaySize(i === 0 ? 250 : 212, i === 0 ? 44 : 38).setAlpha(i === 0 ? 0.88 : 0.68);
+      this.energyFrames[i]?.setPosition(196, y + 58).setDisplaySize(i === 0 ? 218 : 184, i === 0 ? 36 : 30).setAlpha(i === 0 ? 0.72 : 0.55);
       if (this.scene.textures.exists(portraitKey) && this.portraits[i].texture.key !== portraitKey) {
         this.portraits[i].setTexture(portraitKey);
       }
@@ -217,6 +246,8 @@ export class HUD {
       const portraitKey = heroPortraitKey(hero);
       this.portraitFrames[i].setPosition(portraitX, y + h / 2).setDisplaySize(76, 76);
       this.portraits[i].setPosition(portraitX, y + h / 2).setDisplaySize(64, 64);
+      this.healthFrames[i]?.setPosition(barX + 98, y + 39).setDisplaySize(244, 42).setAlpha(0.82);
+      this.energyFrames[i]?.setPosition(barX + 86, y + 59).setDisplaySize(212, 34).setAlpha(0.62);
       if (this.scene.textures.exists(portraitKey) && this.portraits[i].texture.key !== portraitKey) {
         this.portraits[i].setTexture(portraitKey);
       }
@@ -362,6 +393,7 @@ export class HUD {
 
   private drawEnemyBar(enemyBar?: EnemyBarState) {
     this.bossText.setVisible(Boolean(enemyBar));
+    this.bossFrame.setVisible(Boolean(enemyBar));
     if (!enemyBar) return;
 
     const pct = Phaser.Math.Clamp(enemyBar.hp / enemyBar.maxHp, 0, 1);
@@ -445,6 +477,7 @@ export class HUD {
         .setDepth(DEPTHS.hud + 7)
         .setVisible(false);
       this.basicSlot = { attack: basicAttack, icon, fallback, label, keyText, cooldown };
+      if (icon) this.attachCardPreview(icon, basicAttackCardKey(hero.id), x + 29, y - 118);
     }
 
     this.skillSlots = skills.map((skill, index) => {
@@ -509,6 +542,7 @@ export class HUD {
         .setDepth(DEPTHS.hud + 7)
         .setVisible(false);
 
+      if (icon) this.attachCardPreview(icon, skillPreviewCardKey(hero.id, skill.input), x + 38, y - 118);
       return { skill, icon, fallback, label, keyText, cooldown };
     });
   }
@@ -577,6 +611,7 @@ export class HUD {
         .setDepth(DEPTHS.hud + 7)
         .setVisible(false);
       this.p2BasicSlot = { attack: basicAttack, icon, fallback, label, keyText, cooldown };
+      if (icon) this.attachCardPreview(icon, basicAttackCardKey(hero.id), x + 52, y - 118);
     }
 
     this.p2SkillSlots = skills.map((skill, index) => {
@@ -637,11 +672,33 @@ export class HUD {
         .setDepth(DEPTHS.hud + 7)
         .setVisible(false);
 
+      if (icon) this.attachCardPreview(icon, skillPreviewCardKey(hero.id, skill.input), x + 33, y - 118);
       return { skill, icon, fallback, label, keyText, cooldown };
     });
   }
 
+  private attachCardPreview(target: Phaser.GameObjects.Image, cardKey: string, x: number, y: number) {
+    if (!this.scene.textures.exists(cardKey)) return;
+    target.setInteractive({ useHandCursor: true });
+    target
+      .on("pointerover", () => {
+        this.previewCard?.destroy();
+        this.previewCard = this.scene.add
+          .image(Phaser.Math.Clamp(x, 188, GAME_WIDTH - 188), Math.max(118, y), cardKey)
+          .setDisplaySize(330, 126)
+          .setScrollFactor(0)
+          .setDepth(DEPTHS.hud + 30)
+          .setAlpha(0.98);
+      })
+      .on("pointerout", () => {
+        this.previewCard?.destroy();
+        this.previewCard = undefined;
+      });
+  }
+
   private destroySkillSlots() {
+    this.previewCard?.destroy();
+    this.previewCard = undefined;
     if (this.basicSlot) {
       this.basicSlot.icon?.destroy();
       this.basicSlot.fallback.destroy();

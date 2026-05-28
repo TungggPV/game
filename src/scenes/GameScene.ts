@@ -40,6 +40,17 @@ type SkillProjectile = {
   skill?: SkillConfig;
 };
 
+type PickupKind = "health" | "energy" | "credit" | "upgrade" | "treasure";
+
+type Pickup = {
+  image: Phaser.GameObjects.Image;
+  kind: PickupKind;
+  value: number;
+  life: number;
+  baseY: number;
+  phase: number;
+};
+
 type ActiveArea = {
   kind: "electric_cage" | "toxic_spiral";
   x: number;
@@ -91,12 +102,13 @@ export class GameScene extends Phaser.Scene {
   private gameMode: GameMode = "solo";
   private playerCount: 1 | 2 = 1;
   private players: Player[] = [];
-  private hud!: HUD;
+  private hud?: HUD;
   private background?: Phaser.GameObjects.TileSprite;
   private readonly atmosphereLayers: AtmosphereLayer[] = [];
   private neonRain?: Phaser.GameObjects.Graphics;
   private enemies: Enemy[] = [];
   private projectiles: SkillProjectile[] = [];
+  private pickups: Pickup[] = [];
   private activeAreas: ActiveArea[] = [];
   private defeatedLogged = new Set<Enemy>();
   private enrageLogged = new Set<Enemy>();
@@ -119,6 +131,7 @@ export class GameScene extends Phaser.Scene {
   private waveWait = 0;
   private debugHitboxes = false;
   private playtestLogEnabled = false;
+  private transitioning = false;
   private readonly logLines: string[] = [];
   private logText?: Phaser.GameObjects.Text;
   private debugGraphics?: Phaser.GameObjects.Graphics;
@@ -126,9 +139,10 @@ export class GameScene extends Phaser.Scene {
   private readonly downCodes = new Set<string>();
   private readonly justCodes = new Set<string>();
   private readonly waves: WaveConfig[] = [
-    { label: "WAVE 1 / 3", enemies: ["crawler", "crawler"] },
-    { label: "WAVE 2 / 3", enemies: ["crawler", "crawler", "sky_hunter"] },
-    { label: "WAVE 3 / 3", enemies: ["horned_mutant", "crawler"] },
+    { label: "WAVE 1 / 4", enemies: ["crawler", "crawler"] },
+    { label: "WAVE 2 / 4", enemies: ["crawler", "crawler", "sky_hunter"] },
+    { label: "WAVE 3 / 4", enemies: ["horned_mutant", "crawler"] },
+    { label: "BOSS WAVE / 4", enemies: ["aegis_elite", "abyssal_colossus"] },
   ];
   private pauseOverlay?: Phaser.GameObjects.Container;
   private resultOverlay?: Phaser.GameObjects.Container;
@@ -225,6 +239,7 @@ export class GameScene extends Phaser.Scene {
       }
       if (this.gameMode !== "pk") this.updateEnemies(dt);
       this.updateProjectiles(dt);
+      this.updatePickups(dt);
       this.updateActiveAreas(dt);
       this.resolveBodySpacing();
       if (this.gameMode !== "pk") {
@@ -250,6 +265,7 @@ export class GameScene extends Phaser.Scene {
     this.stageClear = false;
     this.gameOver = false;
     this.matchEnded = false;
+    this.transitioning = false;
     this.pkIntroTimer = 0;
     this.pkFightShown = false;
     this.pkTimer = PK_TIMER_MAX;
@@ -257,6 +273,7 @@ export class GameScene extends Phaser.Scene {
     this.score = 0;
     this.enemies = [];
     this.projectiles = [];
+    this.pickups = [];
     this.activeAreas = [];
     this.defeatedLogged = new Set();
     this.enrageLogged = new Set();
@@ -376,6 +393,25 @@ export class GameScene extends Phaser.Scene {
         .setTint(0x9feeff)
         .setDepth(DEPTHS.platformBack);
     }
+    if (this.textures.exists(AssetKeys.labTiles)) {
+      this.add
+        .tileSprite(0, PLATFORM_Y + 76, WORLD_WIDTH, 94, AssetKeys.labTiles)
+        .setOrigin(0, 0)
+        .setTileScale(1.15)
+        .setAlpha(0.16)
+        .setTint(0x67f6ff)
+        .setDepth(DEPTHS.platformBack + 1);
+    }
+    if (this.textures.exists(AssetKeys.lavaTiles)) {
+      this.add
+        .tileSprite(0, PLATFORM_Y + 128, WORLD_WIDTH, 86, AssetKeys.lavaTiles)
+        .setOrigin(0, 0)
+        .setTileScale(1.2)
+        .setAlpha(0.1)
+        .setTint(0xff7a32)
+        .setDepth(DEPTHS.platformBack + 1);
+    }
+    this.createWorldProps();
 
     const g = this.add.graphics().setDepth(DEPTHS.platformBack + 1);
     g.fillStyle(0x07121c, 0.98);
@@ -417,6 +453,26 @@ export class GameScene extends Phaser.Scene {
     foreground.fillEllipse(WORLD_WIDTH * 0.22, PLATFORM_Y + 18, WORLD_WIDTH * 0.18, 32);
     foreground.fillStyle(0xf6c65a, 0.05);
     foreground.fillEllipse(WORLD_WIDTH * 0.58, PLATFORM_Y + 20, WORLD_WIDTH * 0.22, 28);
+  }
+
+  private createWorldProps() {
+    const propRows = [
+      { key: AssetKeys.cityProps, y: PLATFORM_Y - 94, scale: 0.82, alpha: 0.78, tint: 0xffffff, step: 760 },
+      { key: AssetKeys.labProps, y: PLATFORM_Y - 132, scale: 0.64, alpha: 0.32, tint: 0x75f4ff, step: 980 },
+      { key: AssetKeys.lavaProps, y: PLATFORM_Y - 58, scale: 0.58, alpha: 0.2, tint: 0xff8a2a, step: 1140 },
+    ];
+    for (const row of propRows) {
+      if (!this.textures.exists(row.key)) continue;
+      for (let x = 260; x < WORLD_WIDTH; x += row.step) {
+        this.add
+          .image(x + Phaser.Math.Between(-48, 48), row.y, row.key)
+          .setOrigin(0.5, 1)
+          .setScale(row.scale)
+          .setAlpha(row.alpha)
+          .setTint(row.tint)
+          .setDepth(DEPTHS.platformBack + (row.key === AssetKeys.cityProps ? 2 : -1));
+      }
+    }
   }
 
   private createKeyTracking() {
@@ -1056,9 +1112,104 @@ export class GameScene extends Phaser.Scene {
       } else {
         this.spawnExplosion(enemy.sprite.x, enemy.sprite.y - enemy.sprite.displayHeight * 0.45, false, 0x18e6ff);
       }
+      this.spawnEnemyDrop(enemy);
       enemy.destroy();
     }
     this.enemies = this.enemies.filter((enemy) => enemy.alive);
+  }
+
+  private spawnEnemyDrop(enemy: Enemy) {
+    const x = enemy.sprite.x;
+    const y = enemy.kind === "sky_hunter" ? Math.min(PLATFORM_Y - 30, enemy.sprite.y + 28) : PLATFORM_Y - 20;
+    if (enemy.kind === "abyssal_colossus") {
+      this.spawnPickup("treasure", x, y, 800);
+      this.spawnPickup("health", x - 72, y, 55);
+      this.spawnPickup("energy", x + 72, y, 55);
+      return;
+    }
+    if (enemy.isBoss()) {
+      this.spawnPickup("upgrade", x, y, 380);
+      this.spawnPickup("energy", x + 58, y, 42);
+      return;
+    }
+    const roll = Math.random();
+    if (roll < 0.22) this.spawnPickup("health", x, y, 32);
+    else if (roll < 0.46) this.spawnPickup("energy", x, y, 30);
+    else if (roll < 0.66) this.spawnPickup("credit", x, y, 80);
+    else if (enemy.kind === "aegis_elite") this.spawnPickup("upgrade", x, y, 240);
+  }
+
+  private spawnPickup(kind: PickupKind, x: number, y: number, value: number) {
+    const key =
+      kind === "health"
+        ? AssetKeys.itemHealth
+        : kind === "energy"
+          ? AssetKeys.itemEnergy
+          : kind === "upgrade"
+            ? AssetKeys.itemUpgrade
+            : kind === "treasure"
+              ? AssetKeys.itemTreasure
+              : AssetKeys.itemCredit;
+    if (!this.textures.exists(key)) return;
+    const image = this.add
+      .image(x, y, key)
+      .setOrigin(0.5, 1)
+      .setDisplaySize(kind === "treasure" ? 70 : kind === "upgrade" ? 52 : 46, kind === "treasure" ? 72 : 54)
+      .setDepth(DEPTHS.effect - 1)
+      .setBlendMode(Phaser.BlendModes.NORMAL);
+    this.tweens.add({
+      targets: image,
+      y: y - 24,
+      duration: 260,
+      ease: "Quad.easeOut",
+      yoyo: true,
+    });
+    this.pickups.push({ image, kind, value, life: 11, baseY: y, phase: Math.random() * Math.PI * 2 });
+  }
+
+  private updatePickups(dt: number) {
+    for (const pickup of this.pickups) {
+      pickup.life -= dt;
+      pickup.image.y = pickup.baseY - 8 + Math.sin(this.time.now * 0.006 + pickup.phase) * 6;
+      pickup.image.rotation = Math.sin(this.time.now * 0.004 + pickup.phase) * 0.045;
+      pickup.image.setAlpha(pickup.life < 2 ? 0.45 + Math.sin(this.time.now * 0.025) * 0.25 : 1);
+      const pickupBounds = this.pickupBounds(pickup.image);
+      for (const player of this.players) {
+        if (!player.alive || !overlaps(player.getBounds(), pickupBounds)) continue;
+        this.collectPickup(player, pickup);
+        pickup.life = 0;
+        break;
+      }
+    }
+    for (const pickup of this.pickups.filter((item) => item.life <= 0)) {
+      if (pickup.image.scene) pickup.image.destroy();
+    }
+    this.pickups = this.pickups.filter((item) => item.life > 0);
+  }
+
+  private collectPickup(player: Player, pickup: Pickup) {
+    if (pickup.kind === "health") {
+      player.hp = Math.min(player.maxHp, player.hp + pickup.value);
+      this.spawnHitSpark(player.sprite.x, player.sprite.y - 88, 0x4ef3a5);
+      this.addLog(`P${player.id + 1} picked HP`);
+    } else if (pickup.kind === "energy") {
+      player.energy = Math.min(player.maxEnergy, player.energy + pickup.value);
+      this.spawnHitSpark(player.sprite.x, player.sprite.y - 88, player.hero.themeColor);
+      this.addLog(`P${player.id + 1} picked energy`);
+    } else {
+      this.score += pickup.value;
+      this.spawnHitSpark(pickup.image.x, pickup.image.y - 20, 0xffd66d);
+      this.addLog(`Pickup score +${pickup.value}`);
+    }
+  }
+
+  private pickupBounds(image: Phaser.GameObjects.Image): RectLike {
+    return {
+      x: image.x - image.displayWidth * 0.42,
+      y: image.y - image.displayHeight,
+      width: image.displayWidth * 0.84,
+      height: image.displayHeight,
+    };
   }
 
   private updateWaveFlow(dt: number) {
@@ -1108,7 +1259,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnBossIntro(enemy: Enemy) {
-    this.addLog("Boss spawn: Horned Mutant");
+    this.addLog(`Boss spawn: ${enemy.getBarState().name}`);
     this.showMessage("BOSS APPROACHING", 1);
     this.cameras.main.shake(210, 0.006);
     const ring = this.add.graphics().setDepth(DEPTHS.effect + 2).setBlendMode(Phaser.BlendModes.ADD);
@@ -1308,6 +1459,14 @@ export class GameScene extends Phaser.Scene {
   private createMenuButton(x: number, y: number, label: string, onClick: () => void) {
     const width = 132;
     const height = 46;
+    const skin = this.textures.exists(AssetKeys.uiStageSelectButton)
+      ? this.add
+        .image(x + width / 2, y + height / 2, AssetKeys.uiStageSelectButton)
+        .setDisplaySize(width + 28, height + 18)
+        .setScrollFactor(0)
+        .setDepth(BUTTON_DEPTH - 2)
+        .setAlpha(0.9)
+      : undefined;
     const glow = this.add
       .rectangle(x, y, width, height, 0x18e6ff, 0.18)
       .setOrigin(0)
@@ -1334,12 +1493,16 @@ export class GameScene extends Phaser.Scene {
 
     bg
       .on("pointerover", () => {
+        if (!this.canUseOverlayButton() || !isGameObjectAlive(glow) || !isGameObjectAlive(bg) || !isGameObjectAlive(text)) return;
         glow.setVisible(true);
+        skin?.setTint(0x8cf8ff).setAlpha(1);
         bg.setFillStyle(0x12577c, 1).setStrokeStyle(3, 0x8cf8ff, 1);
         text.setShadow(0, 0, "#8cf8ff", 8, true, true);
       })
       .on("pointerout", () => {
+        if (!this.canUseOverlayButton() || !isGameObjectAlive(glow) || !isGameObjectAlive(bg) || !isGameObjectAlive(text)) return;
         glow.setVisible(false);
+        skin?.clearTint().setAlpha(0.9);
         bg.setFillStyle(0x0b2a46, 0.98).setStrokeStyle(2, 0x55eaff, 0.92);
         text.setShadow(0, 0, "#000000", 0, false, false);
         bg.setScale(1);
@@ -1347,12 +1510,17 @@ export class GameScene extends Phaser.Scene {
         text.setScale(1);
       })
       .on("pointerdown", () => {
+        if (!this.canUseOverlayButton() || !isGameObjectAlive(bg) || !isGameObjectAlive(glow) || !isGameObjectAlive(text)) return;
         bg.setScale(0.97);
         glow.setScale(0.97);
         text.setScale(0.97);
         onClick();
       });
-    return [glow, bg, text];
+    return skin ? [skin, glow, bg, text] : [glow, bg, text];
+  }
+
+  private canUseOverlayButton() {
+    return !this.transitioning && this.scene.isActive("GameScene");
   }
 
   private handlePauseToggle() {
@@ -1423,20 +1591,58 @@ export class GameScene extends Phaser.Scene {
     this.resultOverlayButtons.length = 0;
   }
 
-  private cleanupForSceneChange() {
+  private cleanupGameScene() {
+    if (this.transitioning) return;
+    this.transitioning = true;
+    this.running = false;
     this.paused = false;
+    this.stageClear = false;
+    this.gameOver = false;
+    this.matchEnded = false;
     this.time.timeScale = 1;
     this.tweens.timeScale = 1;
+    this.input.enabled = true;
+    this.input.keyboard?.off("keydown", this.onKeyDown);
+    this.input.keyboard?.off("keyup", this.onKeyUp);
     touchControls.clearJust();
     this.downCodes.clear();
     this.justCodes.clear();
-    this.destroyPauseOverlay();
-    this.destroyResultOverlay();
     this.time.removeAllEvents();
     this.tweens.killAll();
+    this.destroyPauseOverlay();
+    this.destroyResultOverlay();
+    for (const projectile of this.projectiles) {
+      if (isGameObjectAlive(projectile.image)) projectile.image.destroy();
+    }
+    for (const pickup of this.pickups) {
+      if (isGameObjectAlive(pickup.image)) pickup.image.destroy();
+    }
+    for (const area of this.activeAreas) {
+      if (isGameObjectAlive(area.visual)) area.visual.destroy();
+    }
+    for (const enemy of this.enemies) {
+      if (isGameObjectAlive(enemy.sprite)) enemy.destroy();
+    }
+    for (const player of this.players) {
+      if (isGameObjectAlive(player.sprite)) player.destroy();
+    }
+    this.hud?.destroy();
+    this.hud = undefined;
+    this.enemies = [];
+    this.projectiles = [];
+    this.pickups = [];
+    this.activeAreas = [];
+    this.players = [];
+    this.defeatedLogged.clear();
+    this.enrageLogged.clear();
+    this.failLogCooldowns.clear();
+    this.debugRects.length = 0;
+    this.pauseOverlayButtons.length = 0;
+    this.resultOverlayButtons.length = 0;
   }
 
   private restartRun() {
+    if (this.transitioning) return;
     console.log("[UI] Restart clicked");
     this.addLog("Restart");
     const data: GameSceneData = {
@@ -1446,12 +1652,13 @@ export class GameScene extends Phaser.Scene {
       p2HeroId: this.p2Hero.id,
       playerCount: this.playerCount,
     };
-    this.cleanupForSceneChange();
+    this.cleanupGameScene();
     this.scene.stop("GameScene");
     this.scene.start("GameScene", data);
   }
 
   private returnToMenu(result?: { title: string; detail: string }) {
+    if (this.transitioning) return;
     console.log("[UI] Back to menu clicked");
     this.addLog("Return menu");
     const payload = result
@@ -1470,7 +1677,7 @@ export class GameScene extends Phaser.Scene {
     const p2HeroId = this.p2Hero.id;
     const playerCount = this.playerCount;
     const mode = this.gameMode;
-    this.cleanupForSceneChange();
+    this.cleanupGameScene();
     this.scene.stop("GameScene");
     this.scene.start("MenuScene", {
       heroId,
@@ -2200,7 +2407,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.updateLogText();
     if (this.pkStatusText) this.pkStatusText.setText(`PK MODE  ${Math.ceil(this.pkTimer).toString().padStart(2, "0")}`);
-    this.hud.update(this.players, this.score, this.enemyBarState());
+    this.hud?.update(this.players, this.score, this.enemyBarState());
   }
 
   private enemyBarState(): EnemyBarState | undefined {
@@ -2230,6 +2437,7 @@ export class GameScene extends Phaser.Scene {
     for (const player of this.players) drawRect(player.getBounds(), 0x4ef3a5);
     for (const enemy of this.enemies) drawRect(enemy.getBounds(), 0xff5b6d);
     for (const projectile of this.projectiles) drawRect(this.projectileBounds(projectile.image), 0xffef72);
+    for (const pickup of this.pickups) drawRect(this.pickupBounds(pickup.image), 0xffd66d);
     for (const item of this.debugRects) drawRect(item.rect, item.color);
   }
 
@@ -2294,4 +2502,8 @@ export class GameScene extends Phaser.Scene {
   private isJust(...codes: string[]) {
     return codes.some((code) => this.justCodes.has(code));
   }
+}
+
+function isGameObjectAlive<T extends Phaser.GameObjects.GameObject>(object?: T | null): object is T {
+  return Boolean(object?.scene && object.active);
 }

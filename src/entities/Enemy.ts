@@ -5,7 +5,7 @@ import { StatusType } from "../config/skills";
 import { RectLike } from "../utils/geometry";
 import type { Player } from "./Player";
 
-export type EnemyKind = "crawler" | "horned_mutant" | "sky_hunter";
+export type EnemyKind = "crawler" | "horned_mutant" | "sky_hunter" | "aegis_elite" | "abyssal_colossus";
 
 export type EnemyAction =
   | { type: "melee"; hitbox: RectLike; damage: number; source: Enemy }
@@ -29,6 +29,9 @@ type EnemyData = {
   targetHeight: number;
   score: number;
   flying?: boolean;
+  boss?: boolean;
+  elite?: boolean;
+  ranged?: boolean;
 };
 
 type StatusState = {
@@ -41,7 +44,8 @@ const ENEMY_DATA: Record<EnemyKind, EnemyData> = {
   crawler: {
     displayName: "Crawler Drone",
     idle: AssetKeys.crawlerIdle,
-    walk: [AssetKeys.crawlerIdle],
+    walk: [AssetKeys.crawlerWalk, AssetKeys.crawlerAlert],
+    attack: AssetKeys.crawlerLeap,
     maxHp: 70,
     damage: 10,
     speed: 95,
@@ -54,9 +58,9 @@ const ENEMY_DATA: Record<EnemyKind, EnemyData> = {
   },
   horned_mutant: {
     displayName: "Horned Mutant",
-    idle: AssetKeys.bossMain,
-    walk: [AssetKeys.bossMain],
-    attack: AssetKeys.bossSlam,
+    idle: AssetKeys.mutantMain,
+    walk: [AssetKeys.mutantWalk1, AssetKeys.mutantWalk2],
+    attack: AssetKeys.mutantAttack,
     maxHp: 260,
     damage: 20,
     speed: 58,
@@ -66,11 +70,12 @@ const ENEMY_DATA: Record<EnemyKind, EnemyData> = {
     slamDamage: 28,
     targetHeight: 238,
     score: 680,
+    boss: true,
   },
   sky_hunter: {
     displayName: "Sky Hunter",
     idle: AssetKeys.skyHunterIdle,
-    walk: [AssetKeys.skyHunterIdle],
+    walk: [AssetKeys.skyHunterHover, AssetKeys.skyHunterDive, AssetKeys.skyHunterSweep],
     attack: AssetKeys.skyHunterFire,
     maxHp: 100,
     damage: 14,
@@ -81,6 +86,39 @@ const ENEMY_DATA: Record<EnemyKind, EnemyData> = {
     targetHeight: 112,
     score: 220,
     flying: true,
+  },
+  aegis_elite: {
+    displayName: "Aegis Elite",
+    idle: AssetKeys.aegisMain,
+    walk: [AssetKeys.aegisWalk, AssetKeys.aegisIdle],
+    attack: AssetKeys.aegisBash,
+    maxHp: 190,
+    damage: 16,
+    speed: 50,
+    stopDistance: 140,
+    attackRange: 118,
+    attackCooldown: 1,
+    targetHeight: 170,
+    score: 520,
+    elite: true,
+    ranged: true,
+  },
+  abyssal_colossus: {
+    displayName: "Abyssal Colossus",
+    idle: AssetKeys.bossMain,
+    walk: [AssetKeys.bossIdle, AssetKeys.bossWhip],
+    attack: AssetKeys.bossSlam,
+    maxHp: 520,
+    damage: 24,
+    speed: 42,
+    stopDistance: 160,
+    attackRange: 138,
+    attackCooldown: 1.05,
+    slamDamage: 34,
+    targetHeight: 310,
+    score: 1450,
+    boss: true,
+    ranged: true,
   },
 };
 
@@ -115,22 +153,23 @@ export class Enemy {
 
   constructor(private readonly scene: Phaser.Scene, readonly kind: EnemyKind, x: number, waveLevel = 0) {
     this.data = ENEMY_DATA[kind];
+    const large = this.data.boss;
     const hpScale = 1 + waveLevel * 0.1;
     this.damageScale = 1 + waveLevel * 0.05;
     this.maxHp = Math.round(this.data.maxHp * hpScale);
     this.hp = this.maxHp;
     this.scoreValue = Math.round(this.data.score * (1 + waveLevel * 0.15));
     this.shadow = scene.add
-      .ellipse(x, PLATFORM_Y + 9, kind === "horned_mutant" ? 184 : 80, kind === "horned_mutant" ? 30 : 18, 0x000000, this.data.flying ? 0.16 : 0.32)
+      .ellipse(x, PLATFORM_Y + 9, large ? 205 : this.data.elite ? 112 : 80, large ? 34 : this.data.elite ? 22 : 18, 0x000000, this.data.flying ? 0.16 : 0.32)
       .setDepth(DEPTHS.shadow);
     this.aura = scene.add
       .ellipse(
         x,
         this.data.flying ? PLATFORM_Y - 260 : PLATFORM_Y - this.data.targetHeight * 0.45,
-        kind === "horned_mutant" ? 230 : 92,
-        kind === "horned_mutant" ? 250 : 112,
-        kind === "horned_mutant" ? 0x356dff : 0x18e6ff,
-        kind === "horned_mutant" ? 0.11 : 0.06,
+        large ? 250 : this.data.elite ? 130 : 92,
+        large ? 270 : this.data.elite ? 150 : 112,
+        large ? 0x356dff : this.data.elite ? 0x8cf8ff : 0x18e6ff,
+        large ? 0.11 : 0.06,
       )
       .setDepth(DEPTHS.enemy - 2)
       .setBlendMode(Phaser.BlendModes.ADD);
@@ -204,7 +243,7 @@ export class Enemy {
     if (!this.alive) return false;
     const duration =
       durationOverride ??
-      (type === "burn" ? 3 : type === "poison" ? 5 : type === "slow" ? 2 : this.kind === "horned_mutant" ? 0.2 : 0.4);
+      (type === "burn" ? 3 : type === "poison" ? 5 : type === "slow" ? 2 : this.data.boss ? 0.2 : 0.4);
     const existing = this.statuses.find((status) => status.type === type);
     if (existing) {
       existing.duration = Math.max(existing.duration, duration);
@@ -240,7 +279,7 @@ export class Enemy {
   }
 
   isBoss() {
-    return this.kind === "horned_mutant";
+    return Boolean(this.data.boss);
   }
 
   isEnragedState() {
@@ -248,8 +287,8 @@ export class Enemy {
   }
 
   getBounds(): RectLike {
-    const width = this.sprite.displayWidth * (this.kind === "horned_mutant" ? 0.56 : this.kind === "sky_hunter" ? 0.52 : 0.56);
-    const height = this.sprite.displayHeight * (this.kind === "horned_mutant" ? 0.76 : this.kind === "sky_hunter" ? 0.54 : 0.62);
+    const width = this.sprite.displayWidth * (this.data.boss ? 0.56 : this.kind === "sky_hunter" ? 0.52 : this.data.elite ? 0.58 : 0.56);
+    const height = this.sprite.displayHeight * (this.data.boss ? 0.76 : this.kind === "sky_hunter" ? 0.54 : this.data.elite ? 0.7 : 0.62);
     return {
       x: this.sprite.x - width / 2,
       y: this.sprite.y - height,
@@ -297,7 +336,7 @@ export class Enemy {
       return actions;
     }
 
-    if (this.kind === "horned_mutant" && this.slamWindup > 0) {
+    if (this.data.boss && this.slamWindup > 0) {
       this.vx = Phaser.Math.Linear(this.vx, 0, 0.42);
       this.slamWindup -= dt;
       this.attackTimer = Math.max(this.attackTimer, 0.1);
@@ -328,12 +367,26 @@ export class Enemy {
       return actions;
     }
 
-    if (this.kind === "horned_mutant" && distance < 215 && this.slamCooldown <= 0) {
+    if (this.data.boss && distance < (this.kind === "abyssal_colossus" ? 260 : 215) && this.slamCooldown <= 0) {
       this.slamCooldown = 4 * (this.isEnraged() ? 0.8 : 1);
       this.attackCooldown = 0.94;
       this.attackTimer = 0.44;
       this.slamWindup = 0.36;
       this.vx = 0;
+      return actions;
+    }
+
+    if (this.data.ranged && distance < 420 && distance > 150 && this.shotCooldown <= 0) {
+      this.shotCooldown = this.kind === "abyssal_colossus" ? 2.8 : 2.2;
+      this.attackTimer = 0.22;
+      actions.push({
+        type: "shot",
+        source: this,
+        x: this.sprite.x + this.facing * (this.data.boss ? 78 : 48),
+        y: this.sprite.y - this.sprite.displayHeight * 0.52,
+        damage: this.data.damage * this.damageScale * 0.85,
+        facing: this.facing,
+      });
       return actions;
     }
 
@@ -417,12 +470,12 @@ export class Enemy {
 
   private refreshVisuals() {
     this.shadow.setPosition(this.sprite.x, PLATFORM_Y + 9);
-    this.shadow.setScale(this.data.flying ? 0.76 : this.kind === "horned_mutant" ? 1.08 : 1, 1);
+    this.shadow.setScale(this.data.flying ? 0.76 : this.data.boss ? 1.12 : this.data.elite ? 1.02 : 1, 1);
     const pulse = 0.5 + Math.sin(this.scene.time.now * 0.008 + this.bob) * 0.5;
     const auraColor = this.isEnraged() ? 0xff5b5b : this.statuses.some((status) => status.type === "poison") ? 0x58ff9c : 0x18e6ff;
     this.aura
       .setPosition(this.sprite.x, this.data.flying ? this.sprite.y - this.sprite.displayHeight * 0.38 : this.sprite.y - this.sprite.displayHeight * 0.46)
-      .setSize(this.sprite.displayWidth * (this.kind === "horned_mutant" ? 0.82 : 0.68), this.sprite.displayHeight * (this.kind === "horned_mutant" ? 0.88 : 0.74))
+      .setSize(this.sprite.displayWidth * (this.data.boss ? 0.82 : this.data.elite ? 0.76 : 0.68), this.sprite.displayHeight * (this.data.boss ? 0.88 : this.data.elite ? 0.82 : 0.74))
       .setFillStyle(auraColor, this.hurtTimer > 0 ? 0.22 : this.isEnraged() ? 0.2 + pulse * 0.08 : 0.055 + pulse * 0.03);
     this.sprite.setFlipX(this.facing < 0);
     this.applyTexture(this.pickTexture());
@@ -531,7 +584,7 @@ export class Enemy {
     }, alive[0]);
   }
 
-  private attackBounds(width = this.kind === "horned_mutant" ? 136 : 84, height = this.kind === "horned_mutant" ? 132 : 68): RectLike {
+  private attackBounds(width = this.data.boss ? 152 : this.data.elite ? 118 : 84, height = this.data.boss ? 140 : this.data.elite ? 104 : 68): RectLike {
     return {
       x: this.sprite.x + this.facing * (width * 0.52) - width / 2,
       y: this.sprite.y - height - 18,
@@ -542,7 +595,8 @@ export class Enemy {
 
   private pickTexture() {
     if (this.attackTimer > 0 && this.data.attack) return this.data.attack;
-    if (this.isEnraged() && this.scene.textures.exists(AssetKeys.bossRage)) return AssetKeys.bossRage;
+    if (this.isEnraged() && this.kind === "abyssal_colossus" && this.scene.textures.exists(AssetKeys.bossRage)) return AssetKeys.bossRage;
+    if (this.isEnraged() && this.kind === "horned_mutant" && this.scene.textures.exists(AssetKeys.mutantCharge)) return AssetKeys.mutantCharge;
     if (Math.abs(this.vx) > 8) return this.data.walk[Math.floor(this.step) % this.data.walk.length];
     return this.data.idle;
   }
@@ -556,6 +610,6 @@ export class Enemy {
   }
 
   private isEnraged() {
-    return this.kind === "horned_mutant" && this.hp <= this.maxHp * 0.4;
+    return Boolean(this.data.boss) && this.hp <= this.maxHp * 0.4;
   }
 }
