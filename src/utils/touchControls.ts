@@ -18,9 +18,15 @@ export const touchControls = {
     return held.has(action);
   },
   consumeJust(action: TouchAction) {
-    return justPressed.has(action);
+    const pressed = justPressed.has(action);
+    if (pressed) justPressed.delete(action);
+    return pressed;
   },
   clearJust() {
+    justPressed.clear();
+  },
+  reset() {
+    held.clear();
     justPressed.clear();
   },
 };
@@ -32,6 +38,8 @@ export const bindTouchControls = () => {
 
     const start = (event: Event) => {
       event.preventDefault();
+      const pointerEvent = typeof PointerEvent !== "undefined" && event instanceof PointerEvent ? event : undefined;
+      if (pointerEvent) button.setPointerCapture?.(pointerEvent.pointerId);
       held.add(action);
       justPressed.add(action);
       button.classList.add("is-pressed");
@@ -39,6 +47,10 @@ export const bindTouchControls = () => {
 
     const end = (event: Event) => {
       event.preventDefault();
+      const pointerEvent = typeof PointerEvent !== "undefined" && event instanceof PointerEvent ? event : undefined;
+      if (pointerEvent && button.hasPointerCapture?.(pointerEvent.pointerId)) {
+        button.releasePointerCapture(pointerEvent.pointerId);
+      }
       held.delete(action);
       button.classList.remove("is-pressed");
     };
@@ -46,6 +58,11 @@ export const bindTouchControls = () => {
     button.addEventListener("pointerdown", start);
     button.addEventListener("pointerup", end);
     button.addEventListener("pointercancel", end);
-    button.addEventListener("pointerleave", end);
+    button.addEventListener("contextmenu", (event) => event.preventDefault());
+  });
+
+  window.addEventListener("blur", () => touchControls.reset());
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) touchControls.reset();
   });
 };

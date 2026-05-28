@@ -44,8 +44,8 @@ const ENEMY_DATA: Record<EnemyKind, EnemyData> = {
   crawler: {
     displayName: "Crawler Drone",
     idle: AssetKeys.crawlerIdle,
-    walk: [AssetKeys.crawlerWalk, AssetKeys.crawlerAlert],
-    attack: AssetKeys.crawlerLeap,
+    walk: [AssetKeys.crawlerIdle],
+    attack: AssetKeys.crawlerIdle,
     maxHp: 70,
     damage: 10,
     speed: 95,

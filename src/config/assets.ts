@@ -74,6 +74,10 @@ export const AssetKeys = {
   itemUpgrade: "item-upgrade-chip",
 
   cityProps: "props-city",
+  cityNewsScreen: "props-city-news-screen",
+  cityCanister: "props-city-canister",
+  cityLaserGate: "props-city-laser-gate",
+  cityFloorPad: "props-city-floor-pad",
   labProps: "props-lab",
   lavaProps: "props-lava",
   cityTiles: "tiles-city-platform",
@@ -200,6 +204,10 @@ export const StaticAssets = {
   ],
   props: [
     { key: AssetKeys.cityProps, path: assetPath("props/city_props.png") },
+    { key: AssetKeys.cityNewsScreen, path: assetPath("processed/environment/city/news_screen.png") },
+    { key: AssetKeys.cityCanister, path: assetPath("processed/environment/city/canister.png") },
+    { key: AssetKeys.cityLaserGate, path: assetPath("processed/environment/city/laser_gate.png") },
+    { key: AssetKeys.cityFloorPad, path: assetPath("processed/environment/city/floor_pad.png") },
     { key: AssetKeys.labProps, path: assetPath("props/lab_props.png") },
     { key: AssetKeys.lavaProps, path: assetPath("props/lava_props.png") },
   ],

@@ -24,5 +24,8 @@ new Phaser.Game({
     roundPixels: false,
     powerPreference: "high-performance",
   },
+  input: {
+    activePointers: 5,
+  },
   scene: [BootScene, MenuScene, GameScene],
 });

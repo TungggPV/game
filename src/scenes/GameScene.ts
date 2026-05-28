@@ -393,24 +393,6 @@ export class GameScene extends Phaser.Scene {
         .setTint(0x9feeff)
         .setDepth(DEPTHS.platformBack + 4);
     }
-    if (this.textures.exists(AssetKeys.labTiles)) {
-      this.add
-        .tileSprite(0, PLATFORM_Y + 76, WORLD_WIDTH, 94, AssetKeys.labTiles)
-        .setOrigin(0, 0)
-        .setTileScale(1.15)
-        .setAlpha(0.22)
-        .setTint(0x67f6ff)
-        .setDepth(DEPTHS.platformBack + 4);
-    }
-    if (this.textures.exists(AssetKeys.lavaTiles)) {
-      this.add
-        .tileSprite(0, PLATFORM_Y + 128, WORLD_WIDTH, 86, AssetKeys.lavaTiles)
-        .setOrigin(0, 0)
-        .setTileScale(1.2)
-        .setAlpha(0.12)
-        .setTint(0xff7a32)
-        .setDepth(DEPTHS.platformBack + 4);
-    }
     this.createWorldProps();
 
     const g = this.add.graphics().setDepth(DEPTHS.platformBack + 1);
@@ -456,21 +438,21 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createWorldProps() {
-    const propRows = [
-      { key: AssetKeys.cityProps, y: PLATFORM_Y - 94, scale: 0.82, alpha: 0.78, tint: 0xffffff, step: 760 },
-      { key: AssetKeys.labProps, y: PLATFORM_Y - 132, scale: 0.64, alpha: 0.32, tint: 0x75f4ff, step: 980 },
-      { key: AssetKeys.lavaProps, y: PLATFORM_Y - 58, scale: 0.58, alpha: 0.2, tint: 0xff8a2a, step: 1140 },
+    const props = [
+      { key: AssetKeys.cityNewsScreen, offset: 0, y: PLATFORM_Y - 92, scale: 0.86, alpha: 0.76 },
+      { key: AssetKeys.cityCanister, offset: 176, y: PLATFORM_Y - 26, scale: 0.88, alpha: 0.78 },
+      { key: AssetKeys.cityLaserGate, offset: 322, y: PLATFORM_Y - 27, scale: 0.88, alpha: 0.72 },
+      { key: AssetKeys.cityFloorPad, offset: 502, y: PLATFORM_Y - 8, scale: 0.94, alpha: 0.74 },
     ];
-    for (const row of propRows) {
-      if (!this.textures.exists(row.key)) continue;
-      for (let x = 260; x < WORLD_WIDTH; x += row.step) {
+    for (let baseX = 250; baseX < WORLD_WIDTH; baseX += 840) {
+      for (const prop of props) {
+        if (!this.textures.exists(prop.key)) continue;
         this.add
-          .image(x + Phaser.Math.Between(-48, 48), row.y, row.key)
+          .image(baseX + prop.offset, prop.y, prop.key)
           .setOrigin(0.5, 1)
-          .setScale(row.scale)
-          .setAlpha(row.alpha)
-          .setTint(row.tint)
-          .setDepth(DEPTHS.platformBack + (row.key === AssetKeys.cityProps ? 2 : -1));
+          .setScale(prop.scale)
+          .setAlpha(prop.alpha)
+          .setDepth(DEPTHS.platformBack + 2);
       }
     }
   }
