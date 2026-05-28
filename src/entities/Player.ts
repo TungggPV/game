@@ -51,7 +51,7 @@ export class Player {
   private invulnTimer = 0;
   private dashCooldown = 0;
   private energyRegen = 17;
-  private boundsMin = 52;
+  private boundsMin = 86;
   private boundsMax = WORLD_WIDTH - 52;
   private spriteBaseScale = 1;
   private readonly skillCooldowns: Record<SkillInput, number> = {

@@ -53,7 +53,7 @@ const ENEMY_DATA: Record<EnemyKind, EnemyData> = {
     attackRange: 85,
     attackCooldown: 1.1,
     leapDamage: 14,
-    targetHeight: 92,
+    targetHeight: 116,
     score: 130,
   },
   horned_mutant: {
@@ -68,22 +68,22 @@ const ENEMY_DATA: Record<EnemyKind, EnemyData> = {
     attackRange: 115,
     attackCooldown: 1.1,
     slamDamage: 28,
-    targetHeight: 238,
+    targetHeight: 252,
     score: 680,
     boss: true,
   },
   sky_hunter: {
     displayName: "Sky Hunter",
     idle: AssetKeys.skyHunterIdle,
-    walk: [AssetKeys.skyHunterHover, AssetKeys.skyHunterDive, AssetKeys.skyHunterSweep],
-    attack: AssetKeys.skyHunterFire,
+    walk: [AssetKeys.skyHunterIdle],
+    attack: AssetKeys.skyHunterIdle,
     maxHp: 100,
     damage: 14,
     speed: 74,
     stopDistance: 300,
     attackRange: 380,
     attackCooldown: 2,
-    targetHeight: 112,
+    targetHeight: 134,
     score: 220,
     flying: true,
   },
@@ -98,7 +98,7 @@ const ENEMY_DATA: Record<EnemyKind, EnemyData> = {
     stopDistance: 140,
     attackRange: 118,
     attackCooldown: 1,
-    targetHeight: 170,
+    targetHeight: 190,
     score: 520,
     elite: true,
     ranged: true,
@@ -115,7 +115,7 @@ const ENEMY_DATA: Record<EnemyKind, EnemyData> = {
     attackRange: 138,
     attackCooldown: 1.05,
     slamDamage: 34,
-    targetHeight: 310,
+    targetHeight: 330,
     score: 1450,
     boss: true,
     ranged: true,
@@ -526,6 +526,7 @@ export class Enemy {
     const time = this.scene.time.now * 0.006;
     const topY = this.sprite.y - this.sprite.displayHeight * 0.72;
     const footY = this.data.flying ? this.sprite.y - 18 : PLATFORM_Y - 2;
+    this.drawHealthPip();
 
     if (this.statuses.some((status) => status.type === "slow")) {
       this.statusVisuals.lineStyle(2, 0x67f6ff, 0.68);
@@ -572,6 +573,22 @@ export class Enemy {
         this.statusVisuals.lineBetween(x + 9, y + 13, x - 1, y + 25);
       }
     }
+  }
+
+  private drawHealthPip() {
+    if (!this.alive) return;
+    const pct = Phaser.Math.Clamp(this.hp / this.maxHp, 0, 1);
+    const width = Phaser.Math.Clamp(this.sprite.displayWidth * (this.data.boss ? 0.38 : 0.52), this.data.boss ? 112 : 54, this.data.boss ? 168 : 104);
+    const height = this.data.boss ? 8 : 6;
+    const x = this.sprite.x - width / 2;
+    const y = this.sprite.y - this.sprite.displayHeight - (this.data.boss ? 22 : 14);
+    const fill = pct > 0.55 ? 0x4ef3a5 : pct > 0.25 ? 0xffd66d : 0xff5b6d;
+    this.statusVisuals.fillStyle(0x02070d, 0.82);
+    this.statusVisuals.fillRoundedRect(x, y, width, height, 3);
+    this.statusVisuals.fillStyle(fill, 0.94);
+    this.statusVisuals.fillRoundedRect(x + 2, y + 2, Math.max(0, (width - 4) * pct), Math.max(2, height - 4), 2);
+    this.statusVisuals.lineStyle(1, this.data.boss ? 0xff6d57 : 0x8cf8ff, this.hp < this.maxHp ? 0.78 : 0.36);
+    this.statusVisuals.strokeRoundedRect(x, y, width, height, 3);
   }
 
   private nearestTarget(targets: Player[]) {

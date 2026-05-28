@@ -69,20 +69,21 @@ export class HUD {
     this.bossText = scene.add
       .text(GAME_WIDTH / 2, 12, "", {
         fontFamily: "Arial, sans-serif",
-        fontSize: "13px",
+        fontSize: "14px",
         fontStyle: "900",
         color: "#ffd7d7",
         stroke: "#180204",
         strokeThickness: 3,
       })
-      .setOrigin(0.5, 0)
+      .setOrigin(0, 0.5)
       .setScrollFactor(0)
       .setDepth(DEPTHS.hud + 6);
     this.bossFrame = scene.add
-      .image(GAME_WIDTH / 2, 51, AssetKeys.uiBossBar)
-      .setDisplaySize(535, 85)
+      .image(GAME_WIDTH / 2 - 272, 51, AssetKeys.uiBossBar)
+      .setCrop(0, 0, 86, 74)
+      .setDisplaySize(72, 62)
       .setScrollFactor(0)
-      .setDepth(DEPTHS.hud + 1)
+      .setDepth(DEPTHS.hud + 5)
       .setVisible(false);
     this.dashHint = scene.add
       .text(0, 0, "SHIFT/F\nDASH", {
@@ -155,13 +156,13 @@ export class HUD {
     const healthFrame = this.scene.add
       .image(206, y + 36, AssetKeys.uiHealthBar)
       .setDisplaySize(index === 0 ? 250 : 212, index === 0 ? 44 : 38)
-      .setAlpha(index === 0 ? 0.88 : 0.68)
+      .setAlpha(index === 0 ? 0.16 : 0.1)
       .setScrollFactor(0)
       .setDepth(DEPTHS.hud + 1);
     const energyFrame = this.scene.add
       .image(196, y + 56, AssetKeys.uiEnergyBar)
       .setDisplaySize(index === 0 ? 218 : 184, index === 0 ? 36 : 30)
-      .setAlpha(index === 0 ? 0.72 : 0.55)
+      .setAlpha(index === 0 ? 0.12 : 0.08)
       .setScrollFactor(0)
       .setDepth(DEPTHS.hud + 1);
     const name = this.scene.add
@@ -212,8 +213,8 @@ export class HUD {
       const portraitKey = heroPortraitKey(hero);
       this.portraitFrames[i].setPosition(60, y + h / 2);
       this.portraits[i].setPosition(60, y + h / 2);
-      this.healthFrames[i]?.setPosition(206, y + 39).setDisplaySize(i === 0 ? 250 : 212, i === 0 ? 44 : 38).setAlpha(i === 0 ? 0.88 : 0.68);
-      this.energyFrames[i]?.setPosition(196, y + 58).setDisplaySize(i === 0 ? 218 : 184, i === 0 ? 36 : 30).setAlpha(i === 0 ? 0.72 : 0.55);
+      this.healthFrames[i]?.setPosition(206, y + 39).setDisplaySize(i === 0 ? 250 : 212, i === 0 ? 44 : 38).setAlpha(i === 0 ? 0.16 : 0.1);
+      this.energyFrames[i]?.setPosition(196, y + 58).setDisplaySize(i === 0 ? 218 : 184, i === 0 ? 36 : 30).setAlpha(i === 0 ? 0.12 : 0.08);
       if (this.scene.textures.exists(portraitKey) && this.portraits[i].texture.key !== portraitKey) {
         this.portraits[i].setTexture(portraitKey);
       }
@@ -246,8 +247,8 @@ export class HUD {
       const portraitKey = heroPortraitKey(hero);
       this.portraitFrames[i].setPosition(portraitX, y + h / 2).setDisplaySize(76, 76);
       this.portraits[i].setPosition(portraitX, y + h / 2).setDisplaySize(64, 64);
-      this.healthFrames[i]?.setPosition(barX + 98, y + 39).setDisplaySize(244, 42).setAlpha(0.82);
-      this.energyFrames[i]?.setPosition(barX + 86, y + 59).setDisplaySize(212, 34).setAlpha(0.62);
+      this.healthFrames[i]?.setPosition(barX + 98, y + 39).setDisplaySize(244, 42).setAlpha(0.14);
+      this.energyFrames[i]?.setPosition(barX + 86, y + 59).setDisplaySize(212, 34).setAlpha(0.1);
       if (this.scene.textures.exists(portraitKey) && this.portraits[i].texture.key !== portraitKey) {
         this.portraits[i].setTexture(portraitKey);
       }
@@ -397,15 +398,23 @@ export class HUD {
     if (!enemyBar) return;
 
     const pct = Phaser.Math.Clamp(enemyBar.hp / enemyBar.maxHp, 0, 1);
-    const x = GAME_WIDTH / 2 - 240;
-    this.drawSlantedPanel(x, 36, 480, 30, 0xff5b6d, 0.88);
-    this.graphics.fillStyle(0x250509, 0.95);
-    this.graphics.fillRoundedRect(x + 10, 44, 460, 14, 5);
-    this.graphics.fillStyle(0xff3655, 0.96);
-    this.graphics.fillRoundedRect(x + 12, 46, Math.max(0, 456 * pct), 10, 4);
-    this.graphics.fillStyle(0xffb1b1, 0.34);
-    this.graphics.fillRoundedRect(x + 12, 46, Math.max(0, 456 * pct), 3, 2);
-    this.bossText.setText(enemyBar.name).setVisible(true);
+    const x = GAME_WIDTH / 2 - 276;
+    const barX = x + 72;
+    const y = 31;
+    this.bossFrame.setPosition(x + 28, y + 18).setVisible(true);
+    this.drawSlantedPanel(barX, y, 476, 36, 0xff5b6d, 0.9);
+    this.graphics.fillStyle(0x21040a, 0.96);
+    this.graphics.fillRoundedRect(barX + 14, y + 17, 448, 13, 5);
+    this.graphics.fillStyle(0xff3655, 0.98);
+    this.graphics.fillRoundedRect(barX + 16, y + 19, Math.max(0, 444 * pct), 9, 4);
+    this.graphics.fillStyle(0xffc6c6, 0.34);
+    this.graphics.fillRoundedRect(barX + 16, y + 19, Math.max(0, 444 * pct), 3, 2);
+    this.graphics.lineStyle(1, 0xffb1b1, 0.32);
+    for (let sx = barX + 68; sx < barX + 448; sx += 54) this.graphics.lineBetween(sx, y + 18, sx - 7, y + 30);
+    this.bossText
+      .setPosition(barX + 18, y + 10)
+      .setText(`${enemyBar.name}  ${Math.ceil(pct * 100)}%`)
+      .setVisible(true);
   }
 
   private rebuildSkillBar(hero: HeroConfig) {

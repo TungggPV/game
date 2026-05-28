@@ -182,22 +182,14 @@ export class MenuScene extends Phaser.Scene {
       })
       .setShadow(0, 0, "#ffd66d", 5, true, true);
 
-    this.add.text(82, 306, "P1: A/D move  W/Space jump  J basic  K/L skills  U/I ultimate  Shift/F dash  P/Esc pause", {
+    this.add.text(82, 302, "CONTROL: J Basic  K/L Skill  U Ultimate  Shift/F Dash  P Pause", {
       fontFamily: "Arial, sans-serif",
-      fontSize: "12px",
-      fontStyle: "700",
-      color: "#bfefff",
+      fontSize: "13px",
+      fontStyle: "900",
+      color: "#dffcff",
       stroke: "#02070d",
       strokeThickness: 3,
-    });
-    this.add.text(82, 326, "P2: Arrows move/jump  N1 basic  N2/N3 skills  N4 ultimate  Right Shift/N0 dash", {
-      fontFamily: "Arial, sans-serif",
-      fontSize: "12px",
-      fontStyle: "700",
-      color: "#bfefff",
-      stroke: "#02070d",
-      strokeThickness: 3,
-    });
+    }).setShadow(0, 0, "#18e6ff", 4, true, true);
     this.createSkillPreviewSlots();
 
     const initialHero = HEROES[this.selectedHeroIndex];
@@ -291,7 +283,7 @@ export class MenuScene extends Phaser.Scene {
     this.createButton(238, 552, 154, 42, "Ky nang", () => this.openSkillDetails(), true, AssetKeys.uiMenuButtons);
     this.createButton(404, 552, 144, 42, "Huong dan", () => this.openGuide(), true, AssetKeys.uiMenuButtons);
     this.createButton(82, 604, 144, 38, "Gallery", () => this.openGallery(), true, AssetKeys.uiMenuButtons);
-    this.createButton(238, 604, 154, 38, "Choi lai", () => this.startGame(), Boolean(this.result), AssetKeys.uiStageSelectButton);
+    if (this.result) this.createButton(238, 604, 154, 38, "Choi lai", () => this.startGame(), true, AssetKeys.uiStageSelectButton);
   }
 
   private createKeys() {
@@ -430,8 +422,14 @@ export class MenuScene extends Phaser.Scene {
     }
     const dynamicKey = heroDynamicKey(hero);
     if (isAlive(this.dynamicArt)) {
-      if (this.textures.exists(dynamicKey)) this.dynamicArt.setTexture(dynamicKey).setDisplaySize(430, 430).setVisible(true);
-      else this.dynamicArt.setVisible(false);
+      if (this.textures.exists(dynamicKey)) {
+        const source = this.textures.get(dynamicKey).getSourceImage() as { width?: number; height?: number };
+        this.dynamicArt
+          .setTexture(dynamicKey)
+          .setCrop(0, 0, source.width ?? 1, source.height ?? 1)
+          .setDisplaySize(430, 430)
+          .setVisible(true);
+      } else this.dynamicArt.setVisible(false);
     }
     this.refreshSkillPreview(hero.id);
     for (let i = 0; i < this.heroCards.length; i++) {

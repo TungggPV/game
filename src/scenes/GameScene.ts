@@ -331,11 +331,11 @@ export class GameScene extends Phaser.Scene {
       .tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, AssetKeys.backgroundCity)
       .setOrigin(0)
       .setScrollFactor(0)
-      .setTileScale(2.38)
+      .setTileScale(2.3)
       .setDepth(DEPTHS.background);
     this.background.setTint(0xe6fbff);
     this.createAtmosphereLayers();
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.08).setOrigin(0).setScrollFactor(0).setDepth(DEPTHS.background + 5);
+    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.04).setOrigin(0).setScrollFactor(0).setDepth(DEPTHS.background + 5);
   }
 
   private createAtmosphereLayers() {
@@ -352,16 +352,16 @@ export class GameScene extends Phaser.Scene {
       this.atmosphereLayers.push({ layer, factor, speed, drift });
     };
 
-    addLayer(2.95, 0.18, 0x18e6ff, 0.08, 3.2, 0.16, DEPTHS.background + 1);
-    addLayer(3.6, 0.1, 0xff4fff, 0.045, -1.4, 0.1, DEPTHS.background + 2);
-    addLayer(2.2, 0.11, 0xf6c65a, 0.14, 1.1, 0.08, DEPTHS.background + 3);
+    addLayer(2.95, 0.11, 0x18e6ff, 0.08, 3.2, 0.16, DEPTHS.background + 1);
+    addLayer(3.6, 0.055, 0xff4fff, 0.045, -1.4, 0.1, DEPTHS.background + 2);
+    addLayer(2.2, 0.055, 0xf6c65a, 0.14, 1.1, 0.08, DEPTHS.background + 3);
 
     const haze = this.add.graphics().setScrollFactor(0).setDepth(DEPTHS.background + 4).setBlendMode(Phaser.BlendModes.ADD);
-    haze.fillStyle(0x18e6ff, 0.06);
+    haze.fillStyle(0x18e6ff, 0.035);
     haze.fillEllipse(GAME_WIDTH * 0.24, GAME_HEIGHT * 0.36, 540, 220);
-    haze.fillStyle(0xff4fff, 0.045);
+    haze.fillStyle(0xff4fff, 0.03);
     haze.fillEllipse(GAME_WIDTH * 0.72, GAME_HEIGHT * 0.28, 430, 180);
-    haze.fillStyle(0xf6c65a, 0.045);
+    haze.fillStyle(0xf6c65a, 0.028);
     haze.fillEllipse(GAME_WIDTH * 0.58, GAME_HEIGHT * 0.72, 620, 90);
 
     this.neonRain = this.add.graphics().setScrollFactor(0).setDepth(DEPTHS.background + 6).setBlendMode(Phaser.BlendModes.ADD);
@@ -375,7 +375,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const vignette = this.add.graphics().setScrollFactor(0).setDepth(DEPTHS.hud - 30);
-    vignette.fillStyle(0x02070d, 0.28);
+    vignette.fillStyle(0x02070d, 0.22);
     vignette.fillRect(0, 0, GAME_WIDTH, 72);
     vignette.fillRect(0, GAME_HEIGHT - 86, GAME_WIDTH, 86);
     vignette.fillStyle(0x02070d, 0.16);
@@ -389,32 +389,32 @@ export class GameScene extends Phaser.Scene {
         .tileSprite(0, PLATFORM_Y + 36, WORLD_WIDTH, 150, AssetKeys.cityTiles)
         .setOrigin(0, 0)
         .setTileScale(1.4)
-        .setAlpha(0.28)
+        .setAlpha(0.56)
         .setTint(0x9feeff)
-        .setDepth(DEPTHS.platformBack);
+        .setDepth(DEPTHS.platformBack + 4);
     }
     if (this.textures.exists(AssetKeys.labTiles)) {
       this.add
         .tileSprite(0, PLATFORM_Y + 76, WORLD_WIDTH, 94, AssetKeys.labTiles)
         .setOrigin(0, 0)
         .setTileScale(1.15)
-        .setAlpha(0.16)
+        .setAlpha(0.22)
         .setTint(0x67f6ff)
-        .setDepth(DEPTHS.platformBack + 1);
+        .setDepth(DEPTHS.platformBack + 4);
     }
     if (this.textures.exists(AssetKeys.lavaTiles)) {
       this.add
         .tileSprite(0, PLATFORM_Y + 128, WORLD_WIDTH, 86, AssetKeys.lavaTiles)
         .setOrigin(0, 0)
         .setTileScale(1.2)
-        .setAlpha(0.1)
+        .setAlpha(0.12)
         .setTint(0xff7a32)
-        .setDepth(DEPTHS.platformBack + 1);
+        .setDepth(DEPTHS.platformBack + 4);
     }
     this.createWorldProps();
 
     const g = this.add.graphics().setDepth(DEPTHS.platformBack + 1);
-    g.fillStyle(0x07121c, 0.98);
+    g.fillStyle(0x07121c, 0.88);
     g.fillRect(0, PLATFORM_Y, WORLD_WIDTH, GAME_HEIGHT - PLATFORM_Y);
     g.fillStyle(0x18e6ff, 0.08);
     g.fillRect(0, PLATFORM_Y - 18, WORLD_WIDTH, 18);
@@ -900,6 +900,7 @@ export class GameScene extends Phaser.Scene {
     player.energize(attack.energyGainOnHit);
     this.spawnHitSpark(enemy.sprite.x, enemy.sprite.y - enemy.sprite.displayHeight * 0.48, attack.effectColor);
     if (!enemy.alive) this.logEnemyDefeated(enemy);
+    this.cameras.main.shake(42, 0.0016);
     this.hitPauseTimer = Math.max(this.hitPauseTimer, 0.06);
   }
 
@@ -911,6 +912,7 @@ export class GameScene extends Phaser.Scene {
       if (applied) this.addLog(`${enemy.data.displayName} ${skill.status}`);
     }
     if (!enemy.alive) this.logEnemyDefeated(enemy);
+    this.cameras.main.shake(skill.input === "ultimate" ? 90 : 55, skill.input === "ultimate" ? 0.0032 : 0.002);
     this.hitPauseTimer = Math.max(this.hitPauseTimer, 0.06);
   }
 
@@ -2413,11 +2415,7 @@ export class GameScene extends Phaser.Scene {
   private enemyBarState(): EnemyBarState | undefined {
     if (this.gameMode === "pk") return undefined;
     const boss = this.enemies.find((enemy) => enemy.alive && enemy.isBoss());
-    if (boss) return boss.getBarState();
-    const elite = this.enemies
-      .filter((enemy) => enemy.alive && enemy.hp / enemy.maxHp > 0.65)
-      .sort((a, b) => b.maxHp - a.maxHp)[0];
-    return elite?.getBarState();
+    return boss?.getBarState();
   }
 
   private drawDebug() {
