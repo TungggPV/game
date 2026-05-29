@@ -1509,7 +1509,7 @@ export class GameScene extends Phaser.Scene {
 
   private handlePauseToggle() {
     if (!this.running || this.stageClear || this.gameOver || this.matchEnded) return;
-    if (this.isJust("KeyP", "Escape")) this.setPaused(!this.paused);
+    if (this.isJust("KeyP", "Escape") || touchControls.consumeJust("pause")) this.setPaused(!this.paused);
   }
 
   private setPaused(paused: boolean, log = true) {

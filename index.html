@@ -13,18 +13,46 @@
         <div id="gameMount" tabindex="0"></div>
       </section>
 
-      <nav class="touch-controls" aria-label="Touch controls">
-        <div class="touch-cluster">
-          <button data-touch-action="left" aria-label="Left" type="button">&lt;</button>
-          <button data-touch-action="jump" aria-label="Jump" type="button">^</button>
-          <button data-touch-action="right" aria-label="Right" type="button">&gt;</button>
+      <nav class="touch-controls" aria-label="Mobile touch controls">
+        <div class="touch-cluster move-cluster" aria-label="Move controls">
+          <button class="touch-btn move-btn" data-touch-action="left" aria-label="Move left" type="button">
+            <span class="touch-main">&lt;</span>
+            <span class="touch-label">LEFT</span>
+          </button>
+          <button class="touch-btn jump-btn" data-touch-action="jump" aria-label="Jump" type="button">
+            <span class="touch-main">^</span>
+            <span class="touch-label">JUMP</span>
+          </button>
+          <button class="touch-btn move-btn" data-touch-action="right" aria-label="Move right" type="button">
+            <span class="touch-main">&gt;</span>
+            <span class="touch-label">RIGHT</span>
+          </button>
         </div>
-        <div class="touch-cluster action-cluster">
-          <button data-touch-action="dash" aria-label="Dash" type="button">D</button>
-          <button data-touch-action="basic" aria-label="Basic attack" type="button">J</button>
-          <button data-touch-action="skill1" aria-label="Skill 1" type="button">K</button>
-          <button data-touch-action="skill2" aria-label="Skill 2" type="button">L</button>
-          <button data-touch-action="ultimate" aria-label="Ultimate" type="button">U</button>
+        <div class="touch-cluster action-cluster" aria-label="Action controls">
+          <button class="touch-btn dash-btn" data-touch-action="dash" aria-label="Dash" type="button">
+            <span class="touch-main">D</span>
+            <span class="touch-label">DASH</span>
+          </button>
+          <button class="touch-btn" data-touch-action="basic" aria-label="Basic attack" type="button">
+            <span class="touch-main">J</span>
+            <span class="touch-label">ATK</span>
+          </button>
+          <button class="touch-btn" data-touch-action="skill1" aria-label="Skill 1" type="button">
+            <span class="touch-main">K</span>
+            <span class="touch-label">SK1</span>
+          </button>
+          <button class="touch-btn" data-touch-action="skill2" aria-label="Skill 2" type="button">
+            <span class="touch-main">L</span>
+            <span class="touch-label">SK2</span>
+          </button>
+          <button class="touch-btn ultimate-btn" data-touch-action="ultimate" aria-label="Ultimate" type="button">
+            <span class="touch-main">U</span>
+            <span class="touch-label">ULT</span>
+          </button>
+          <button class="touch-btn pause-btn" data-touch-action="pause" aria-label="Pause" type="button">
+            <span class="touch-main">P</span>
+            <span class="touch-label">PAUSE</span>
+          </button>
         </div>
       </nav>
     </main>

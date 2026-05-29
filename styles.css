@@ -93,26 +93,76 @@ button {
 
 .touch-controls button {
   pointer-events: auto;
-  width: clamp(44px, 10vw, 60px);
-  height: clamp(44px, 10vw, 60px);
+  width: clamp(50px, 10vw, 68px);
+  height: clamp(50px, 10vw, 68px);
   border: 1px solid rgba(24, 230, 255, 0.34);
-  border-radius: 8px;
-  background: var(--panel);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(21, 52, 77, 0.9), rgba(2, 13, 30, 0.86)),
+    var(--panel);
   color: var(--ink);
-  font-size: clamp(1rem, 4vw, 1.45rem);
   font-weight: 900;
   line-height: 1;
   cursor: pointer;
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
-  box-shadow: 0 0 18px rgba(24, 230, 255, 0.09);
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  padding: 5px 4px;
+  box-shadow:
+    0 0 18px rgba(24, 230, 255, 0.12),
+    0 0 0 1px rgba(255, 255, 255, 0.07) inset;
   backdrop-filter: blur(8px);
 }
 
 .touch-controls button:active,
 .touch-controls button.is-pressed {
   border-color: rgba(246, 198, 90, 0.82);
-  background: rgba(24, 230, 255, 0.22);
+  background:
+    linear-gradient(180deg, rgba(24, 230, 255, 0.32), rgba(8, 36, 54, 0.9)),
+    rgba(24, 230, 255, 0.22);
+  transform: translateY(2px) scale(0.98);
+  box-shadow:
+    0 0 24px rgba(246, 198, 90, 0.24),
+    0 0 0 1px rgba(246, 198, 90, 0.28) inset;
+}
+
+.touch-main {
+  display: block;
+  font-size: clamp(1.05rem, 4vw, 1.5rem);
+  letter-spacing: 0;
+}
+
+.touch-label {
+  display: block;
+  color: rgba(234, 248, 255, 0.74);
+  font-size: clamp(0.48rem, 1.7vw, 0.68rem);
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.move-btn {
+  border-color: rgba(103, 246, 255, 0.5);
+}
+
+.jump-btn {
+  border-color: rgba(246, 198, 90, 0.62);
+}
+
+.dash-btn {
+  border-color: rgba(140, 248, 255, 0.64);
+}
+
+.ultimate-btn {
+  border-color: rgba(255, 92, 110, 0.68);
+  color: #ffe8ed;
+}
+
+.pause-btn {
+  width: clamp(58px, 10.8vw, 76px);
+  border-color: rgba(246, 198, 90, 0.68);
+  color: #fff4cf;
 }
 
 @media (min-width: 980px) and (pointer: fine) {
@@ -147,17 +197,23 @@ button {
     align-items: flex-end;
   }
 
+  .move-cluster {
+    align-items: flex-end;
+  }
+
   .action-cluster {
     justify-content: flex-end;
     flex-wrap: wrap;
-    max-width: min(66vw, 420px);
+    max-width: min(68vw, 480px);
   }
 
   .touch-controls button {
-    width: clamp(46px, 11.5vw, 64px);
-    height: clamp(46px, 11.5vw, 64px);
+    width: clamp(48px, 11.5vw, 66px);
+    height: clamp(48px, 11.5vw, 66px);
     border-color: rgba(140, 248, 255, 0.54);
-    background: rgba(2, 13, 30, 0.72);
+    background:
+      linear-gradient(180deg, rgba(16, 46, 70, 0.86), rgba(2, 13, 30, 0.72)),
+      rgba(2, 13, 30, 0.72);
     box-shadow:
       0 0 18px rgba(24, 230, 255, 0.16),
       0 0 0 1px rgba(255, 255, 255, 0.06) inset;
@@ -166,17 +222,29 @@ button {
 
 @media (max-width: 480px) and (orientation: portrait) {
   .touch-cluster {
-    gap: 6px;
+    gap: 5px;
   }
 
   .action-cluster {
-    max-width: 54vw;
+    max-width: 60vw;
   }
 
   .touch-controls button {
-    width: clamp(42px, 11vw, 52px);
-    height: clamp(42px, 11vw, 52px);
-    font-size: clamp(0.82rem, 3.7vw, 1.05rem);
+    width: clamp(40px, 11vw, 52px);
+    height: clamp(40px, 11vw, 52px);
+    padding: 4px 3px;
+  }
+
+  .pause-btn {
+    width: clamp(48px, 12vw, 58px);
+  }
+
+  .touch-main {
+    font-size: clamp(0.88rem, 3.6vw, 1.08rem);
+  }
+
+  .touch-label {
+    font-size: clamp(0.42rem, 1.55vw, 0.55rem);
   }
 }
 
@@ -205,12 +273,15 @@ button {
   }
 
   .action-cluster {
-    max-width: min(50vw, 420px);
+    max-width: min(54vw, 506px);
   }
 
   .touch-controls button {
-    width: clamp(48px, 8.2vw, 68px);
-    height: clamp(48px, 8.2vw, 68px);
-    font-size: clamp(0.95rem, 2.5vw, 1.35rem);
+    width: clamp(50px, 7.8vw, 72px);
+    height: clamp(50px, 7.8vw, 72px);
+  }
+
+  .pause-btn {
+    width: clamp(62px, 8.8vw, 84px);
   }
 }

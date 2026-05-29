@@ -8,7 +8,8 @@ export type TouchAction =
   | "ultimate"
   | "slash"
   | "blast"
-  | "dash";
+  | "dash"
+  | "pause";
 
 const held = new Set<TouchAction>();
 const justPressed = new Set<TouchAction>();
@@ -43,6 +44,7 @@ export const bindTouchControls = () => {
       held.add(action);
       justPressed.add(action);
       button.classList.add("is-pressed");
+      if ("vibrate" in navigator) navigator.vibrate?.(8);
     };
 
     const end = (event: Event) => {
