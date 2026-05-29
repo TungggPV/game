@@ -29,6 +29,7 @@ export class BootScene extends Phaser.Scene {
   create() {
     this.createEffectFallbacks();
     this.removeNewHeroWhiteBackdrops();
+    this.removeEnemyCardBackdrops();
     this.registry.set("missingAssets", this.missingAssets);
     this.scene.start("MenuScene");
   }
@@ -129,7 +130,40 @@ export class BootScene extends Phaser.Scene {
     }
   }
 
-  private knockOutBorderLightPixels(key: string) {
+  private removeEnemyCardBackdrops() {
+    [
+      AssetKeys.crawlerIdle,
+      AssetKeys.crawlerWalk,
+      AssetKeys.crawlerAlert,
+      AssetKeys.crawlerLeap,
+      AssetKeys.mutantIdle,
+      AssetKeys.mutantMain,
+      AssetKeys.mutantWalk1,
+      AssetKeys.mutantWalk2,
+      AssetKeys.mutantAttack,
+      AssetKeys.mutantCharge,
+      AssetKeys.skyHunterIdle,
+      AssetKeys.skyHunterHover,
+      AssetKeys.skyHunterDive,
+      AssetKeys.skyHunterFire,
+      AssetKeys.skyHunterSweep,
+      AssetKeys.aegisMain,
+      AssetKeys.aegisIdle,
+      AssetKeys.aegisWalk,
+      AssetKeys.aegisBash,
+      AssetKeys.aegisShot,
+      AssetKeys.aegisBreak,
+      AssetKeys.bossMain,
+      AssetKeys.bossIdle,
+      AssetKeys.bossBeam,
+      AssetKeys.bossSlam,
+      AssetKeys.bossRage,
+      AssetKeys.bossSpires,
+      AssetKeys.bossWhip,
+    ].forEach((key) => this.knockOutBorderLightPixels(key, false));
+  }
+
+  private knockOutBorderLightPixels(key: string, removeInteriorLightPixels = true) {
     if (!this.textures.exists(key)) return;
     const source = this.textures.get(key).getSourceImage() as CanvasImageSource & {
       width?: number;
@@ -192,7 +226,7 @@ export class BootScene extends Phaser.Scene {
     }
 
     for (let pixel = 0; pixel < visited.length; pixel++) {
-      if (isLight(pixel)) {
+      if (removeInteriorLightPixels && isLight(pixel)) {
         data[pixel * 4 + 3] = 0;
         continue;
       }

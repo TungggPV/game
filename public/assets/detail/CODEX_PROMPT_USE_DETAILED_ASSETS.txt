@@ -1,0 +1,50 @@
+Tôi đã thêm bộ detailed game graphics assets vào:
+
+public/assets/detailed/
+├── heroes/
+├── enemies/
+├── environment/
+├── ui/
+├── effects/
+├── items/
+└── sheets/
+
+Hãy tích hợp bộ asset này vào game để đồ họa chi tiết và đồng bộ hơn.
+
+YÊU CẦU:
+1. Menu:
+- Dùng heroes/*/hero_card.png để làm hero selection card/gallery preview.
+- Dùng ui/main_buttons_panel.png làm reference style cho button.
+- Thêm Gallery/Design Preview nếu cần để hiển thị full_design_sheet.png.
+
+2. Gameplay environment:
+- Dùng environment/cyber_city_parallax_background.png làm reference hoặc background phụ.
+- Dùng environment/gameplay_lane_example.png làm reference cho stage layout.
+- Dùng environment/industrial_platform_tiles.png làm reference để cải thiện platform/tile.
+- Platform phải chi tiết hơn: panel kim loại, viền cyan, line vàng, shadow.
+
+3. Enemy/Boss:
+- Dùng enemies/crawler_drone_card.png, sky_hunter_card.png, horned_mutant_card.png, aegis_elite_card.png, abyssal_colossus_boss.png làm preview/reference.
+- Boss Horned Mutant và Abyssal Colossus phải nhìn to, rõ, không méo/crop lỗi.
+- Thêm boss preview trong menu hoặc boss intro.
+
+4. UI:
+- Dùng ui/hud_p1_p2_boss_panel.png làm reference để polish HUD.
+- Dùng ui/pause_panel.png, stage_clear_panel.png, game_over_panel.png làm reference cho overlay.
+- Sửa các nút pause/game over/stage clear phải click được.
+- HUD không dùng rectangle phẳng nữa.
+
+5. Effects:
+- Dùng effects/nova_blade_effects.png, crimson_flare_effects.png, volt_sentinel_effects.png, emerald_phantom_effects.png làm reference cho skill VFX.
+- Dùng effects/common_effects.png làm reference cho hit spark, explosion, dash trail, shockwave.
+- Gameplay VFX nên dùng Phaser particles/graphics/tinted common effects, không nhất thiết hiển thị panel ảnh trực tiếp.
+
+6. Items:
+- Dùng items/health_pickup.png, energy_pickup.png, score_crystal.png, armor_core.png cho pickups.
+- Enemy có tỉ lệ drop health/energy/score.
+- Player nhặt item có effect glow và log.
+
+7. Không crash:
+- Nếu asset không phù hợp làm sprite gameplay, dùng làm UI preview/reference.
+- Nếu thiếu asset, fallback bằng Phaser Graphics đẹp.
+- npm run build phải thành công.

@@ -31,6 +31,7 @@ type SkillSlot = {
 
 export class HUD {
   private readonly graphics: Phaser.GameObjects.Graphics;
+  private readonly hudPanelSkins: Array<Phaser.GameObjects.Image | undefined> = [];
   private readonly portraitFrames: Phaser.GameObjects.Image[] = [];
   private readonly portraits: Phaser.GameObjects.Image[] = [];
   private readonly healthFrames: Phaser.GameObjects.Image[] = [];
@@ -136,13 +137,30 @@ export class HUD {
     this.dashHint.destroy();
     this.p2DashHint.destroy();
     this.previewCard?.destroy();
-    for (const item of [...this.portraitFrames, ...this.portraits, ...this.healthFrames, ...this.energyFrames, ...this.nameTexts, ...this.hpTexts]) item.destroy();
+    for (const item of [
+      ...this.hudPanelSkins.filter((skin): skin is Phaser.GameObjects.Image => Boolean(skin)),
+      ...this.portraitFrames,
+      ...this.portraits,
+      ...this.healthFrames,
+      ...this.energyFrames,
+      ...this.nameTexts,
+      ...this.hpTexts,
+    ])
+      item.destroy();
     this.destroySkillSlots();
     this.destroyP2SkillSlots();
   }
 
   private createPlayerHudObjects(index: number, hero: HeroConfig) {
     const y = 30 + index * 86;
+    const hudSkin = this.scene.textures.exists(AssetKeys.detailHudPanel)
+      ? this.scene.add
+        .image(214, y + 42, AssetKeys.detailHudPanel)
+        .setDisplaySize(index === 0 ? 392 : 330, index === 0 ? 116 : 98)
+        .setAlpha(index === 0 ? 0.23 : 0.15)
+        .setScrollFactor(0)
+        .setDepth(DEPTHS.hud - 2)
+      : undefined;
     const frame = this.scene.add
       .image(60, y + 38, "ui-portrait-frame")
       .setDisplaySize(index === 0 ? 76 : 64, index === 0 ? 76 : 64)
@@ -188,6 +206,7 @@ export class HUD {
       .setOrigin(1, 0.5)
       .setScrollFactor(0)
       .setDepth(DEPTHS.hud + 6);
+    this.hudPanelSkins.push(hudSkin);
     this.portraitFrames.push(frame);
     this.portraits.push(portrait);
     this.healthFrames.push(healthFrame);
@@ -210,6 +229,7 @@ export class HUD {
       const h = i === 0 ? 76 : 66;
       this.drawSlantedPanel(24, y, w, h, hero.themeColor, i === 0 ? 0.88 : 0.72);
 
+      this.hudPanelSkins[i]?.setPosition(214, y + h / 2 + 3).setDisplaySize(i === 0 ? 392 : 330, i === 0 ? 116 : 98).setFlipX(false).setAlpha(i === 0 ? 0.23 : 0.15);
       const portraitKey = heroPortraitKey(hero);
       this.portraitFrames[i].setPosition(60, y + h / 2);
       this.portraits[i].setPosition(60, y + h / 2);
@@ -244,6 +264,11 @@ export class HUD {
       const hpX = isP2 ? GAME_WIDTH - 304 : 304;
 
       this.drawSlantedPanel(x, y, w, h, hero.themeColor, 0.88);
+      this.hudPanelSkins[i]
+        ?.setPosition(isP2 ? GAME_WIDTH - 214 : 214, y + h / 2 + 3)
+        .setDisplaySize(392, 116)
+        .setFlipX(isP2)
+        .setAlpha(0.23);
       const portraitKey = heroPortraitKey(hero);
       this.portraitFrames[i].setPosition(portraitX, y + h / 2).setDisplaySize(76, 76);
       this.portraits[i].setPosition(portraitX, y + h / 2).setDisplaySize(64, 64);

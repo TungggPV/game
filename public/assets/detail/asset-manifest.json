@@ -1,0 +1,334 @@
+{
+  "source": "bảng_thiết_kế_trò_chơi_khoa_học_viễn_tưởng.png",
+  "note": "Cropped from a detailed sci-fi game design sheet. Some crops are reference/UI panels, not transparent sprites.",
+  "files": {
+    "sheets/full_design_sheet.png": {
+      "box": [
+        0,
+        0,
+        1536,
+        1024
+      ]
+    },
+    "heroes/heroes_panel.png": {
+      "box": [
+        8,
+        10,
+        1028,
+        342
+      ]
+    },
+    "enemies/enemies_panel.png": {
+      "box": [
+        1032,
+        10,
+        1528,
+        618
+      ]
+    },
+    "environment/environment_panel.png": {
+      "box": [
+        8,
+        346,
+        884,
+        746
+      ]
+    },
+    "ui/ui_panel.png": {
+      "box": [
+        888,
+        352,
+        1528,
+        766
+      ]
+    },
+    "effects/effects_panel.png": {
+      "box": [
+        8,
+        758,
+        1138,
+        1010
+      ]
+    },
+    "items/items_panel.png": {
+      "box": [
+        1140,
+        768,
+        1528,
+        1015
+      ]
+    },
+    "heroes/nova_blade/hero_card.png": {
+      "box": [
+        12,
+        42,
+        300,
+        333
+      ]
+    },
+    "heroes/nova_blade/hero_art.png": {
+      "box": [
+        17,
+        47,
+        295,
+        247
+      ]
+    },
+    "heroes/nova_blade/sprite_strip_reference.png": {
+      "box": [
+        17,
+        252,
+        295,
+        328
+      ]
+    },
+    "heroes/crimson_flare/hero_card.png": {
+      "box": [
+        302,
+        42,
+        590,
+        333
+      ]
+    },
+    "heroes/crimson_flare/hero_art.png": {
+      "box": [
+        307,
+        47,
+        585,
+        247
+      ]
+    },
+    "heroes/crimson_flare/sprite_strip_reference.png": {
+      "box": [
+        307,
+        252,
+        585,
+        328
+      ]
+    },
+    "heroes/volt_sentinel/hero_card.png": {
+      "box": [
+        592,
+        42,
+        800,
+        333
+      ]
+    },
+    "heroes/volt_sentinel/hero_art.png": {
+      "box": [
+        597,
+        47,
+        795,
+        247
+      ]
+    },
+    "heroes/volt_sentinel/sprite_strip_reference.png": {
+      "box": [
+        597,
+        252,
+        795,
+        328
+      ]
+    },
+    "heroes/emerald_phantom/hero_card.png": {
+      "box": [
+        802,
+        42,
+        1018,
+        333
+      ]
+    },
+    "heroes/emerald_phantom/hero_art.png": {
+      "box": [
+        807,
+        47,
+        1013,
+        247
+      ]
+    },
+    "heroes/emerald_phantom/sprite_strip_reference.png": {
+      "box": [
+        807,
+        252,
+        1013,
+        328
+      ]
+    },
+    "enemies/crawler_drone_card.png": {
+      "box": [
+        1038,
+        48,
+        1228,
+        154
+      ]
+    },
+    "enemies/sky_hunter_card.png": {
+      "box": [
+        1232,
+        48,
+        1520,
+        154
+      ]
+    },
+    "enemies/horned_mutant_card.png": {
+      "box": [
+        1038,
+        164,
+        1218,
+        381
+      ]
+    },
+    "enemies/aegis_elite_card.png": {
+      "box": [
+        1222,
+        164,
+        1348,
+        381
+      ]
+    },
+    "enemies/abyssal_colossus_boss.png": {
+      "box": [
+        1352,
+        164,
+        1524,
+        498
+      ]
+    },
+    "environment/cyber_city_parallax_background.png": {
+      "box": [
+        18,
+        386,
+        498,
+        580
+      ]
+    },
+    "environment/industrial_platform_tiles.png": {
+      "box": [
+        504,
+        386,
+        866,
+        580
+      ]
+    },
+    "environment/gameplay_lane_example.png": {
+      "box": [
+        18,
+        590,
+        866,
+        732
+      ]
+    },
+    "ui/hud_p1_p2_boss_panel.png": {
+      "box": [
+        902,
+        386,
+        1225,
+        614
+      ]
+    },
+    "ui/main_buttons_panel.png": {
+      "box": [
+        1235,
+        386,
+        1520,
+        612
+      ]
+    },
+    "ui/pause_panel.png": {
+      "box": [
+        902,
+        634,
+        1058,
+        765
+      ]
+    },
+    "ui/stage_clear_panel.png": {
+      "box": [
+        1066,
+        634,
+        1236,
+        765
+      ]
+    },
+    "ui/game_over_panel.png": {
+      "box": [
+        1292,
+        634,
+        1520,
+        765
+      ]
+    },
+    "effects/nova_blade_effects.png": {
+      "box": [
+        18,
+        835,
+        290,
+        925
+      ]
+    },
+    "effects/crimson_flare_effects.png": {
+      "box": [
+        294,
+        835,
+        560,
+        925
+      ]
+    },
+    "effects/volt_sentinel_effects.png": {
+      "box": [
+        562,
+        835,
+        842,
+        925
+      ]
+    },
+    "effects/emerald_phantom_effects.png": {
+      "box": [
+        846,
+        835,
+        1125,
+        925
+      ]
+    },
+    "effects/common_effects.png": {
+      "box": [
+        18,
+        928,
+        1130,
+        1008
+      ]
+    },
+    "items/health_pickup.png": {
+      "box": [
+        1160,
+        834,
+        1245,
+        978
+      ]
+    },
+    "items/energy_pickup.png": {
+      "box": [
+        1252,
+        834,
+        1338,
+        978
+      ]
+    },
+    "items/score_crystal.png": {
+      "box": [
+        1346,
+        834,
+        1430,
+        978
+      ]
+    },
+    "items/armor_core.png": {
+      "box": [
+        1438,
+        834,
+        1522,
+        978
+      ]
+    }
+  }
+}

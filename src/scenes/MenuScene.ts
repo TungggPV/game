@@ -1,5 +1,16 @@
 import Phaser from "phaser";
-import { AssetKeys, basicAttackCardKey, skillCardKey, skillIconKey as menuSkillIconKey, skillReferenceKey, skillSheetKey } from "../config/assets";
+import {
+  AssetKeys,
+  basicAttackCardKey,
+  detailedEnemyPreviewKey,
+  detailedHeroArtKey,
+  detailedHeroCardKey,
+  detailedHeroStripKey,
+  skillCardKey,
+  skillIconKey as menuSkillIconKey,
+  skillReferenceKey,
+  skillSheetKey,
+} from "../config/assets";
 import { GAME_HEIGHT, GAME_WIDTH, GameMode, GameOverPayload } from "../config/gameConfig";
 import { DEFAULT_HERO_ID, HEROES, getHeroById, heroDynamicKey, heroPortraitKey } from "../config/heroes";
 import { getSkillsForHero } from "../config/skills";
@@ -7,6 +18,7 @@ import { padScore } from "../utils/geometry";
 
 type HeroCard = {
   bg: Phaser.GameObjects.Rectangle;
+  card?: Phaser.GameObjects.Image;
   portrait: Phaser.GameObjects.Image;
   label: Phaser.GameObjects.Text;
 };
@@ -77,6 +89,7 @@ export class MenuScene extends Phaser.Scene {
   create() {
     this.resetMenuUiRefs();
     this.isShuttingDown = false;
+    if (typeof document !== "undefined") document.body.dataset.scene = "menu";
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.cleanupMenu, this);
     this.createBackground();
     this.createChrome();
@@ -103,11 +116,20 @@ export class MenuScene extends Phaser.Scene {
 
   private createBackground() {
     this.cameras.main.setBackgroundColor("#02070d");
-    this.background = this.add
-      .tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, AssetKeys.backgroundCity)
-      .setOrigin(0)
-      .setTileScale(2.49)
-      .setDepth(-20);
+    if (this.textures.exists(AssetKeys.detailBackgroundCity)) {
+      this.add
+        .image(GAME_WIDTH / 2, GAME_HEIGHT / 2, AssetKeys.detailBackgroundCity)
+        .setCrop(0, 23, 480, 168)
+        .setDisplaySize(GAME_WIDTH, GAME_HEIGHT)
+        .setAlpha(0.86)
+        .setDepth(-20);
+    } else {
+      this.background = this.add
+        .tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, AssetKeys.backgroundCity)
+        .setOrigin(0)
+        .setTileScale(2.49)
+        .setDepth(-20);
+    }
     this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.48).setOrigin(0).setDepth(-10);
     this.add.rectangle(0, GAME_HEIGHT - 118, GAME_WIDTH, 118, 0x02070d, 0.36).setOrigin(0).setDepth(-9);
   }
@@ -193,8 +215,9 @@ export class MenuScene extends Phaser.Scene {
     this.createSkillPreviewSlots();
 
     const initialHero = HEROES[this.selectedHeroIndex];
+    const initialArtKey = this.textures.exists(detailedHeroArtKey(initialHero.id)) ? detailedHeroArtKey(initialHero.id) : heroDynamicKey(initialHero);
     this.dynamicArt = this.add
-      .image(930, 646, heroDynamicKey(initialHero))
+      .image(930, 646, initialArtKey)
       .setOrigin(0.5, 1)
       .setDisplaySize(430, 430)
       .setDepth(10);
@@ -217,9 +240,14 @@ export class MenuScene extends Phaser.Scene {
       const x = startX + i * 112;
       const bg = this.add
         .rectangle(x, y, 92, 112, 0x061727, 0.86)
+        .setDepth(12)
         .setStrokeStyle(1, 0x18e6ff, 0.26)
         .setInteractive({ useHandCursor: true });
-      const portrait = this.add.image(x, y - 14, heroPortraitKey(hero)).setDisplaySize(64, 64);
+      const cardKey = detailedHeroCardKey(hero.id);
+      const card = this.textures.exists(cardKey)
+        ? this.add.image(x, y - 2, cardKey).setDisplaySize(104, 116).setDepth(13)
+        : undefined;
+      const portrait = this.add.image(x, y - 14, heroPortraitKey(hero)).setDisplaySize(64, 64).setDepth(14).setVisible(!card);
       const label = this.add
         .text(x, y + 44, hero.displayName.split(" ")[0].toUpperCase(), {
           fontFamily: "Arial, sans-serif",
@@ -228,13 +256,14 @@ export class MenuScene extends Phaser.Scene {
           color: "#d8fbff",
           align: "center",
         })
-        .setOrigin(0.5);
+        .setOrigin(0.5)
+        .setDepth(15);
       bg.on("pointerdown", () => {
         if (!this.isMenuInteractive()) return;
         this.selectedHeroIndex = i;
         this.refreshSelection();
       });
-      this.heroCards.push({ bg, portrait, label });
+      this.heroCards.push({ bg, card, portrait, label });
     }
   }
 
@@ -337,13 +366,8 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private createButton(x: number, y: number, width: number, height: number, label: string, onClick: () => void, enabled = true, skinKey = AssetKeys.uiMenuButtons) {
-    const skin = this.textures.exists(skinKey)
-      ? this.add
-        .image(x + width / 2, y + height / 2, skinKey)
-        .setDisplaySize(width + 24, height + 16)
-        .setDepth(18)
-        .setAlpha(enabled ? 0.95 : 0.28)
-      : undefined;
+    void skinKey;
+    const skin: Phaser.GameObjects.Image | undefined = undefined;
     const glow = this.add
       .rectangle(x, y, width, height, 0x18e6ff, 0.16)
       .setOrigin(0)
@@ -373,14 +397,12 @@ export class MenuScene extends Phaser.Scene {
       .on("pointerover", () => {
         if (!this.isMenuInteractive() || !isAlive(glow) || !isAlive(bg) || !isTextAlive(text)) return;
         glow.setVisible(true);
-        skin?.setTint(0x8cf8ff).setAlpha(1);
         bg.setFillStyle(0x0b2a46, 1).setStrokeStyle(2, 0x8cf8ff, 1);
         text.setShadow(0, 0, "#8cf8ff", 8, true, true);
       })
       .on("pointerout", () => {
         if (!this.isMenuInteractive() || !isAlive(glow) || !isAlive(bg) || !isTextAlive(text)) return;
         glow.setVisible(false);
-        skin?.clearTint().setAlpha(0.95);
         bg.setFillStyle(0x071a2c, 0.92).setStrokeStyle(1, 0x8cf8ff, 0.78);
         text.setShadow(0, 0, "#000000", 0, false, false);
         bg.setScale(1);
@@ -420,7 +442,8 @@ export class MenuScene extends Phaser.Scene {
         .setVisible(this.selectedMode === "pk")
         .setText(this.selectedMode === "pk" ? `PK P2: ${p2Hero.displayName.toUpperCase()}` : "");
     }
-    const dynamicKey = heroDynamicKey(hero);
+    const detailedArtKey = detailedHeroArtKey(hero.id);
+    const dynamicKey = this.textures.exists(detailedArtKey) ? detailedArtKey : heroDynamicKey(hero);
     if (isAlive(this.dynamicArt)) {
       if (this.textures.exists(dynamicKey)) {
         const source = this.textures.get(dynamicKey).getSourceImage() as { width?: number; height?: number };
@@ -440,6 +463,12 @@ export class MenuScene extends Phaser.Scene {
         card.bg
           .setFillStyle(selected ? cardHero.themeColor : 0x061727, selected ? 0.28 : 0.86)
           .setStrokeStyle(selected ? 3 : 1, selected ? cardHero.themeColor : 0x18e6ff, selected ? 0.95 : 0.26);
+      }
+      if (isAlive(card.card)) {
+        card.card
+          .setAlpha(selected ? 1 : 0.58)
+          .setDisplaySize(selected ? 110 : 104, selected ? 123 : 116)
+          .setTint(selected ? 0xffffff : 0xb2d7e4);
       }
       if (isAlive(card.portrait)) card.portrait.setDisplaySize(selected ? 72 : 64, selected ? 72 : 64).setAlpha(selected ? 1 : 0.72);
       if (isTextAlive(card.label)) card.label.setColor(selected ? cardHero.themeCss : "#d8fbff");
@@ -493,6 +522,10 @@ export class MenuScene extends Phaser.Scene {
     this.destroyPopup();
     const hero = HEROES[this.selectedHeroIndex];
     const popup = this.createPopupShell(0x18e6ff);
+    const detailedCardKey = detailedHeroCardKey(hero.id);
+    if (this.textures.exists(detailedCardKey)) {
+      popup.add(this.add.image(192, 164, detailedCardKey).setDisplaySize(178, 180).setAlpha(0.74));
+    }
     const headerKey = skillSheetKey(hero.id, "hero_header");
     if (this.textures.exists(headerKey)) {
       popup.add(this.add.image(GAME_WIDTH / 2, 102, headerKey).setDisplaySize(360, 180));
@@ -543,17 +576,57 @@ export class MenuScene extends Phaser.Scene {
     this.destroyPopup();
     const hero = HEROES[this.selectedHeroIndex];
     const popup = this.createPopupShell(hero.themeColor);
-    popup.add(this.add.text(GAME_WIDTH / 2, 64, "CODEX GALLERY", this.popupTitleStyle(hero.themeCss)).setOrigin(0.5));
-    const fullSheets = [skillReferenceKey("full_skill_sheet"), skillReferenceKey("full_skill_sheet_v2"), skillReferenceKey("full_skill23_sheet")];
-    for (let i = 0; i < fullSheets.length; i++) {
-      if (this.textures.exists(fullSheets[i])) popup.add(this.add.image(274 + i * 220, 270, fullSheets[i]).setDisplaySize(196, 132));
+    popup.add(this.add.text(GAME_WIDTH / 2, 64, "DESIGN GALLERY", this.popupTitleStyle(hero.themeCss)).setOrigin(0.5));
+
+    if (this.textures.exists(AssetKeys.detailFullDesignSheet)) {
+      popup.add(this.add.image(400, 300, AssetKeys.detailFullDesignSheet).setDisplaySize(560, 374));
+    } else {
+      const fullSheets = [skillReferenceKey("full_skill_sheet"), skillReferenceKey("full_skill_sheet_v2"), skillReferenceKey("full_skill23_sheet")];
+      for (let i = 0; i < fullSheets.length; i++) {
+        if (this.textures.exists(fullSheets[i])) popup.add(this.add.image(274 + i * 220, 270, fullSheets[i]).setDisplaySize(196, 132));
+      }
     }
-    const columnKey = skillSheetKey(hero.id, "skill_column");
-    if (this.textures.exists(columnKey)) popup.add(this.add.image(898, 330, columnKey).setDisplaySize(220, 518));
-    const enemyKeys = [AssetKeys.crawlerIdle, AssetKeys.skyHunterIdle, AssetKeys.aegisMain, AssetKeys.bossMain];
+
+    const heroKeys = HEROES.map((item) => detailedHeroCardKey(item.id));
+    for (let i = 0; i < heroKeys.length; i++) {
+      if (this.textures.exists(heroKeys[i])) popup.add(this.add.image(744 + i * 76, 188, heroKeys[i]).setDisplaySize(68, 74));
+    }
+    const stripKey = detailedHeroStripKey(hero.id);
+    if (this.textures.exists(stripKey)) popup.add(this.add.image(888, 254, stripKey).setDisplaySize(206, 56));
+
+    const enemyKeys = [
+      detailedEnemyPreviewKey("crawler"),
+      detailedEnemyPreviewKey("sky_hunter"),
+      detailedEnemyPreviewKey("horned_mutant"),
+      detailedEnemyPreviewKey("aegis_elite"),
+      detailedEnemyPreviewKey("abyssal_colossus"),
+    ];
+    const enemySizes = [
+      { w: 126, h: 70 },
+      { w: 126, h: 70 },
+      { w: 106, h: 126 },
+      { w: 82, h: 126 },
+      { w: 88, h: 172 },
+    ];
     for (let i = 0; i < enemyKeys.length; i++) {
-      if (this.textures.exists(enemyKeys[i])) popup.add(this.add.image(196 + i * 150, 462, enemyKeys[i]).setDisplaySize(i === 3 ? 132 : 92, i === 3 ? 94 : 72));
+      if (!this.textures.exists(enemyKeys[i])) continue;
+      const posX = i < 2 ? 752 + i * 150 : 724 + (i - 2) * 114;
+      const posY = i < 2 ? 292 : 420;
+      popup.add(this.add.image(posX, posY, enemyKeys[i]).setDisplaySize(enemySizes[i].w, enemySizes[i].h));
     }
+
+    const effectKeys = [AssetKeys.detailEffectNova, AssetKeys.detailEffectCrimson, AssetKeys.detailEffectVolt, AssetKeys.detailEffectEmerald, AssetKeys.detailEffectCommon];
+    for (let i = 0; i < effectKeys.length; i++) {
+      if (this.textures.exists(effectKeys[i])) popup.add(this.add.image(210 + i * 132, 526, effectKeys[i]).setDisplaySize(i === 4 ? 164 : 120, 44));
+    }
+    if (this.textures.exists(AssetKeys.detailGameplayLane)) popup.add(this.add.image(400, 486, AssetKeys.detailGameplayLane).setDisplaySize(322, 54).setAlpha(0.82));
+    if (this.textures.exists(AssetKeys.detailPlatformTiles)) popup.add(this.add.image(560, 486, AssetKeys.detailPlatformTiles).setDisplaySize(146, 78).setAlpha(0.78));
+
+    const itemKeys = [AssetKeys.detailItemHealth, AssetKeys.detailItemEnergy, AssetKeys.detailItemScore, AssetKeys.detailItemArmorCore];
+    for (let i = 0; i < itemKeys.length; i++) {
+      if (this.textures.exists(itemKeys[i])) popup.add(this.add.image(740 + i * 58, 544, itemKeys[i]).setDisplaySize(38, 58));
+    }
+    if (this.textures.exists(AssetKeys.detailMainButtonsPanel)) popup.add(this.add.image(974, 474, AssetKeys.detailMainButtonsPanel).setDisplaySize(132, 104).setAlpha(0.7));
     this.createPopupButton(popup, GAME_WIDTH / 2 - 66, 570, 132, 42, "Dong", () => this.destroyPopup());
   }
 

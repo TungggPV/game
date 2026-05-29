@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { AssetKeys } from "../config/assets";
+import { AssetKeys, detailedEnemyPreviewKey } from "../config/assets";
 import {
   DEPTHS,
   GAME_HEIGHT,
@@ -165,6 +165,7 @@ export class GameScene extends Phaser.Scene {
 
   create() {
     this.resetState();
+    if (typeof document !== "undefined") document.body.dataset.scene = "game";
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, GAME_HEIGHT);
     this.createBackground();
     this.drawPlatform();
@@ -327,18 +328,32 @@ export class GameScene extends Phaser.Scene {
 
   private createBackground() {
     this.cameras.main.setBackgroundColor("#02070d");
-    this.background = this.add
-      .tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, AssetKeys.backgroundCity)
-      .setOrigin(0)
-      .setScrollFactor(0)
-      .setTileScale(2.3)
-      .setDepth(DEPTHS.background);
-    this.background.setTint(0xe6fbff);
+    if (this.textures.exists(AssetKeys.detailBackgroundCity)) {
+      this.add
+        .image(GAME_WIDTH / 2, GAME_HEIGHT / 2, AssetKeys.detailBackgroundCity)
+        .setCrop(0, 23, 480, 168)
+        .setDisplaySize(GAME_WIDTH, GAME_HEIGHT)
+        .setScrollFactor(0)
+        .setAlpha(0.88)
+        .setDepth(DEPTHS.background);
+    } else {
+      this.background = this.add
+        .tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, AssetKeys.backgroundCity)
+        .setOrigin(0)
+        .setScrollFactor(0)
+        .setTileScale(2.3)
+        .setDepth(DEPTHS.background);
+      this.background.setTint(0xe6fbff);
+    }
     this.createAtmosphereLayers();
     this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.04).setOrigin(0).setScrollFactor(0).setDepth(DEPTHS.background + 5);
   }
 
   private createAtmosphereLayers() {
+    if (this.textures.exists(AssetKeys.detailBackgroundCity)) {
+      this.createDetailedAtmosphere();
+      return;
+    }
     const addLayer = (scale: number, alpha: number, tint: number, factor: number, speed: number, drift: number, depth: number) => {
       const layer = this.add
         .tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, AssetKeys.backgroundCity)
@@ -383,6 +398,34 @@ export class GameScene extends Phaser.Scene {
     vignette.fillRect(GAME_WIDTH - 72, 0, 72, GAME_HEIGHT);
   }
 
+  private createDetailedAtmosphere() {
+    const haze = this.add.graphics().setScrollFactor(0).setDepth(DEPTHS.background + 4).setBlendMode(Phaser.BlendModes.ADD);
+    haze.fillStyle(0x18e6ff, 0.06);
+    haze.fillEllipse(GAME_WIDTH * 0.24, GAME_HEIGHT * 0.34, 570, 230);
+    haze.fillStyle(0xff4fff, 0.05);
+    haze.fillEllipse(GAME_WIDTH * 0.74, GAME_HEIGHT * 0.28, 460, 190);
+    haze.fillStyle(0xf6c65a, 0.04);
+    haze.fillEllipse(GAME_WIDTH * 0.58, GAME_HEIGHT * 0.72, 640, 96);
+
+    this.neonRain = this.add.graphics().setScrollFactor(0).setDepth(DEPTHS.background + 6).setBlendMode(Phaser.BlendModes.ADD);
+    for (let i = 0; i < 58; i++) {
+      const x = Phaser.Math.Between(0, GAME_WIDTH);
+      const y = Phaser.Math.Between(0, GAME_HEIGHT);
+      const length = Phaser.Math.Between(16, 44);
+      const color = i % 5 === 0 ? 0xf6c65a : i % 3 === 0 ? 0xff4fff : 0x18e6ff;
+      this.neonRain.lineStyle(1, color, Phaser.Math.FloatBetween(0.08, 0.24));
+      this.neonRain.lineBetween(x, y, x - 9, y + length);
+    }
+
+    const vignette = this.add.graphics().setScrollFactor(0).setDepth(DEPTHS.hud - 30);
+    vignette.fillStyle(0x02070d, 0.22);
+    vignette.fillRect(0, 0, GAME_WIDTH, 72);
+    vignette.fillRect(0, GAME_HEIGHT - 86, GAME_WIDTH, 86);
+    vignette.fillStyle(0x02070d, 0.16);
+    vignette.fillRect(0, 0, 72, GAME_HEIGHT);
+    vignette.fillRect(GAME_WIDTH - 72, 0, 72, GAME_HEIGHT);
+  }
+
   private drawPlatform() {
     if (this.textures.exists(AssetKeys.cityTiles)) {
       this.add
@@ -393,6 +436,7 @@ export class GameScene extends Phaser.Scene {
         .setTint(0x9feeff)
         .setDepth(DEPTHS.platformBack + 4);
     }
+    this.createDetailedPlatformTiles();
     this.createWorldProps();
 
     const g = this.add.graphics().setDepth(DEPTHS.platformBack + 1);
@@ -437,6 +481,43 @@ export class GameScene extends Phaser.Scene {
     foreground.fillEllipse(WORLD_WIDTH * 0.58, PLATFORM_Y + 20, WORLD_WIDTH * 0.22, 28);
   }
 
+  private createDetailedPlatformTiles() {
+    if (!this.textures.exists(AssetKeys.detailPlatformTiles)) return;
+    const topCrops = [
+      { x: 11, y: 29, w: 82, h: 36 },
+      { x: 108, y: 30, w: 70, h: 37 },
+      { x: 223, y: 30, w: 40, h: 36 },
+      { x: 274, y: 31, w: 72, h: 36 },
+    ];
+    for (let x = 0; x < WORLD_WIDTH; x += 118) {
+      const crop = topCrops[Math.floor(x / 118) % topCrops.length];
+      this.addPlatformCrop(x, PLATFORM_Y - 38, crop, 122, 44, DEPTHS.platformBack + 7, 0.94);
+    }
+    for (let x = 56; x < WORLD_WIDTH; x += 420) {
+      this.addPlatformCrop(x, PLATFORM_Y + 36, { x: 12, y: 93, w: 92, h: 94 }, 130, 96, DEPTHS.platformBack + 6, 0.56);
+      this.addPlatformCrop(x + 210, PLATFORM_Y + 42, { x: 195, y: 129, w: 58, h: 44 }, 72, 54, DEPTHS.platformBack + 6, 0.62);
+    }
+  }
+
+  private addPlatformCrop(
+    x: number,
+    y: number,
+    crop: { x: number; y: number; w: number; h: number },
+    width: number,
+    height: number,
+    depth: number,
+    alpha: number,
+  ) {
+    this.add
+      .image(x, y, AssetKeys.detailPlatformTiles)
+      .setOrigin(0, 0)
+      .setCrop(crop.x, crop.y, crop.w, crop.h)
+      .setDisplaySize(width, height)
+      .setTint(0xdafcff)
+      .setAlpha(alpha)
+      .setDepth(depth);
+  }
+
   private createWorldProps() {
     const props = [
       { key: AssetKeys.cityNewsScreen, offset: 0, y: PLATFORM_Y - 92, scale: 0.86, alpha: 0.76 },
@@ -461,6 +542,7 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard?.on("keydown", this.onKeyDown);
     this.input.keyboard?.on("keyup", this.onKeyUp);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      if (typeof document !== "undefined" && document.body.dataset.scene === "game") document.body.dataset.scene = "menu";
       this.input.keyboard?.off("keydown", this.onKeyDown);
       this.input.keyboard?.off("keyup", this.onKeyUp);
       this.downCodes.clear();
@@ -1126,21 +1208,22 @@ export class GameScene extends Phaser.Scene {
   private spawnPickup(kind: PickupKind, x: number, y: number, value: number) {
     const key =
       kind === "health"
-        ? AssetKeys.itemHealth
+        ? this.pickExistingAsset(AssetKeys.detailItemHealth, AssetKeys.itemHealth)
         : kind === "energy"
-          ? AssetKeys.itemEnergy
+          ? this.pickExistingAsset(AssetKeys.detailItemEnergy, AssetKeys.itemEnergy)
           : kind === "upgrade"
-            ? AssetKeys.itemUpgrade
+            ? this.pickExistingAsset(AssetKeys.detailItemArmorCore, AssetKeys.itemUpgrade)
             : kind === "treasure"
-              ? AssetKeys.itemTreasure
-              : AssetKeys.itemCredit;
-    if (!this.textures.exists(key)) return;
+              ? this.pickExistingAsset(AssetKeys.detailItemArmorCore, AssetKeys.itemTreasure)
+              : this.pickExistingAsset(AssetKeys.detailItemScore, AssetKeys.itemCredit);
+    if (!key) return;
     const image = this.add
       .image(x, y, key)
       .setOrigin(0.5, 1)
-      .setDisplaySize(kind === "treasure" ? 70 : kind === "upgrade" ? 52 : 46, kind === "treasure" ? 72 : 54)
+      .setDisplaySize(kind === "treasure" ? 74 : kind === "upgrade" ? 58 : 48, kind === "treasure" ? 92 : 68)
       .setDepth(DEPTHS.effect - 1)
       .setBlendMode(Phaser.BlendModes.NORMAL);
+    image.setTint(kind === "health" ? 0xffffff : kind === "energy" ? 0xcffcff : kind === "credit" ? 0xfff0a6 : 0xe8fbff);
     this.tweens.add({
       targets: image,
       y: y - 24,
@@ -1149,6 +1232,10 @@ export class GameScene extends Phaser.Scene {
       yoyo: true,
     });
     this.pickups.push({ image, kind, value, life: 11, baseY: y, phase: Math.random() * Math.PI * 2 });
+  }
+
+  private pickExistingAsset(...keys: string[]) {
+    return keys.find((key) => this.textures.exists(key));
   }
 
   private updatePickups(dt: number) {
@@ -1185,6 +1272,25 @@ export class GameScene extends Phaser.Scene {
       this.spawnHitSpark(pickup.image.x, pickup.image.y - 20, 0xffd66d);
       this.addLog(`Pickup score +${pickup.value}`);
     }
+    this.spawnPickupGlow(pickup.image.x, pickup.image.y - 28, pickup.kind === "health" ? 0x4ef3a5 : pickup.kind === "energy" ? player.hero.themeColor : 0xffd66d);
+  }
+
+  private spawnPickupGlow(x: number, y: number, color: number) {
+    const glow = this.add.graphics().setDepth(DEPTHS.effect + 2).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: 260,
+      onUpdate: (tween) => {
+        const value = tween.getValue() ?? 0;
+        glow.clear();
+        glow.lineStyle(3, color, 0.85 * (1 - value));
+        glow.strokeCircle(x, y, 18 + value * 42);
+        glow.fillStyle(color, 0.12 * (1 - value));
+        glow.fillCircle(x, y, 28 + value * 26);
+      },
+      onComplete: () => glow.destroy(),
+    });
   }
 
   private pickupBounds(image: Phaser.GameObjects.Image): RectLike {
@@ -1246,6 +1352,32 @@ export class GameScene extends Phaser.Scene {
     this.addLog(`Boss spawn: ${enemy.getBarState().name}`);
     this.showMessage("BOSS APPROACHING", 1);
     this.cameras.main.shake(210, 0.006);
+    const previewKey =
+      enemy.kind === "abyssal_colossus"
+        ? detailedEnemyPreviewKey("abyssal_colossus")
+        : enemy.kind === "horned_mutant"
+          ? detailedEnemyPreviewKey("horned_mutant")
+          : enemy.kind === "aegis_elite"
+            ? detailedEnemyPreviewKey("aegis_elite")
+            : undefined;
+    if (previewKey && this.textures.exists(previewKey)) {
+      const preview = this.add
+        .image(GAME_WIDTH - 152, 172, previewKey)
+        .setScrollFactor(0)
+        .setDepth(DEPTHS.hud + 6)
+        .setDisplaySize(enemy.kind === "abyssal_colossus" ? 132 : 150, enemy.kind === "abyssal_colossus" ? 258 : 182)
+        .setAlpha(0)
+        .setBlendMode(Phaser.BlendModes.NORMAL);
+      this.tweens.add({
+        targets: preview,
+        alpha: { from: 0, to: 0.92 },
+        x: GAME_WIDTH - 188,
+        duration: 180,
+        yoyo: true,
+        hold: 620,
+        onComplete: () => preview.destroy(),
+      });
+    }
     const ring = this.add.graphics().setDepth(DEPTHS.effect + 2).setBlendMode(Phaser.BlendModes.ADD);
     const x = enemy.sprite.x;
     this.tweens.addCounter({
@@ -1411,8 +1543,19 @@ export class GameScene extends Phaser.Scene {
     const overlay = this.add.container(0, 0).setScrollFactor(0).setDepth(OVERLAY_DEPTH);
     this.resultOverlay = overlay;
     overlay.add(this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.72).setOrigin(0).setDepth(OVERLAY_DEPTH));
+    const panelSkinKey = title === "STAGE CLEAR" ? AssetKeys.detailStageClearPanel : AssetKeys.detailGameOverPanel;
+    const hasPanelSkin = this.textures.exists(panelSkinKey);
+    if (hasPanelSkin) {
+      overlay.add(
+        this.add
+          .image(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 2, panelSkinKey)
+          .setDisplaySize(500, 288)
+          .setAlpha(0.74)
+          .setDepth(PANEL_DEPTH),
+      );
+    }
     const panel = this.add.graphics().setDepth(PANEL_DEPTH);
-    panel.fillStyle(0x061727, 0.96);
+    panel.fillStyle(0x061727, hasPanelSkin ? 0.66 : 0.96);
     panel.fillRoundedRect(GAME_WIDTH / 2 - 235, GAME_HEIGHT / 2 - 130, 470, 260, 8);
     panel.lineStyle(2, this.stageClear ? 0x18e6ff : 0xff5b6d, 0.92);
     panel.strokeRoundedRect(GAME_WIDTH / 2 - 235, GAME_HEIGHT / 2 - 130, 470, 260, 8);
@@ -1443,14 +1586,7 @@ export class GameScene extends Phaser.Scene {
   private createMenuButton(x: number, y: number, label: string, onClick: () => void) {
     const width = 132;
     const height = 46;
-    const skin = this.textures.exists(AssetKeys.uiStageSelectButton)
-      ? this.add
-        .image(x + width / 2, y + height / 2, AssetKeys.uiStageSelectButton)
-        .setDisplaySize(width + 28, height + 18)
-        .setScrollFactor(0)
-        .setDepth(BUTTON_DEPTH - 2)
-        .setAlpha(0.9)
-      : undefined;
+    const skin: Phaser.GameObjects.Image | undefined = undefined;
     const glow = this.add
       .rectangle(x, y, width, height, 0x18e6ff, 0.18)
       .setOrigin(0)
@@ -1479,14 +1615,12 @@ export class GameScene extends Phaser.Scene {
       .on("pointerover", () => {
         if (!this.canUseOverlayButton() || !isGameObjectAlive(glow) || !isGameObjectAlive(bg) || !isGameObjectAlive(text)) return;
         glow.setVisible(true);
-        skin?.setTint(0x8cf8ff).setAlpha(1);
         bg.setFillStyle(0x12577c, 1).setStrokeStyle(3, 0x8cf8ff, 1);
         text.setShadow(0, 0, "#8cf8ff", 8, true, true);
       })
       .on("pointerout", () => {
         if (!this.canUseOverlayButton() || !isGameObjectAlive(glow) || !isGameObjectAlive(bg) || !isGameObjectAlive(text)) return;
         glow.setVisible(false);
-        skin?.clearTint().setAlpha(0.9);
         bg.setFillStyle(0x0b2a46, 0.98).setStrokeStyle(2, 0x55eaff, 0.92);
         text.setShadow(0, 0, "#000000", 0, false, false);
         bg.setScale(1);
@@ -1500,7 +1634,7 @@ export class GameScene extends Phaser.Scene {
         text.setScale(0.97);
         onClick();
       });
-    return skin ? [skin, glow, bg, text] : [glow, bg, text];
+    return [glow, bg, text];
   }
 
   private canUseOverlayButton() {
@@ -1533,8 +1667,18 @@ export class GameScene extends Phaser.Scene {
     this.pauseOverlay = overlay;
     overlay.add(this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.62).setOrigin(0).setDepth(OVERLAY_DEPTH));
 
+    const hasPauseSkin = this.textures.exists(AssetKeys.detailPausePanel);
+    if (hasPauseSkin) {
+      overlay.add(
+        this.add
+          .image(GAME_WIDTH / 2, GAME_HEIGHT / 2, AssetKeys.detailPausePanel)
+          .setDisplaySize(432, 318)
+          .setAlpha(0.72)
+          .setDepth(PANEL_DEPTH),
+      );
+    }
     const panel = this.add.graphics().setDepth(PANEL_DEPTH);
-    panel.fillStyle(0x061727, 0.97);
+    panel.fillStyle(0x061727, hasPauseSkin ? 0.64 : 0.97);
     panel.fillRoundedRect(GAME_WIDTH / 2 - 210, GAME_HEIGHT / 2 - 154, 420, 308, 8);
     panel.lineStyle(2, 0x18e6ff, 0.95);
     panel.strokeRoundedRect(GAME_WIDTH / 2 - 210, GAME_HEIGHT / 2 - 154, 420, 308, 8);
