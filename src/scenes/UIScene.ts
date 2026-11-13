@@ -1,5 +1,6 @@
 import Phaser from "phaser";
-import { FONT, GAME_HEIGHT, GAME_WIDTH, hex, loadBest, saveBest, type SkillSlot } from "../config/constants";
+import { FONT, GAME_HEIGHT, GAME_WIDTH, hex, type SkillSlot } from "../config/constants";
+import { maxStat, profile, saveProfile } from "../systems/save";
 import type { Upgrade } from "../config/content";
 import { STAGES } from "../config/content";
 import type { SkillDef } from "../config/heroes";
@@ -182,7 +183,7 @@ export class UIScene extends Phaser.Scene {
     p.trail += (ratio - p.trail) * Math.min(1, dt * 3);
     if (p.trail < ratio) p.trail = ratio;
     p.hpTrail.width = BAR_W * p.trail;
-    p.hpText.setText(h.dead ? (this.game_.mode === "coop" && this.game_.anyHeroAlive() ? `HỒI SINH ${Math.ceil(h.reviveTimer)}s` : "GỤC NGÃ") : `${Math.ceil(h.hp)} / ${h.maxHp}`);
+    p.hpText.setText(h.dead ? (this.game_.coop && this.game_.anyHeroAlive() ? `HỒI SINH ${Math.ceil(h.reviveTimer)}s` : "GỤC NGÃ") : `${Math.ceil(h.hp)} / ${h.maxHp}`);
     const full = h.energy >= 100;
     p.energy.width = BAR_W * (h.energy / 100);
     p.energy.setFillStyle(full ? (Math.floor(this.time.now / 150) % 2 ? 0xffe45c : 0xffffff) : 0x3ad6ff);
@@ -338,8 +339,8 @@ export class UIScene extends Phaser.Scene {
 
   private openResult(r: ResultData) {
     this.closeOverlay();
-    if (r.mode !== "pk") saveBest(r.score);
-    const best = loadBest();
+    if (r.mode !== "pk") { maxStat("highScore" as never, r.score); saveProfile(); }
+    const best = profile().stats.highScore;
     const root = this.add.container(0, 0).setDepth(100);
     root.add(this.dim().setAlpha(0.85));
     const color = r.win ? "#ffe45c" : "#ff5a6a";
