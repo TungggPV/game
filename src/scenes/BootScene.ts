@@ -1,5 +1,7 @@
 import Phaser from "phaser";
 import { FONT, GAME_HEIGHT, GAME_WIDTH } from "../config/constants";
+import { HEROES } from "../config/heroes";
+import { paintHeroRig } from "../rig/heroRig";
 import { MANIFEST, spriteUrl } from "../systems/assets";
 
 type Draw = (ctx: CanvasRenderingContext2D, w: number, h: number) => void;
@@ -219,6 +221,7 @@ export class BootScene extends Phaser.Scene {
       tex.refresh();
     }
     this.makeFloor();
+    HEROES.forEach((h) => paintHeroRig(this, h.id));
     this.scene.start("menu");
   }
 
