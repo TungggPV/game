@@ -166,10 +166,11 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
           const fromX = hero.x;
           const toX = goingRight ? maxX - 100 : minX + 100;
           hero.facing = goingRight ? 1 : -1;
+          hero.view.facing = hero.facing;
+          hero.view.turn = hero.facing;
           for (let k = 0; k < 7; k += 1) {
             hero.x = Phaser.Math.Linear(fromX, toX, (k + 1) / 7);
-            hero.sprite.setPosition(hero.x, hero.y).setFlipX(!goingRight);
-            fx.afterimage(hero.sprite, k % 2 ? pal.main : pal.light, 0.55, 320);
+            hero.ghostAt(hero.x, k % 2 ? pal.main : pal.light, 0.55, 320);
           }
           const y = hero.y - 80;
           const line = scene.add.image((fromX + toX) / 2, y, "beam").setTint(pal.main).setBlendMode(Phaser.BlendModes.ADD)

@@ -1,8 +1,9 @@
 import Phaser from "phaser";
 import { DEPTH, GROUND_Y, type SkillSlot } from "../config/constants";
-import { baseMods, type HeroMods } from "../config/content";
+import { baseMods, POWERUPS, type HeroMods, type PowerUpId } from "../config/content";
 import type { HeroDef, SkillDef } from "../config/heroes";
-import { anchorX, artFacesLeft, heroKey, textureHeight, type HeroPose } from "../systems/assets";
+import { animateHero, HERO_LOOKS, heroBones, heroRibbonAnchor, trailPoints, type AnimState, type CastKind, type WeaponStyle } from "../rig/heroRig";
+import { Ribbon, Rig, WeaponTrail } from "../rig/Rig";
 import { ACTIONS, type Action, type PlayerControls } from "../systems/controls";
 import { PALETTE, type Palette } from "../systems/Fx";
 import { sfx } from "../systems/sfx";
@@ -12,7 +13,11 @@ import { Actor, type Hit } from "./Actor";
 
 type State = "free" | "attack" | "cast" | "dash" | "hurt" | "sweep" | "down";
 
-const HERO_HEIGHT = 150;
+/** Permanent bonuses from hero level and the workshop, resolved by the game scene. */
+export type HeroBonus = { hpMul: number; hpAdd: number; damage: number; energy: number; cooldown: number; crit: number; magnet: number; revives: number };
+
+export const NO_BONUS: HeroBonus = { hpMul: 1, hpAdd: 0, damage: 1, energy: 0, cooldown: 1, crit: 0, magnet: 0, revives: 0 };
+
 const BUFFER = 0.18;
 const DASH_TIME = 0.18;
 const DASH_SPEED = 1150;
@@ -20,17 +25,27 @@ const JUMP_SPEED = 1000;
 
 export class Hero extends Actor {
   readonly team = "hero" as const;
+  readonly view: Rig;
   energy = 30;
   score = 0;
   kills = 0;
+  damageDealt = 0;
+  damageTaken = 0;
+  downs = 0;
+  perfectDodges = 0;
   mods: HeroMods = baseMods();
   cooldowns: Record<SkillSlot | "dash", number> = { basic: 0, skill1: 0, skill2: 0, ultimate: 0, dash: 0 };
+  buffs: Partial<Record<PowerUpId, number>> = {};
+  shield = 0;
+  revives: number;
+  magnet: number;
   state: State = "free";
   locked = false;
   reviveTimer = 0;
+  private baseHp: number;
   private stateTime = 0;
   private stateDuration = 0;
-  private castPose: HeroPose = "attack_blast";
+  private castKind: CastKind = "shoot";
   private pendingCast?: { slot: SkillSlot; skill: SkillDef; at: number };
   private comboStep = 0;
   private comboWindow = 0;
@@ -38,12 +53,13 @@ export class Hero extends Actor {
   private meleeAt = -1;
   private jumpsLeft: number;
   private buffer = new Map<Action, number>();
-  private scaleFactor: number;
   private ghostTimer = 0;
-  private readonly pal: Palette;
-  private readonly hasWalk: boolean;
-  // Procedural animation state: spring-driven squash/stretch, smoothed lean and turn.
-  private anim = { sx: 1, sy: 1, vx: 0, vy: 0, lean: 0, turn: 1, stride: 0, dust: 0, wasGround: true, lastKey: "" };
+  private dodgeUsed = false;
+  readonly pal: Palette;
+  readonly style: WeaponStyle;
+  private ribbons: Ribbon[] = [];
+  private trails: { trail: WeaponTrail; pts: [string, number, number][] }[] = [];
+  private anim = { stride: 0, land: 0, wasGround: true, stepSign: 1 };
 
   constructor(
     scene: GameScene,
@@ -51,18 +67,50 @@ export class Hero extends Actor {
     readonly def: HeroDef,
     readonly index: 0 | 1,
     readonly controls: PlayerControls,
+    bonus: HeroBonus = NO_BONUS,
     hpOverride?: number,
   ) {
-    super(scene, x, heroKey(def.id, "idle"), hpOverride ?? def.hp, { w: 70, h: 140 }, DEPTH.hero + index);
-    this.scaleFactor = HERO_HEIGHT / textureHeight(heroKey(def.id, "idle"));
+    const baseHp = hpOverride ?? Math.round((def.hp + bonus.hpAdd) * bonus.hpMul);
+    super(scene, x, baseHp, { w: 70, h: 140 });
+    this.baseHp = baseHp;
     this.jumpsLeft = def.jumps;
     this.pal = PALETTE[def.element];
-    this.hasWalk = scene.textures.exists(heroKey(def.id, "walk_1"));
     this.facing = index === 0 ? 1 : -1;
+    this.mods.damage *= bonus.damage;
+    this.mods.cooldown *= bonus.cooldown;
+    this.mods.crit += bonus.crit;
+    this.energy = Math.min(100, 30 + bonus.energy);
+    this.revives = bonus.revives;
+    this.magnet = bonus.magnet;
+
+    const look = HERO_LOOKS[def.id];
+    this.style = look.weapon;
+    const depth = DEPTH.hero + index * 2;
+    this.view = new Rig(scene, heroBones(def.id), 1, depth);
+    this.view.facing = this.facing;
+    this.view.turn = this.facing;
+
+    const r = look.ribbon;
+    const mk = (segments: number, len: number, width: number, gravity: number, colors = r.colors) =>
+      new Ribbon(scene, x, this.y - 110, segments, len, width, colors, depth - 0.5, gravity, !!r.glow);
+    if (r.kind === "scarf") this.ribbons.push(mk(8, 8, 11, 700));
+    if (r.kind === "plume") this.ribbons.push(mk(5, 7, 18, -1100));
+    if (r.kind === "cape") this.ribbons.push(mk(6, 10, 26, 1100));
+    if (r.kind === "twin") this.ribbons.push(mk(9, 8, 9, 650), mk(8, 8, 8, 750, [0x169e6a, 0x7dffc0]));
+
+    for (const pts of trailPoints(this.style)) {
+      this.trails.push({ trail: new WeaponTrail(scene, [this.pal.main, this.pal.light], depth + 1, this.style === "fists" ? 0.1 : 0.13), pts });
+    }
+    this.render(0);
   }
 
   get speed() {
-    return this.def.speed * this.mods.speed * (this.isSlowed() ? 0.6 : 1);
+    return this.def.speed * this.mods.speed * (this.isSlowed() ? 0.6 : 1) * (this.buffs.haste ? 1.35 : 1);
+  }
+
+  /** Total outgoing damage multiplier (power, upgrades, level, rage). */
+  get damageMul() {
+    return this.def.power * this.mods.damage * (this.buffs.rage ? 1.6 : 1);
   }
 
   get alive() {
@@ -70,7 +118,7 @@ export class Hero extends Actor {
   }
 
   maxHpTotal() {
-    return this.def.hp + this.mods.maxHp;
+    return this.baseHp + this.mods.maxHp;
   }
 
   applyMods() {
@@ -93,9 +141,21 @@ export class Hero extends Actor {
     return this.def.skills[slot];
   }
 
+  skillCost(slot: Exclude<SkillSlot, "basic">) {
+    if (this.buffs.overcharge) return 0;
+    return slot === "ultimate" ? this.mods.ultCost : this.skill(slot).cost;
+  }
+
   canUse(slot: Exclude<SkillSlot, "basic">) {
-    const s = this.skill(slot);
-    return this.cooldowns[slot] <= 0 && this.energy >= s.cost;
+    return this.cooldowns[slot] <= 0 && this.energy >= this.skillCost(slot);
+  }
+
+  addPowerUp(id: PowerUpId) {
+    const def = POWERUPS[id];
+    this.buffs[id] = def.duration;
+    if (id === "shield") this.shield = 80;
+    this.scene.fx.ring(this.x, this.y - 70, def.color, 150, 500);
+    this.scene.fx.label(this.x, this.y - 190, def.name.toUpperCase(), Phaser.Display.Color.IntegerToColor(def.color).rgba);
   }
 
   /** Runs every frame, including hitstop frames, so presses during freeze-frames aren't lost. */
@@ -108,10 +168,18 @@ export class Hero extends Actor {
   update(dt: number) {
     this.tickTimers(dt);
     this.stateTime += dt;
-    for (const k of Object.keys(this.cooldowns) as (SkillSlot | "dash")[]) this.cooldowns[k] = Math.max(0, this.cooldowns[k] - dt);
+    const cdRate = this.buffs.haste ? 1.6 : 1;
+    for (const k of Object.keys(this.cooldowns) as (SkillSlot | "dash")[]) this.cooldowns[k] = Math.max(0, this.cooldowns[k] - dt * cdRate);
     for (const [a, t] of this.buffer) {
       if (t - dt <= 0) this.buffer.delete(a);
       else this.buffer.set(a, t - dt);
+    }
+    for (const id of Object.keys(this.buffs) as PowerUpId[]) {
+      const left = (this.buffs[id] ?? 0) - dt;
+      if (left <= 0) {
+        delete this.buffs[id];
+        if (id === "shield") this.shield = 0;
+      } else this.buffs[id] = left;
     }
 
     if (this.dead) {
@@ -121,6 +189,7 @@ export class Hero extends Actor {
     }
 
     this.energy = Math.min(100, this.energy + dt * (this.scene.mode === "pk" ? 1 : 2) * this.mods.energyGain);
+    if (this.mods.regen > 0) this.heal(this.mods.regen * dt);
     this.updateStatus(dt);
     if (this.dead) return;
 
@@ -159,8 +228,8 @@ export class Hero extends Actor {
         this.vy = 0;
         this.ghostTimer -= this.scene.dt;
         if (this.ghostTimer <= 0) {
-          this.scene.fx.afterimage(this.sprite, this.pal.main);
-          this.ghostTimer = 0.03;
+          this.view.ghost(this.pal.main, 0.4, 220);
+          this.ghostTimer = 0.035;
         }
         if (done) {
           this.vx *= 0.3;
@@ -197,7 +266,7 @@ export class Hero extends Actor {
   private freeMove() {
     const dir = (this.controls.down("right") ? 1 : 0) - (this.controls.down("left") ? 1 : 0);
     const target = dir * this.speed;
-    const accel = this.onGround ? 18 : 10;
+    const accel = this.onGround ? 14 : 8;
     this.vx += (target - this.vx) * Math.min(1, accel * this.scene.dt);
     if (dir !== 0) this.facing = dir;
 
@@ -206,7 +275,6 @@ export class Hero extends Actor {
       this.jumpsLeft -= 1;
       this.vy = -JUMP_SPEED * (air ? 0.85 : 1);
       this.y = Math.min(this.y, GROUND_Y - 1);
-      this.impulse(0.8, 1.25);
       sfx.jump();
       if (air) {
         this.scene.fx.ring(this.x, this.y - 10, this.pal.main, 70, 300, 0.35);
@@ -242,24 +310,32 @@ export class Hero extends Actor {
     this.vx = this.facing * DASH_SPEED;
     this.vy = 0;
     this.queuedBasic = false;
+    this.dodgeUsed = false;
+    this.pendingCast = undefined;
     this.setState("dash", DASH_TIME);
-    this.impulse(1.25, 0.82);
     this.scene.fx.dust(this.x, this.facing, 1.2);
     sfx.dash();
+    return true;
+  }
+
+  /** True once per dash when an attack is avoided early in the dash. */
+  tryPerfectDodge() {
+    if (this.state !== "dash" || this.dodgeUsed || this.stateTime > this.mods.dodgeWindow + 0.04) return false;
+    this.dodgeUsed = true;
+    this.perfectDodges += 1;
     return true;
   }
 
   private startBasic() {
     this.queuedBasic = false;
     this.comboStep += 1;
-    this.comboWindow = 0.55;
+    this.comboWindow = 0.6;
     const b = this.def.basic;
-    this.setState("attack", b.interval + (this.comboStep === 3 ? 0.14 : 0.06));
-    this.meleeAt = 0.05;
+    this.setState("attack", b.interval + (this.comboStep === 3 ? 0.16 : 0.08));
+    this.meleeAt = Math.min(0.06, this.stateDuration * 0.22);
     if (this.onGround) this.vx = this.facing * (this.comboStep === 3 ? 360 : 180);
     else this.vy = Math.min(this.vy, -120);
     sfx.swing();
-    this.impulse(1.1, 0.94);
   }
 
   private doMelee() {
@@ -267,16 +343,10 @@ export class Hero extends Actor {
     const finisher = this.comboStep === 3;
     const range = b.range * (finisher ? 1.25 : 1);
     const rect = new Phaser.Geom.Rectangle(this.facing > 0 ? this.x - 10 : this.x - range + 10, this.y - 150, range, 140);
-    const step = this.comboStep;
-    const tilt = step === 1 ? 0.45 : step === 2 ? -0.45 : 0;
-    this.scene.fx.slash(this.x + this.facing * range * 0.3, this.y - 82, this.facing, this.pal, {
-      scale: finisher ? 1.5 : 1.1,
-      tilt,
-      sweep: finisher ? 1.8 : 1.3,
-      duration: finisher ? 280 : 200,
-      thin: !finisher,
-    });
-    if (finisher) this.scene.fx.dust(this.x, this.facing, 1);
+    if (finisher) {
+      this.scene.fx.slash(this.x + this.facing * range * 0.35, this.y - 80, this.facing, this.pal, { scale: 1.3, tilt: 0, sweep: 1.6, duration: 240, thin: true });
+      this.scene.fx.dust(this.x, this.facing, 1);
+    }
     const hits = this.scene.meleeHit(this, rect, {
       damage: b.combo[this.comboStep - 1],
       dir: this.facing,
@@ -292,17 +362,20 @@ export class Hero extends Actor {
   private tryCast(slot: Exclude<SkillSlot, "basic">) {
     const skill = this.skill(slot);
     if (this.cooldowns[slot] > 0) return;
-    if (this.energy < skill.cost) {
+    const cost = this.skillCost(slot);
+    if (this.energy < cost) {
       this.scene.fx.label(this.x, this.y - 170, "Thiếu năng lượng", "#9fb3c8");
       return;
     }
-    this.energy -= skill.cost;
+    this.energy -= cost;
     this.cooldowns[slot] = skill.cooldown * (slot === "ultimate" ? 1 : this.mods.cooldown);
-    this.castPose = skill.kind === "projectile" ? "attack_blast" : skill.kind === "sweep" || skill.kind === "burst" ? "attack_slash" : "attack_blast";
-    const windup = slot === "ultimate" ? 0.32 : 0.08;
+    this.castKind =
+      slot === "ultimate"
+        ? skill.kind === "sweep" ? "sweep" : skill.kind === "strikes" ? "strikes" : "screen"
+        : skill.kind === "projectile" ? "shoot" : skill.kind === "field" ? "field" : "burst";
+    const windup = slot === "ultimate" ? 0.32 : skill.kind === "projectile" ? 0.08 : 0.1;
     this.pendingCast = { slot, skill, at: windup };
-    this.setState("cast", windup + (slot === "ultimate" ? 0.35 : 0.24));
-    this.impulse(0.9, 1.1);
+    this.setState("cast", windup + (slot === "ultimate" ? 0.35 : 0.26));
     if (slot === "ultimate") {
       this.invuln = Math.max(this.invuln, 0.9);
       this.scene.ultimateIntro(this, skill);
@@ -322,8 +395,34 @@ export class Hero extends Actor {
     this.vx = 0;
   }
 
+  /** Snapshot for afterimages after the hero was teleported this frame. */
+  ghostAt(x: number, color: number, alpha = 0.5, duration = 280) {
+    this.view.container.setX(x);
+    this.view.ghost(color, alpha, duration);
+  }
+
+  takeHit(hit: Hit) {
+    if (this.dead || this.invuln > 0) return 0;
+    if (this.shield > 0) {
+      const absorbed = Math.min(this.shield, hit.damage);
+      this.shield -= absorbed;
+      this.scene.fx.ring(this.cx, this.cy, POWERUPS.shield.color, 90, 240);
+      if (this.shield <= 0) {
+        delete this.buffs.shield;
+        this.scene.fx.shards(this.cx, this.cy, { main: POWERUPS.shield.color, light: 0xffffff, dark: 0x2060a0 }, 14, 500);
+      }
+      if (hit.damage - absorbed <= 0) {
+        this.invuln = 0.25;
+        return 0;
+      }
+      hit = { ...hit, damage: hit.damage - absorbed };
+    }
+    return super.takeHit(hit);
+  }
+
   protected onHurt(hit: Hit, dealt: number) {
     sfx.hurt();
+    this.damageTaken += dealt;
     this.scene.fx.number(this.cx, this.y - 160, dealt, 0xff5a6a);
     this.gainEnergy(3);
     this.facing = -hit.dir || this.facing;
@@ -339,10 +438,14 @@ export class Hero extends Actor {
   protected die() {
     this.dead = true;
     this.hp = 0;
+    this.downs += 1;
     this.state = "down";
-    this.reviveTimer = 8;
+    this.reviveTimer = this.revives > 0 ? 1.6 : 8;
     this.vy = -500;
     this.status = {};
+    this.buffs = {};
+    this.shield = 0;
+    this.trails.forEach((t) => t.trail.clear());
     this.scene.onHeroDown(this);
   }
 
@@ -351,114 +454,114 @@ export class Hero extends Actor {
     this.hp = Math.max(1, Math.round(this.maxHp * hpRatio));
     this.invuln = 2;
     this.setState("free", 0);
-    this.scene.fx.ring(this.x, this.y - 70, this.def.color, 140);
-    this.scene.fx.label(this.x, this.y - 180, "HỒI SINH!", "#9ff8ff");
+    this.scene.fx.pillar(this.x, this.pal.main, 1.2, 1, 600);
+    this.scene.fx.ring(this.x, this.y - 70, this.pal.light, 160);
+    this.scene.fx.label(this.x, this.y - 190, "HỒI SINH!", "#9ff8ff");
   }
 
   private updateDown(dt: number) {
     this.physics(dt, 6);
-    if (this.scene.mode === "coop" && this.scene.anyHeroAlive()) {
+    if (this.scene.phase === "over") return;
+    if (this.revives > 0) {
+      this.reviveTimer -= dt;
+      if (this.reviveTimer <= 0) {
+        this.revives -= 1;
+        this.revive(0.5);
+        this.scene.fx.label(this.x, this.y - 220, `Lõi Hồi Sinh (còn ${this.revives})`, "#ffe45c");
+      }
+    } else if (this.scene.coop && this.scene.anyHeroAlive()) {
       this.reviveTimer -= dt;
       if (this.reviveTimer <= 0) this.revive(0.5);
     }
   }
 
-  private pose(): HeroPose {
-    if (this.dead || this.state === "hurt") return "hit_reaction";
-    if (this.state === "dash" || this.state === "sweep") return "dash";
-    if (this.state === "attack") return "attack_slash";
-    if (this.state === "cast") return this.castPose;
-    if (!this.onGround) return "jump";
-    if (this.hasWalk && Math.abs(this.vx) > 60) return `walk_${(Math.floor(this.anim.stride) % 4) + 1}` as HeroPose;
-    return "idle";
-  }
+  // ---------- rendering ----------
 
-  /** Kick the squash/stretch spring; it settles back to 1 on its own. */
-  impulse(sx: number, sy: number) {
-    this.anim.sx = sx;
-    this.anim.sy = sy;
-    this.anim.vx = 0;
-    this.anim.vy = 0;
+  private animState(): AnimState {
+    if (this.dead) return "down";
+    if (this.isStunned()) return "stun";
+    switch (this.state) {
+      case "hurt":
+        return "hurt";
+      case "dash":
+        return "dash";
+      case "sweep":
+        return "sweep";
+      case "attack":
+        return "attack";
+      case "cast":
+        return "cast";
+    }
+    if (!this.onGround) return "air";
+    return Math.abs(this.vx) > 40 ? "run" : "idle";
   }
 
   private render(dt: number) {
     const a = this.anim;
     const grounded = this.onGround;
-    const speed = Math.abs(this.vx);
-    const running = grounded && speed > 60 && (this.state === "free" || this.state === "hurt");
-
-    // Landing squash + dust.
-    if (grounded && !a.wasGround && !this.dead) {
-      this.impulse(1.22, 0.78);
+    if (grounded && !a.wasGround && !this.dead && dt > 0) {
+      a.land = 1;
       this.scene.fx.dust(this.x, 1, 0.7);
       this.scene.fx.dust(this.x, -1, 0.7);
     }
     a.wasGround = grounded;
+    a.land = Math.max(0, a.land - dt * 5);
 
-    // Critically damped-ish spring toward scale 1.
-    const k = 520;
-    const c = 26;
-    a.vx += ((1 - a.sx) * k - a.vx * c) * dt;
-    a.vy += ((1 - a.sy) * k - a.vy * c) * dt;
-    a.sx += a.vx * dt;
-    a.sy += a.vy * dt;
-
-    // Stride advances with distance covered so feet don't skate.
-    if (running) a.stride += (speed * dt) / 34;
-    else a.stride = 0;
-
-    const pose = this.pose();
-    const key = heroKey(this.def.id, pose);
-    if (key !== a.lastKey) {
-      this.sprite.setTexture(key);
-      if (!pose.startsWith("walk") && !a.lastKey.includes("walk")) this.impulse(a.sx * 1.04, a.sy * 0.97);
-      a.lastKey = key;
-    }
-
-    // Turning squeezes through zero width instead of snapping.
-    a.turn += (this.facing - a.turn) * Math.min(1, dt * 28);
-    const sign = a.turn >= 0 ? 1 : -1;
-    const turnScale = Math.max(0.2, Math.abs(a.turn));
-
-    const ax = pose === "jump" ? 0.5 : anchorX(key);
-    const flip = (sign < 0) !== artFacesLeft(key);
-    this.sprite.setFlipX(flip).setOrigin(flip ? 1 - ax : ax, 1);
-
-    const t = this.scene.time.now / 1000;
-    let leanTarget = 0;
-    let yOff = 0;
-    let breathe = 0;
-    if (running) {
-      leanTarget = (this.vx / (this.def.speed * 1.2)) * 0.1;
-      const cycle = a.stride * Math.PI * (this.hasWalk ? 0.5 : 1);
-      yOff = -Math.abs(Math.sin(cycle)) * (this.hasWalk ? 4 : 8);
-      breathe = Math.cos(cycle * 2) * 0.03;
-      a.dust -= dt;
-      if (a.dust <= 0) {
-        this.scene.fx.dust(this.x - this.facing * 20, this.facing, 0.45);
-        a.dust = 0.16;
+    const state = this.animState();
+    if (state === "run") {
+      a.stride += (Math.abs(this.vx) * dt) / 40;
+      const sign = Math.sin(a.stride) >= 0 ? 1 : -1;
+      if (sign !== a.stepSign) {
+        a.stepSign = sign;
+        this.scene.fx.dust(this.x - this.facing * 10, this.facing, 0.4);
       }
-    } else if (!grounded && !this.dead) {
-      leanTarget = Phaser.Math.Clamp(this.vy / 1400, -0.5, 0.5) * 0.25 * this.facing + (this.vx / 2400);
-    } else if (pose === "idle") {
-      breathe = Math.sin(t * 3) * 0.018;
-    } else if (this.state === "dash" || this.state === "sweep") {
-      leanTarget = this.facing * 0.12;
-    } else if (this.state === "hurt") {
-      leanTarget = -this.facing * 0.15;
     }
-    if (this.dead) leanTarget = -this.facing * 0.3;
-    a.lean += (leanTarget - a.lean) * Math.min(1, dt * 14);
 
-    const base = this.scaleFactor;
-    const sx = base * a.sx * (1 - breathe * 0.5) * turnScale;
-    const sy = base * a.sy * (1 + breathe) * (this.dead ? 0.9 : 1);
-    this.sprite.setPosition(this.x, this.y + yOff).setScale(sx, sy).setRotation(a.lean);
-    this.renderCommon();
-    if (this.invuln > 0 && !this.dead && this.state !== "dash" && this.state !== "sweep" && this.state !== "cast") {
-      this.sprite.setAlpha(0.55 + Math.sin(this.scene.time.now / 35) * 0.35);
-    } else {
-      this.sprite.setAlpha(this.dead ? 0.55 : 1);
+    const progress = this.stateDuration > 0 ? Math.min(1, this.stateTime / this.stateDuration) : 0;
+    const out = animateHero(this.style, {
+      state,
+      progress,
+      combo: this.comboStep,
+      cast: this.castKind,
+      vx: this.vx,
+      vy: this.vy,
+      speedRef: this.def.speed,
+      stride: a.stride,
+      time: this.scene.time.now / 1000,
+      land: a.land,
+    });
+
+    const rig = this.view;
+    // Commit to the new facing quickly during attacks so swings never play backwards.
+    rig.facing = this.facing;
+    if (dt === 0) rig.snap(out.pose, out.root);
+    rig.update(dt, this.x, this.y, out.pose, out.root, out.stiffness, Math.min(out.stiffness, 30));
+
+    const now = this.scene.time.now / 1000;
+    for (const t of this.trails) {
+      t.trail.active = out.trail && !this.dead;
+      t.trail.update(now, rig.point(t.pts[0][0], t.pts[0][1], t.pts[0][2]), rig.point(t.pts[1][0], t.pts[1][1], t.pts[1][2]));
     }
+
+    const [bone, lx, ly] = heroRibbonAnchor(HERO_LOOKS[this.def.id].ribbon.kind);
+    this.ribbons.forEach((r, i) => {
+      const p = rig.point(bone, lx + i * 3, ly + i * 4);
+      r.update(dt || 1 / 60, p.x, p.y, -this.facing * 320 - this.vx * 0.8, now + i);
+    });
+
+    this.renderCommon();
+    if (this.buffs.rage && this.flashTime <= 0) rig.setTint(0xffb0a0);
+    let alpha = this.dead ? 0.6 : 1;
+    if (this.invuln > 0 && !this.dead && this.state !== "dash" && this.state !== "sweep" && this.state !== "cast") {
+      alpha = 0.55 + Math.sin(this.scene.time.now / 35) * 0.35;
+    }
+    rig.setAlpha(alpha);
+    this.ribbons.forEach((r) => r.setAlpha(alpha));
+  }
+
+  destroy() {
+    super.destroy();
+    this.ribbons.forEach((r) => r.destroy());
+    this.trails.forEach((t) => t.trail.destroy());
   }
 }
