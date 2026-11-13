@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { ARENA_WIDTH, DEPTH, GAME_HEIGHT, GAME_WIDTH, GROUND_Y, type GameMode } from "../config/constants";
-import { STAGES, UPGRADES, type EnemyType, type StageDef, type Upgrade } from "../config/content";
+import { parseWaveEntry, STAGES, UPGRADES, type EnemyType, type StageDef, type Upgrade } from "../config/content";
 import { heroById, type SkillDef } from "../config/heroes";
 import type { Actor, Hit } from "../entities/Actor";
 import { Enemy } from "../entities/Enemy";
@@ -9,7 +9,8 @@ import { consumeTouch, PlayerControls, setSceneFlag } from "../systems/controls"
 import { Fx, PALETTE, type Palette } from "../systems/Fx";
 import { sfx } from "../systems/sfx";
 
-export type GameData = { mode: GameMode; heroes: string[] };
+export type { GameData } from "../config/constants";
+import type { GameData } from "../config/constants";
 
 export type ProjectileStyle = "plasma" | "fire" | "volt" | "wind" | "enemy";
 
@@ -75,7 +76,7 @@ export type Phase = "intro" | "fight" | "advance" | "stageClear" | "upgrade" | "
 export type ResultData = { win: boolean; title: string; detail: string; score: number; best: number; mode: GameMode };
 
 export class GameScene extends Phaser.Scene {
-  mode: GameMode = "solo";
+  mode: GameMode = "campaign";
   heroIds: string[] = [];
   heroes: Hero[] = [];
   enemies: Enemy[] = [];
@@ -133,6 +134,10 @@ export class GameScene extends Phaser.Scene {
     this.hitstop = 0;
   }
 
+  get coop() {
+    return this.mode !== "pk" && this.heroes.length > 1;
+  }
+
   get stage(): StageDef {
     return STAGES[this.mode === "pk" ? 0 : this.stageIndex];
   }
@@ -146,11 +151,11 @@ export class GameScene extends Phaser.Scene {
     this.fx = new Fx(this);
     this.buildWorld();
 
-    const count = this.mode === "solo" ? 1 : 2;
+    const count = this.mode === "pk" ? 2 : Math.min(2, this.heroIds.length);
     for (let i = 0; i < count; i += 1) {
       const def = heroById(this.heroIds[i] ?? this.heroIds[0]);
       const x = this.mode === "pk" ? (i === 0 ? 300 : GAME_WIDTH - 300) : 220 + i * 110;
-      const hero = new Hero(this, x, def, i as 0 | 1, new PlayerControls(this, i as 0 | 1), this.mode === "pk" ? 360 : undefined);
+      const hero = new Hero(this, x, def, i as 0 | 1, new PlayerControls(this, i as 0 | 1), undefined, this.mode === "pk" ? 360 : undefined);
       if (this.mode === "pk") hero.energy = 20;
       this.heroes.push(hero);
     }
@@ -221,7 +226,7 @@ export class GameScene extends Phaser.Scene {
 
   private startWave() {
     const waves = this.stage.waves;
-    this.spawnQueue = [...waves[this.waveIndex]];
+    this.spawnQueue = waves[this.waveIndex].map((e) => parseWaveEntry(e).type);
     this.spawnTimer = 0.3;
     this.setPhase("fight", 0);
     this.lockHeroes(false);
@@ -385,7 +390,7 @@ export class GameScene extends Phaser.Scene {
         break;
       case "fight":
         this.spawnTimer -= dt;
-        if (this.spawnQueue.length && this.spawnTimer <= 0 && this.aliveEnemies().length < (this.mode === "coop" ? 6 : 4)) {
+        if (this.spawnQueue.length && this.spawnTimer <= 0 && this.aliveEnemies().length < (this.coop ? 6 : 4)) {
           this.spawnEnemy(this.spawnQueue.shift()!);
           this.spawnTimer = 0.75;
         }
@@ -448,7 +453,7 @@ export class GameScene extends Phaser.Scene {
     const s = side ? (side === "left" ? -1 : 1) : (this.spawnSide *= -1);
     const x = s > 0 ? this.arenaMax - 70 : this.arenaMin + 70;
     const stageScale = type === "boss" ? 1 : 1 + this.stageIndex * 0.3;
-    const coopScale = this.mode === "coop" ? 1.5 : 1;
+    const coopScale = this.coop ? 1.5 : 1;
     const e = new Enemy(this, type, x, stageScale * coopScale);
     e.facing = s > 0 ? -1 : 1;
     this.enemies.push(e);
@@ -571,7 +576,7 @@ export class GameScene extends Phaser.Scene {
     this.fx.shake(0.015, 300);
     this.fx.explosion(hero.cx, hero.cy, pal, 90, false);
     if (this.mode !== "pk" && !this.anyHeroAlive()) this.time.delayedCall(1200, () => this.finish(false));
-    else if (this.mode === "coop") this.fx.label(hero.x, hero.y - 190, "Hồi sinh sau 8s", "#ffb0b8");
+    else if (this.coop) this.fx.label(hero.x, hero.y - 190, "Hồi sinh sau 8s", "#ffb0b8");
   }
 
   onEnemyKilled(enemy: Enemy, hit: Hit) {

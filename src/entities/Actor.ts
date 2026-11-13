@@ -23,8 +23,18 @@ const STATUS_TICK: Record<StatusKind, { every: number; damage: number; color: nu
   stun: { every: 0, damage: 0, color: 0xfff6a0 },
 };
 
+/** What an actor draws with: a plain image (enemies) or a skeletal rig (heroes). */
+export interface ActorView {
+  readonly depth: number;
+  setTintFill(color: number): unknown;
+  setTint(color: number): unknown;
+  clearTint(): unknown;
+  setAlpha(alpha: number): unknown;
+  destroy(): void;
+}
+
 export abstract class Actor {
-  readonly sprite: Phaser.GameObjects.Image;
+  abstract readonly view: ActorView;
   readonly shadow: Phaser.GameObjects.Ellipse;
   x: number;
   y = GROUND_Y;
@@ -50,17 +60,14 @@ export abstract class Actor {
   constructor(
     protected scene: GameScene,
     x: number,
-    texture: string,
     hp: number,
     body: { w: number; h: number },
-    depth: number,
   ) {
     this.x = x;
     this.hp = this.maxHp = hp;
     this.bodyW = body.w;
     this.bodyH = body.h;
     this.shadow = scene.add.ellipse(x, GROUND_Y + 2, body.w * 0.9, 16, 0x000000, 0.45).setDepth(DEPTH.shadow);
-    this.sprite = scene.add.image(x, this.y, texture).setOrigin(0.5, 1).setDepth(depth);
   }
 
   get onGround() {
@@ -148,7 +155,7 @@ export abstract class Actor {
       }
     }
     if (auraColor !== null && !this.dead) {
-      this.statusAura ??= this.scene.add.image(0, 0, "glow").setBlendMode(Phaser.BlendModes.ADD).setDepth(this.sprite.depth - 1);
+      this.statusAura ??= this.scene.add.image(0, 0, "glow").setBlendMode(Phaser.BlendModes.ADD).setDepth(this.view.depth - 1);
       this.statusAura
         .setPosition(this.cx, this.cy)
         .setTint(auraColor)
@@ -164,9 +171,9 @@ export abstract class Actor {
     this.shadow.setPosition(this.x, GROUND_Y + 2);
     const height = Math.max(0, GROUND_Y - this.y);
     this.shadow.setScale(Math.max(0.35, 1 - height / 500)).setAlpha(this.flying ? 0.25 : 0.45);
-    if (this.flashTime > 0) this.sprite.setTintFill(0xffffff);
-    else if (this.isStunned()) this.sprite.setTint(0xfff6a0);
-    else this.sprite.clearTint();
+    if (this.flashTime > 0) this.view.setTintFill(0xffffff);
+    else if (this.isStunned()) this.view.setTint(0xfff6a0);
+    else this.view.clearTint();
   }
 
   tickTimers(dt: number) {
@@ -176,7 +183,7 @@ export abstract class Actor {
   }
 
   destroy() {
-    this.sprite.destroy();
+    this.view.destroy();
     this.shadow.destroy();
     this.statusAura?.destroy();
   }

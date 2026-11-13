@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { FONT, hex } from "../config/constants";
+import { FONT, GAME_WIDTH, hex } from "../config/constants";
 import { sfx } from "../systems/sfx";
 
 export const text = (
@@ -115,3 +115,46 @@ export class ButtonGroup {
     this.buttons.forEach((b) => b.destroy());
   }
 }
+
+const toastStacks = new WeakMap<Phaser.Scene, Phaser.GameObjects.Container[]>();
+
+/** Slides a notification in from the top-right corner; stacks and auto-dismisses. */
+export const toast = (scene: Phaser.Scene, title: string, subtitle?: string, color = 0xffe45c) => {
+  let stack = toastStacks.get(scene);
+  if (!stack) {
+    stack = [];
+    toastStacks.set(scene, stack);
+    scene.events.once("shutdown", () => toastStacks.delete(scene));
+  }
+  const w = 380;
+  const h = subtitle ? 76 : 52;
+  const x = GAME_WIDTH - 24 - w;
+  const y = 88 + stack.reduce((sum, c) => sum + (c.getData("h") as number) + 10, 0);
+  const box = scene.add.graphics();
+  box.fillStyle(0x061220, 0.97).fillRoundedRect(0, 0, w, h, 12);
+  box.lineStyle(2, color, 1).strokeRoundedRect(0, 0, w, h, 12);
+  box.fillStyle(color, 1).fillRoundedRect(12, 12, 5, h - 24, 2);
+  const head = text(scene, 30, subtitle ? 12 : 13, title, 20, hex(color), "900");
+  head.setWordWrapWidth(w - 46).setMaxLines(1);
+  const parts: Phaser.GameObjects.GameObject[] = [box, head];
+  if (subtitle) {
+    parts.push(
+      scene.add.text(30, 44, subtitle, { fontFamily: FONT, fontSize: "15px", fontStyle: "700", color: "#c8dcea", maxLines: 1, wordWrap: { width: w - 46 } }),
+    );
+  }
+  const c = scene.add.container(GAME_WIDTH + 20, y, parts).setDepth(10000).setScrollFactor(0).setData("h", h);
+  stack.push(c);
+  scene.tweens.chain({
+    targets: c,
+    tweens: [
+      { x, duration: 320, ease: "Back.easeOut" },
+      { x: GAME_WIDTH + 20, alpha: 0.3, delay: 2800, duration: 260, ease: "Cubic.easeIn" },
+    ],
+    onComplete: () => {
+      const list = toastStacks.get(scene);
+      if (list && list.includes(c)) list.splice(list.indexOf(c), 1);
+      c.destroy();
+    },
+  });
+  return c;
+};
