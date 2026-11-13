@@ -1,0 +1,351 @@
+{
+ "nova_blade_idle": {
+  "file": "nova_blade_idle.png",
+  "w": 88,
+  "h": 108,
+  "ax": 0.5113636363636364
+ },
+ "nova_blade_jump": {
+  "file": "nova_blade_jump.png",
+  "w": 107,
+  "h": 112,
+  "ax": 0.17289719626168223
+ },
+ "nova_blade_attack_slash": {
+  "file": "nova_blade_attack_slash.png",
+  "w": 154,
+  "h": 158,
+  "ax": 0.7045454545454546
+ },
+ "nova_blade_attack_blast": {
+  "file": "nova_blade_attack_blast.png",
+  "w": 217,
+  "h": 135,
+  "ax": 0.22119815668202766
+ },
+ "nova_blade_dash": {
+  "file": "nova_blade_dash.png",
+  "w": 196,
+  "h": 118,
+  "ax": 0.3673469387755102
+ },
+ "nova_blade_hit_reaction": {
+  "file": "nova_blade_hit_reaction.png",
+  "w": 116,
+  "h": 129,
+  "ax": 0.2543103448275862
+ },
+ "nova_blade_art": {
+  "file": "nova_blade_art.png",
+  "w": 555,
+  "h": 420
+ },
+ "nova_blade_icon_basic": {
+  "file": "nova_blade_icon_basic.png",
+  "w": 96,
+  "h": 96
+ },
+ "nova_blade_icon_skill1": {
+  "file": "nova_blade_icon_skill1.png",
+  "w": 96,
+  "h": 96
+ },
+ "nova_blade_icon_skill2": {
+  "file": "nova_blade_icon_skill2.png",
+  "w": 96,
+  "h": 96
+ },
+ "nova_blade_icon_ultimate": {
+  "file": "nova_blade_icon_ultimate.png",
+  "w": 96,
+  "h": 96
+ },
+ "crimson_flare_idle": {
+  "file": "crimson_flare_idle.png",
+  "w": 83,
+  "h": 93,
+  "ax": 0.42771084337349397
+ },
+ "crimson_flare_jump": {
+  "file": "crimson_flare_jump.png",
+  "w": 73,
+  "h": 133,
+  "ax": 0.5821917808219178
+ },
+ "crimson_flare_attack_slash": {
+  "file": "crimson_flare_attack_slash.png",
+  "w": 167,
+  "h": 125,
+  "ax": 0.7305389221556886
+ },
+ "crimson_flare_attack_blast": {
+  "file": "crimson_flare_attack_blast.png",
+  "w": 149,
+  "h": 113,
+  "ax": 0.2953020134228188
+ },
+ "crimson_flare_dash": {
+  "file": "crimson_flare_dash.png",
+  "w": 209,
+  "h": 101,
+  "ax": 0.4138755980861244
+ },
+ "crimson_flare_hit_reaction": {
+  "file": "crimson_flare_hit_reaction.png",
+  "w": 102,
+  "h": 119,
+  "ax": 0.27941176470588236
+ },
+ "crimson_flare_art": {
+  "file": "crimson_flare_art.png",
+  "w": 463,
+  "h": 420
+ },
+ "crimson_flare_icon_basic": {
+  "file": "crimson_flare_icon_basic.png",
+  "w": 96,
+  "h": 96
+ },
+ "crimson_flare_icon_skill1": {
+  "file": "crimson_flare_icon_skill1.png",
+  "w": 96,
+  "h": 96
+ },
+ "crimson_flare_icon_skill2": {
+  "file": "crimson_flare_icon_skill2.png",
+  "w": 96,
+  "h": 96
+ },
+ "crimson_flare_icon_ultimate": {
+  "file": "crimson_flare_icon_ultimate.png",
+  "w": 96,
+  "h": 96
+ },
+ "volt_sentinel_idle": {
+  "file": "volt_sentinel_idle.png",
+  "w": 87,
+  "h": 93,
+  "ax": 0.42528735632183906
+ },
+ "volt_sentinel_jump": {
+  "file": "volt_sentinel_jump.png",
+  "w": 89,
+  "h": 130,
+  "ax": 0.4044943820224719
+ },
+ "volt_sentinel_attack_slash": {
+  "file": "volt_sentinel_attack_slash.png",
+  "w": 181,
+  "h": 125,
+  "ax": 0.5082872928176796
+ },
+ "volt_sentinel_attack_blast": {
+  "file": "volt_sentinel_attack_blast.png",
+  "w": 153,
+  "h": 110,
+  "ax": 0.3235294117647059
+ },
+ "volt_sentinel_dash": {
+  "file": "volt_sentinel_dash.png",
+  "w": 205,
+  "h": 91,
+  "ax": 0.47317073170731705
+ },
+ "volt_sentinel_hit_reaction": {
+  "file": "volt_sentinel_hit_reaction.png",
+  "w": 99,
+  "h": 106,
+  "ax": 0.4797979797979798
+ },
+ "volt_sentinel_art": {
+  "file": "volt_sentinel_art.png",
+  "w": 468,
+  "h": 420
+ },
+ "volt_sentinel_icon_basic": {
+  "file": "volt_sentinel_icon_basic.png",
+  "w": 96,
+  "h": 96
+ },
+ "volt_sentinel_icon_skill1": {
+  "file": "volt_sentinel_icon_skill1.png",
+  "w": 96,
+  "h": 96
+ },
+ "volt_sentinel_icon_skill2": {
+  "file": "volt_sentinel_icon_skill2.png",
+  "w": 94,
+  "h": 96
+ },
+ "volt_sentinel_icon_ultimate": {
+  "file": "volt_sentinel_icon_ultimate.png",
+  "w": 94,
+  "h": 96
+ },
+ "emerald_phantom_idle": {
+  "file": "emerald_phantom_idle.png",
+  "w": 96,
+  "h": 114,
+  "ax": 0.5625
+ },
+ "emerald_phantom_jump": {
+  "file": "emerald_phantom_jump.png",
+  "w": 102,
+  "h": 106,
+  "ax": 0.37745098039215685
+ },
+ "emerald_phantom_attack_slash": {
+  "file": "emerald_phantom_attack_slash.png",
+  "w": 167,
+  "h": 116,
+  "ax": 0.7005988023952096
+ },
+ "emerald_phantom_attack_blast": {
+  "file": "emerald_phantom_attack_blast.png",
+  "w": 176,
+  "h": 116,
+  "ax": 0.4119318181818182
+ },
+ "emerald_phantom_dash": {
+  "file": "emerald_phantom_dash.png",
+  "w": 196,
+  "h": 115,
+  "ax": 0.4846938775510204
+ },
+ "emerald_phantom_hit_reaction": {
+  "file": "emerald_phantom_hit_reaction.png",
+  "w": 102,
+  "h": 115,
+  "ax": 0.38235294117647056
+ },
+ "emerald_phantom_art": {
+  "file": "emerald_phantom_art.png",
+  "w": 518,
+  "h": 420
+ },
+ "emerald_phantom_icon_basic": {
+  "file": "emerald_phantom_icon_basic.png",
+  "w": 96,
+  "h": 96
+ },
+ "emerald_phantom_icon_skill1": {
+  "file": "emerald_phantom_icon_skill1.png",
+  "w": 96,
+  "h": 96
+ },
+ "emerald_phantom_icon_skill2": {
+  "file": "emerald_phantom_icon_skill2.png",
+  "w": 96,
+  "h": 96
+ },
+ "emerald_phantom_icon_ultimate": {
+  "file": "emerald_phantom_icon_ultimate.png",
+  "w": 96,
+  "h": 96
+ },
+ "crawler": {
+  "file": "crawler.png",
+  "w": 165,
+  "h": 85,
+  "ax": 0.503030303030303
+ },
+ "hunter": {
+  "file": "hunter.png",
+  "w": 189,
+  "h": 96,
+  "ax": 0.1931216931216931
+ },
+ "mutant": {
+  "file": "mutant.png",
+  "w": 194,
+  "h": 170,
+  "ax": 0.5567010309278351
+ },
+ "mutant_punch": {
+  "file": "mutant_punch.png",
+  "w": 95,
+  "h": 101,
+  "ax": 0.29473684210526313
+ },
+ "aegis": {
+  "file": "aegis.png",
+  "w": 177,
+  "h": 127,
+  "ax": 0.3672316384180791
+ },
+ "boss": {
+  "file": "boss.png",
+  "w": 522,
+  "h": 380,
+  "ax": 0.5660919540229885
+ },
+ "boss_idle": {
+  "file": "boss_idle.png",
+  "w": 155,
+  "h": 114,
+  "ax": 0.5193548387096775
+ },
+ "boss_slam": {
+  "file": "boss_slam.png",
+  "w": 156,
+  "h": 160,
+  "ax": 0.49038461538461536
+ },
+ "boss_whip": {
+  "file": "boss_whip.png",
+  "w": 188,
+  "h": 148,
+  "ax": 0.5611702127659575
+ },
+ "boss_rage": {
+  "file": "boss_rage.png",
+  "w": 173,
+  "h": 140,
+  "ax": 0.47109826589595377
+ },
+ "item_health": {
+  "file": "item_health.png",
+  "w": 51,
+  "h": 64
+ },
+ "item_energy": {
+  "file": "item_energy.png",
+  "w": 28,
+  "h": 64
+ },
+ "item_coin": {
+  "file": "item_coin.png",
+  "w": 54,
+  "h": 64
+ },
+ "item_chip": {
+  "file": "item_chip.png",
+  "w": 30,
+  "h": 64
+ },
+ "fx_slash1": {
+  "file": "fx_slash1.png",
+  "w": 160,
+  "h": 98
+ },
+ "fx_slash2": {
+  "file": "fx_slash2.png",
+  "w": 155,
+  "h": 127
+ },
+ "bg_city_neon": {
+  "file": "bg_city_neon.png",
+  "w": 898,
+  "h": 290
+ },
+ "bg_lab_sewer": {
+  "file": "bg_lab_sewer.png",
+  "w": 899,
+  "h": 276
+ },
+ "bg_lava_fortress": {
+  "file": "bg_lava_fortress.png",
+  "w": 898,
+  "h": 236
+ }
+}

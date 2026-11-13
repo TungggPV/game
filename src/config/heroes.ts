@@ -1,124 +1,177 @@
-import { assetPath } from "./assets";
+import type { SkillSlot } from "./constants";
 
-export type HeroSpriteName =
-  | "idle"
-  | "walk1"
-  | "walk2"
-  | "walk3"
-  | "walk4"
-  | "jump"
-  | "attackSlash"
-  | "attackBlast"
-  | "dash"
-  | "hitReaction";
+export type StatusKind = "burn" | "poison" | "slow" | "stun";
 
-export type HeroSprites = Record<HeroSpriteName, string>;
+export type StatusEffect = { kind: StatusKind; time: number };
 
-export type HeroConfig = {
-  id: string;
-  displayName: string;
-  assetRoot: string;
-  portrait: string;
-  dynamicArt: string;
-  sprites: HeroSprites;
-  themeColor: number;
-  themeCss: string;
-  targetHeight: number;
-  speed: number;
-  meleeDamage: number;
-  blastDamage: number;
+type SkillBase = {
+  name: string;
+  desc: string;
+  cooldown: number;
+  cost: number;
+  damage: number;
+  color: number;
+  status?: StatusEffect;
+  knock?: number;
+  launch?: number;
 };
 
-const heroSprites = (root: string): HeroSprites => ({
-  idle: assetPath(`${root}/sprites/idle.png`),
-  walk1: assetPath(`${root}/sprites/walk_1.png`),
-  walk2: assetPath(`${root}/sprites/walk_2.png`),
-  walk3: assetPath(`${root}/sprites/walk_3.png`),
-  walk4: assetPath(`${root}/sprites/walk_4.png`),
-  jump: assetPath(`${root}/sprites/jump.png`),
-  attackSlash: assetPath(`${root}/sprites/attack_slash.png`),
-  attackBlast: assetPath(`${root}/sprites/attack_blast.png`),
-  dash: assetPath(`${root}/sprites/dash.png`),
-  hitReaction: assetPath(`${root}/sprites/hit_reaction.png`),
-});
+export type ProjectileSkill = SkillBase & {
+  kind: "projectile";
+  speed: number;
+  size: number;
+  pierce?: number;
+  explodeRadius?: number;
+  chain?: number;
+};
+export type BurstSkill = SkillBase & { kind: "burst"; radius: number; offset: number; screen?: boolean };
+export type FieldSkill = SkillBase & { kind: "field"; radius: number; offset: number; duration: number; tick: number };
+export type StrikesSkill = SkillBase & { kind: "strikes"; count: number; radius: number; interval: number; meteor?: boolean };
+export type SweepSkill = SkillBase & { kind: "sweep"; hits: number };
 
-// The new hero folders are currently in public/assets/<hero_id>/.
-// Processed variants remove the white matte from the supplied PNGs for in-game sprites.
-export const HEROES: HeroConfig[] = [
+export type SkillDef = ProjectileSkill | BurstSkill | FieldSkill | StrikesSkill | SweepSkill;
+
+export type BasicDef = {
+  name: string;
+  desc: string;
+  combo: [number, number, number];
+  range: number;
+  interval: number;
+  color: number;
+  finisherStatus?: StatusEffect;
+};
+
+export type HeroDef = {
+  id: string;
+  name: string;
+  role: string;
+  color: number;
+  hp: number;
+  speed: number;
+  power: number;
+  jumps: number;
+  stats: { atk: number; def: number; spd: number; skill: number };
+  basic: BasicDef;
+  skills: Record<Exclude<SkillSlot, "basic">, SkillDef>;
+};
+
+export const HEROES: HeroDef[] = [
   {
     id: "nova_blade",
-    displayName: "Nova Blade",
-    assetRoot: "hero",
-    portrait: assetPath("hero/portrait/hero_portrait.png"),
-    dynamicArt: assetPath("processed/nova_blade/dynamic/action_clean.png"),
-    sprites: heroSprites("hero"),
-    themeColor: 0x18e6ff,
-    themeCss: "#18e6ff",
-    targetHeight: 178,
-    speed: 1,
-    meleeDamage: 26,
-    blastDamage: 30,
+    name: "Nova Blade",
+    role: "Cân bằng · Plasma",
+    color: 0x18e6ff,
+    hp: 260,
+    speed: 360,
+    power: 1,
+    jumps: 2,
+    stats: { atk: 3, def: 3, spd: 3, skill: 4 },
+    basic: { name: "Chém Plasma", desc: "Combo 3 đòn, đòn cuối hất văng.", combo: [14, 14, 26], range: 130, interval: 0.2, color: 0x18e6ff },
+    skills: {
+      skill1: {
+        kind: "projectile", name: "Plasma Shot", desc: "Đạn plasma xuyên 2 mục tiêu.",
+        cooldown: 0.8, cost: 10, damage: 26, speed: 1050, size: 18, pierce: 2, color: 0x35f6ff, knock: 160,
+      },
+      skill2: {
+        kind: "burst", name: "Rising Blade", desc: "Lưỡi kiếm xoáy hất tung kẻ địch phía trước.",
+        cooldown: 4, cost: 25, damage: 44, radius: 170, offset: 90, launch: 950, color: 0x18e6ff,
+      },
+      ultimate: {
+        kind: "burst", name: "Nova Overdrive", desc: "Bùng nổ plasma quét toàn màn hình.",
+        cooldown: 1, cost: 100, damage: 220, radius: 9999, offset: 0, screen: true, launch: 700, color: 0x9ff8ff,
+      },
+    },
   },
   {
     id: "crimson_flare",
-    displayName: "Crimson Flare",
-    assetRoot: "processed/crimson_flare",
-    portrait: assetPath("processed/crimson_flare/portrait/portrait.png"),
-    dynamicArt: assetPath("processed/crimson_flare/dynamic/action.png"),
-    sprites: heroSprites("processed/crimson_flare"),
-    themeColor: 0xff4e5f,
-    themeCss: "#ff4e5f",
-    targetHeight: 176,
-    speed: 1.06,
-    meleeDamage: 29,
-    blastDamage: 26,
+    name: "Crimson Flare",
+    role: "Sát thương · Lửa",
+    color: 0xff4e3a,
+    hp: 290,
+    speed: 330,
+    power: 1.15,
+    jumps: 2,
+    stats: { atk: 5, def: 4, spd: 2, skill: 3 },
+    basic: {
+      name: "Quyền Lửa", desc: "Combo nặng, đòn cuối gây bỏng.", combo: [16, 16, 30], range: 135, interval: 0.24,
+      color: 0xff7a24, finisherStatus: { kind: "burn", time: 2.5 },
+    },
+    skills: {
+      skill1: {
+        kind: "projectile", name: "Fire Burst", desc: "Cầu lửa nổ lan, gây bỏng.",
+        cooldown: 1.2, cost: 14, damage: 30, speed: 820, size: 22, explodeRadius: 120, color: 0xff7a24,
+        status: { kind: "burn", time: 3 }, knock: 220,
+      },
+      skill2: {
+        kind: "burst", name: "Inferno Arc", desc: "Vòng cung lửa diện rộng phía trước.",
+        cooldown: 5, cost: 30, damage: 56, radius: 210, offset: 110, color: 0xff4e3a, status: { kind: "burn", time: 3.5 }, knock: 420,
+      },
+      ultimate: {
+        kind: "strikes", name: "Crimson Meteor", desc: "Mưa thiên thạch trút xuống kẻ địch.",
+        cooldown: 1, cost: 100, damage: 80, count: 7, radius: 130, interval: 0.16, meteor: true, color: 0xff6a2a,
+        status: { kind: "burn", time: 4 },
+      },
+    },
   },
   {
     id: "volt_sentinel",
-    displayName: "Volt Sentinel",
-    assetRoot: "processed/volt_sentinel",
-    portrait: assetPath("processed/volt_sentinel/portrait/portrait.png"),
-    dynamicArt: assetPath("processed/volt_sentinel/dynamic/action.png"),
-    sprites: heroSprites("processed/volt_sentinel"),
-    themeColor: 0x35f6ff,
-    themeCss: "#35f6ff",
-    targetHeight: 176,
-    speed: 1.16,
-    meleeDamage: 23,
-    blastDamage: 34,
+    name: "Volt Sentinel",
+    role: "Tốc độ · Sét",
+    color: 0xffd93a,
+    hp: 235,
+    speed: 400,
+    power: 0.95,
+    jumps: 2,
+    stats: { atk: 3, def: 2, spd: 5, skill: 4 },
+    basic: { name: "Tia Lửa Điện", desc: "Combo cực nhanh, hồi năng lượng tốt.", combo: [11, 11, 22], range: 125, interval: 0.15, color: 0xffef72 },
+    skills: {
+      skill1: {
+        kind: "projectile", name: "Thunder Bolt", desc: "Tia sét lan sang 2 kẻ địch gần đó.",
+        cooldown: 0.7, cost: 10, damage: 22, speed: 1500, size: 14, chain: 2, color: 0xfff27a, knock: 90,
+      },
+      skill2: {
+        kind: "field", name: "Electric Cage", desc: "Lồng điện gây sát thương liên tục và làm chậm.",
+        cooldown: 6, cost: 28, damage: 9, radius: 160, offset: 170, duration: 3, tick: 0.25, color: 0xffe14a,
+        status: { kind: "slow", time: 1 },
+      },
+      ultimate: {
+        kind: "strikes", name: "Storm Breaker", desc: "Tám tia sét giáng xuống, gây choáng.",
+        cooldown: 1, cost: 100, damage: 60, count: 8, radius: 110, interval: 0.12, color: 0xfff6a0,
+        status: { kind: "stun", time: 1.4 },
+      },
+    },
   },
   {
     id: "emerald_phantom",
-    displayName: "Emerald Phantom",
-    assetRoot: "processed/emerald_phantom",
-    portrait: assetPath("processed/emerald_phantom/portrait/portrait.png"),
-    dynamicArt: assetPath("processed/emerald_phantom/dynamic/action.png"),
-    sprites: heroSprites("processed/emerald_phantom"),
-    themeColor: 0x4ef3a5,
-    themeCss: "#4ef3a5",
-    targetHeight: 180,
-    speed: 1.22,
-    meleeDamage: 24,
-    blastDamage: 28,
+    name: "Emerald Phantom",
+    role: "Cơ động · Độc",
+    color: 0x3df2a0,
+    hp: 225,
+    speed: 430,
+    power: 1,
+    jumps: 3,
+    stats: { atk: 3, def: 2, spd: 5, skill: 4 },
+    basic: {
+      name: "Ảnh Trảm", desc: "Đòn nhanh, đòn cuối gây độc. Nhảy 3 lần.", combo: [12, 12, 22], range: 125, interval: 0.16,
+      color: 0x4ef3a5, finisherStatus: { kind: "poison", time: 3 },
+    },
+    skills: {
+      skill1: {
+        kind: "projectile", name: "Wind Pulse", desc: "Sóng gió đẩy lùi mạnh và gây độc.",
+        cooldown: 1, cost: 12, damage: 20, speed: 900, size: 26, pierce: 4, color: 0x7dffc8, knock: 520,
+        status: { kind: "poison", time: 3 },
+      },
+      skill2: {
+        kind: "field", name: "Toxic Spiral", desc: "Xoáy độc quanh thân, rút máu kẻ địch.",
+        cooldown: 5, cost: 26, damage: 8, radius: 170, offset: 0, duration: 2.6, tick: 0.2, color: 0x3df2a0,
+        status: { kind: "poison", time: 2 },
+      },
+      ultimate: {
+        kind: "sweep", name: "Emerald Mirage", desc: "Lướt ảo ảnh xuyên màn hình, chém liên hoàn.",
+        cooldown: 1, cost: 100, damage: 34, hits: 6, color: 0x4ef3a5,
+      },
+    },
   },
 ];
 
-export const DEFAULT_HERO_ID = HEROES[0].id;
-
-export const getHeroById = (id: string) => HEROES.find((hero) => hero.id === id) ?? HEROES[0];
-
-export const heroTextureKey = (hero: HeroConfig, sprite: HeroSpriteName) => `hero-${hero.id}-${sprite}`;
-
-export const heroPortraitKey = (hero: HeroConfig) => `hero-${hero.id}-portrait`;
-
-export const heroDynamicKey = (hero: HeroConfig) => `hero-${hero.id}-dynamic`;
-
-export const allHeroAssets = () =>
-  HEROES.flatMap((hero) => [
-    { key: heroPortraitKey(hero), path: hero.portrait },
-    { key: heroDynamicKey(hero), path: hero.dynamicArt },
-    ...Object.entries(hero.sprites).map(([sprite, path]) => ({
-      key: heroTextureKey(hero, sprite as HeroSpriteName),
-      path,
-    })),
-  ]);
+export const heroById = (id: string) => HEROES.find((h) => h.id === id) ?? HEROES[0];

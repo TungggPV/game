@@ -1,632 +1,392 @@
 import Phaser from "phaser";
-import { AssetKeys } from "../config/assets";
-import { DEPTHS, Direction, GRAVITY, PLATFORM_Y } from "../config/gameConfig";
-import { StatusType } from "../config/skills";
-import { RectLike } from "../utils/geometry";
-import type { Player } from "./Player";
+import { DEPTH, GROUND_Y } from "../config/constants";
+import { ENEMIES, type EnemyDef, type EnemyType } from "../config/content";
+import { anchorX, textureHeight } from "../systems/assets";
+import { sfx } from "../systems/sfx";
+import type { GameScene } from "../scenes/GameScene";
+import { Actor, type Hit } from "./Actor";
+import type { Hero } from "./Hero";
 
-export type EnemyKind = "crawler" | "horned_mutant" | "sky_hunter" | "aegis_elite" | "abyssal_colossus";
+type State = "idle" | "move" | "windup" | "active" | "recover" | "hurt" | "dying";
+type Move = "leap" | "punch" | "charge" | "shoot" | "bash" | "slam" | "beam" | "whip" | "summon";
 
-export type EnemyAction =
-  | { type: "melee"; hitbox: RectLike; damage: number; source: Enemy }
-  | { type: "leap"; hitbox: RectLike; damage: number; source: Enemy }
-  | { type: "slam"; hitbox: RectLike; damage: number; source: Enemy; impactX: number }
-  | { type: "shot"; source: Enemy; x: number; y: number; damage: number; facing: Direction };
+export class Enemy extends Actor {
+  readonly team = "enemy" as const;
+  readonly def: EnemyDef;
+  state: State = "idle";
+  private timer = 0.6 + Math.random() * 0.5;
+  private move: Move | null = null;
+  private moveHit = new Set<Actor>();
+  private cooldown = 1 + Math.random();
+  private baseScale: number;
+  private telegraph?: Phaser.GameObjects.GameObject;
+  private turnDelay = 0;
+  private hoverSeed = Math.random() * 10;
+  private attackIndex = 0;
+  enraged = false;
 
-type EnemyData = {
-  displayName: string;
-  idle: string;
-  walk: string[];
-  attack?: string;
-  maxHp: number;
-  damage: number;
-  speed: number;
-  stopDistance: number;
-  attackRange: number;
-  attackCooldown: number;
-  leapDamage?: number;
-  slamDamage?: number;
-  targetHeight: number;
-  score: number;
-  flying?: boolean;
-  boss?: boolean;
-  elite?: boolean;
-  ranged?: boolean;
-};
-
-type StatusState = {
-  type: StatusType;
-  duration: number;
-  tick: number;
-};
-
-const ENEMY_DATA: Record<EnemyKind, EnemyData> = {
-  crawler: {
-    displayName: "Crawler Drone",
-    idle: AssetKeys.crawlerIdle,
-    walk: [AssetKeys.crawlerIdle],
-    attack: AssetKeys.crawlerIdle,
-    maxHp: 70,
-    damage: 10,
-    speed: 95,
-    stopDistance: 95,
-    attackRange: 85,
-    attackCooldown: 1.1,
-    leapDamage: 14,
-    targetHeight: 116,
-    score: 130,
-  },
-  horned_mutant: {
-    displayName: "Horned Mutant",
-    idle: AssetKeys.mutantMain,
-    walk: [AssetKeys.mutantWalk1, AssetKeys.mutantWalk2],
-    attack: AssetKeys.mutantAttack,
-    maxHp: 260,
-    damage: 20,
-    speed: 58,
-    stopDistance: 130,
-    attackRange: 115,
-    attackCooldown: 1.1,
-    slamDamage: 28,
-    targetHeight: 252,
-    score: 680,
-    boss: true,
-  },
-  sky_hunter: {
-    displayName: "Sky Hunter",
-    idle: AssetKeys.skyHunterIdle,
-    walk: [AssetKeys.skyHunterIdle],
-    attack: AssetKeys.skyHunterIdle,
-    maxHp: 100,
-    damage: 14,
-    speed: 74,
-    stopDistance: 300,
-    attackRange: 380,
-    attackCooldown: 2,
-    targetHeight: 134,
-    score: 220,
-    flying: true,
-  },
-  aegis_elite: {
-    displayName: "Aegis Elite",
-    idle: AssetKeys.aegisMain,
-    walk: [AssetKeys.aegisWalk, AssetKeys.aegisIdle],
-    attack: AssetKeys.aegisBash,
-    maxHp: 190,
-    damage: 16,
-    speed: 50,
-    stopDistance: 140,
-    attackRange: 118,
-    attackCooldown: 1,
-    targetHeight: 190,
-    score: 520,
-    elite: true,
-    ranged: true,
-  },
-  abyssal_colossus: {
-    displayName: "Abyssal Colossus",
-    idle: AssetKeys.bossMain,
-    walk: [AssetKeys.bossIdle, AssetKeys.bossWhip],
-    attack: AssetKeys.bossSlam,
-    maxHp: 520,
-    damage: 24,
-    speed: 42,
-    stopDistance: 160,
-    attackRange: 138,
-    attackCooldown: 1.05,
-    slamDamage: 34,
-    targetHeight: 330,
-    score: 1450,
-    boss: true,
-    ranged: true,
-  },
-};
-
-export class Enemy {
-  readonly sprite: Phaser.GameObjects.Image;
-  readonly shadow: Phaser.GameObjects.Ellipse;
-  readonly aura: Phaser.GameObjects.Ellipse;
-  readonly statusText: Phaser.GameObjects.Text;
-  readonly statusVisuals: Phaser.GameObjects.Graphics;
-  readonly data: EnemyData;
-  readonly maxHp: number;
-  readonly scoreValue: number;
-
-  hp: number;
-  facing: Direction = -1;
-  alive = true;
-
-  private vx = 0;
-  private vy = 0;
-  private step = 0;
-  private hurtTimer = 0;
-  private attackTimer = 0;
-  private attackCooldown = 0.6 + Math.random() * 0.4;
-  private leapCooldown = 1.2 + Math.random();
-  private slamCooldown = 2.2 + Math.random();
-  private shotCooldown = 1.2 + Math.random();
-  private leapWindup = 0;
-  private slamWindup = 0;
-  private damageScale = 1;
-  private readonly statuses: StatusState[] = [];
-  private readonly bob = Math.random() * Math.PI * 2;
-
-  constructor(private readonly scene: Phaser.Scene, readonly kind: EnemyKind, x: number, waveLevel = 0) {
-    this.data = ENEMY_DATA[kind];
-    const large = this.data.boss;
-    const hpScale = 1 + waveLevel * 0.1;
-    this.damageScale = 1 + waveLevel * 0.05;
-    this.maxHp = Math.round(this.data.maxHp * hpScale);
-    this.hp = this.maxHp;
-    this.scoreValue = Math.round(this.data.score * (1 + waveLevel * 0.15));
-    this.shadow = scene.add
-      .ellipse(x, PLATFORM_Y + 9, large ? 205 : this.data.elite ? 112 : 80, large ? 34 : this.data.elite ? 22 : 18, 0x000000, this.data.flying ? 0.16 : 0.32)
-      .setDepth(DEPTHS.shadow);
-    this.aura = scene.add
-      .ellipse(
-        x,
-        this.data.flying ? PLATFORM_Y - 260 : PLATFORM_Y - this.data.targetHeight * 0.45,
-        large ? 250 : this.data.elite ? 130 : 92,
-        large ? 270 : this.data.elite ? 150 : 112,
-        large ? 0x356dff : this.data.elite ? 0x8cf8ff : 0x18e6ff,
-        large ? 0.11 : 0.06,
-      )
-      .setDepth(DEPTHS.enemy - 2)
-      .setBlendMode(Phaser.BlendModes.ADD);
-    this.sprite = scene.add
-      .image(x, this.data.flying ? PLATFORM_Y - 210 : PLATFORM_Y, this.data.idle)
-      .setOrigin(0.5, 1)
-      .setDepth(DEPTHS.enemy);
-    this.statusText = scene.add
-      .text(x, this.sprite.y - this.data.targetHeight - 18, "", {
-        fontFamily: "Arial, sans-serif",
-        fontSize: "10px",
-        fontStyle: "900",
-        color: "#ffffff",
-        stroke: "#02070d",
-        strokeThickness: 3,
-      })
-      .setOrigin(0.5)
-      .setDepth(DEPTHS.effect + 8)
-      .setVisible(false);
-    this.statusVisuals = scene.add.graphics().setDepth(DEPTHS.effect + 7);
-    this.applyTexture(this.data.idle);
+  constructor(scene: GameScene, type: EnemyType, x: number, hpScale: number) {
+    const def = ENEMIES[type];
+    super(scene, x, def.sprite, Math.round(def.hp * hpScale), def.body, DEPTH.enemy);
+    this.def = def;
+    this.flying = !!def.flying;
+    this.baseScale = def.height / textureHeight(def.sprite);
+    this.weight = type === "boss" ? 0.1 : type === "mutant" ? 0.35 : type === "aegis" ? 0.5 : 1;
+    if (this.flying) this.y = GROUND_Y - 280;
+    this.sprite.setOrigin(anchorX(def.sprite), 1).setScale(this.baseScale);
+    // Spawn in from the edge with a short fade so waves read clearly.
+    this.sprite.setAlpha(0);
+    scene.tweens.add({ targets: this.sprite, alpha: 1, duration: 300 });
   }
 
-  update(dt: number, targets: Player[]): EnemyAction[] {
-    if (!this.alive) return [];
+  get isBoss() {
+    return this.def.type === "boss";
+  }
 
-    this.updateStatuses(dt);
-    this.hurtTimer = Math.max(0, this.hurtTimer - dt);
-    this.attackTimer = Math.max(0, this.attackTimer - dt);
-    this.attackCooldown = Math.max(0, this.attackCooldown - dt);
-    this.leapCooldown = Math.max(0, this.leapCooldown - dt);
-    this.slamCooldown = Math.max(0, this.slamCooldown - dt);
-    this.shotCooldown = Math.max(0, this.shotCooldown - dt);
+  private target(): Hero | undefined {
+    let best: Hero | undefined;
+    let bestD = Infinity;
+    for (const h of this.scene.heroes) {
+      if (h.dead) continue;
+      const d = Math.abs(h.x - this.x);
+      if (d < bestD) {
+        bestD = d;
+        best = h;
+      }
+    }
+    return best;
+  }
 
-    const target = this.nearestTarget(targets);
-    if (!target) {
-      this.refreshVisuals();
-      return [];
+  update(dt: number) {
+    this.tickTimers(dt);
+    if (this.state === "dying") {
+      this.timer -= dt;
+      this.physics(dt, 4);
+      this.sprite.setPosition(this.x, this.y);
+      return;
+    }
+    this.updateStatus(dt);
+    if (this.dead) return;
+
+    const target = this.target();
+    const speedMul = (this.isSlowed() ? 0.5 : 1) * (this.enraged ? 1.35 : 1);
+    this.timer -= dt * (this.isSlowed() ? 0.6 : 1);
+    this.cooldown -= dt * speedMul;
+
+    if (this.isStunned()) {
+      this.clearTelegraph();
+      if (this.state === "windup" || this.state === "active") this.setState("recover", 0.3);
+    } else if (this.state === "hurt") {
+      if (this.hitstun <= 0) this.setState("move", 0);
+    } else if (target) {
+      this.ai(target, dt, speedMul);
     }
 
-    const dx = target.sprite.x - this.sprite.x;
-    const distance = Math.abs(dx);
-    this.facing = dx >= 0 ? 1 : -1;
-
-    const actions = this.isStunned()
-      ? []
-      : this.data.flying
-        ? this.updateFlying(dt, target, distance)
-        : this.updateGround(dt, distance);
-
-    this.integrate(dt);
-    this.refreshVisuals();
-    return actions;
+    if (this.flying) {
+      const hoverY = GROUND_Y - 270 + Math.sin(this.scene.time.now / 500 + this.hoverSeed) * 30;
+      if (this.state !== "active") this.y += (hoverY - this.y) * Math.min(1, dt * 3);
+    }
+    this.physics(dt, this.state === "active" ? 1 : 8);
+    if (!this.flying) this.separate();
+    this.render();
   }
 
-  takeDamage(amount: number, knockDirection: Direction, knockback = 24) {
-    if (!this.alive) return;
-    this.hp = Math.max(0, this.hp - amount);
-    this.hurtTimer = 0.14;
-    if (!this.data.flying) this.sprite.x += knockDirection * knockback;
-    else this.sprite.x += knockDirection * knockback * 0.45;
-    if (this.hp <= 0) {
-      this.alive = false;
-      this.statuses.length = 0;
-      this.statusText.setVisible(false);
-      this.statusVisuals.clear();
+  private setState(state: State, time: number) {
+    this.state = state;
+    this.timer = time;
+  }
+
+  private face(target: Hero, dt: number) {
+    const want = target.x >= this.x ? 1 : -1;
+    if (want === this.facing) {
+      this.turnDelay = 0;
+      return;
+    }
+    // Shield bearers and the boss turn slowly so the player can punish from behind.
+    const delay = this.def.type === "aegis" ? 0.7 : this.isBoss ? 0.5 : 0.1;
+    this.turnDelay += dt;
+    if (this.turnDelay >= delay) {
+      this.facing = want;
+      this.turnDelay = 0;
     }
   }
 
-  applyStatus(type: StatusType, durationOverride?: number) {
-    if (!this.alive) return false;
-    const duration =
-      durationOverride ??
-      (type === "burn" ? 3 : type === "poison" ? 5 : type === "slow" ? 2 : this.data.boss ? 0.2 : 0.4);
-    const existing = this.statuses.find((status) => status.type === type);
-    if (existing) {
-      existing.duration = Math.max(existing.duration, duration);
-      existing.tick = Math.min(existing.tick, 0.5);
-      return false;
-    } else {
-      this.statuses.push({ type, duration, tick: 0.5 });
-      return true;
+  private ai(target: Hero, dt: number, speedMul: number) {
+    const dx = target.x - this.x;
+    const dist = Math.abs(dx);
+
+    if (this.state === "windup") {
+      if (this.timer <= 0) this.release(target);
+      return;
+    }
+    if (this.state === "active") {
+      this.activeHits();
+      if (this.timer <= 0) {
+        this.clearTelegraph();
+        this.setState("recover", this.isBoss ? 0.7 : 0.55);
+      }
+      return;
+    }
+    if (this.state === "recover") {
+      if (this.timer <= 0) this.setState("move", 0);
+      return;
+    }
+
+    this.face(target, dt);
+    const choice = this.cooldown <= 0 ? this.pickMove(dist, target) : null;
+    if (choice) {
+      this.startWindup(choice, target);
+      return;
+    }
+
+    const preferred = this.def.type === "hunter" ? 330 : this.def.type === "aegis" ? 240 : this.isBoss ? 230 : 90;
+    const speed = this.def.speed * speedMul;
+    if (dist > preferred + 20) this.vx = Math.sign(dx) * speed;
+    else if (dist < preferred - 60 && (this.def.type === "hunter" || this.def.type === "aegis")) this.vx = -Math.sign(dx) * speed * 0.7;
+    else this.vx *= 0.8;
+  }
+
+  private pickMove(dist: number, target: Hero): Move | null {
+    switch (this.def.type) {
+      case "crawler":
+        return dist < 260 ? "leap" : null;
+      case "mutant":
+        if (dist < 170) return "punch";
+        return dist > 380 && dist < 800 ? "charge" : null;
+      case "hunter":
+        return dist < 700 ? "shoot" : null;
+      case "aegis":
+        if (dist < 150) return "bash";
+        return dist < 650 ? "shoot" : null;
+      case "boss": {
+        const cycle: Move[] = this.enraged ? ["slam", "beam", "whip", "summon", "beam", "slam"] : ["slam", "beam", "whip", "summon"];
+        let m = cycle[this.attackIndex % cycle.length];
+        this.attackIndex += 1;
+        if (m === "whip" && dist > 380) m = "beam";
+        if (m === "summon" && this.scene.enemies.filter((e) => !e.dead && !e.isBoss).length > 2) m = "slam";
+        void target;
+        return m;
+      }
     }
   }
 
-  launch(strength = 520) {
-    if (!this.alive || this.data.flying) return;
-    this.vy = Math.min(this.vy, -strength);
-  }
-
-  pullToward(x: number, amount: number) {
-    if (!this.alive) return;
-    const direction = x >= this.sprite.x ? 1 : -1;
-    this.sprite.x += direction * Math.min(Math.abs(x - this.sprite.x), amount);
-  }
-
-  isStunned() {
-    return this.statuses.some((status) => status.type === "stun" && status.duration > 0);
-  }
-
-  getSpeedMultiplier() {
-    let multiplier = this.statuses.some((status) => status.type === "poison" && status.duration > 0) ? 0.85 : 1;
-    if (this.statuses.some((status) => status.type === "slow" && status.duration > 0)) multiplier *= 0.6;
-    if (this.isEnraged()) multiplier *= 1.12;
-    if (this.kind === "sky_hunter" && this.hp < this.maxHp * 0.35) multiplier *= 1.28;
-    return multiplier;
-  }
-
-  isBoss() {
-    return Boolean(this.data.boss);
-  }
-
-  isEnragedState() {
-    return this.isEnraged();
-  }
-
-  getBounds(): RectLike {
-    const width = this.sprite.displayWidth * (this.data.boss ? 0.56 : this.kind === "sky_hunter" ? 0.52 : this.data.elite ? 0.58 : 0.56);
-    const height = this.sprite.displayHeight * (this.data.boss ? 0.76 : this.kind === "sky_hunter" ? 0.54 : this.data.elite ? 0.7 : 0.62);
-    return {
-      x: this.sprite.x - width / 2,
-      y: this.sprite.y - height,
-      width,
-      height,
+  private startWindup(move: Move, target: Hero) {
+    this.move = move;
+    this.moveHit.clear();
+    this.vx = 0;
+    this.facing = target.x >= this.x ? 1 : -1;
+    const fast = this.enraged ? 0.75 : 1;
+    const windups: Record<Move, number> = {
+      leap: 0.42, punch: 0.55, charge: 0.6, shoot: 0.55, bash: 0.45, slam: 0.95, beam: 1.05, whip: 0.6, summon: 0.6,
     };
+    this.setState("windup", windups[move] * fast);
+    this.telegraphFor(move);
   }
 
-  getBarState() {
-    return {
-      name: this.data.displayName.toUpperCase(),
-      hp: this.hp,
-      maxHp: this.maxHp,
-    };
+  private telegraphFor(move: Move) {
+    const color = 0xff3355;
+    this.scene.fx.glow(this.cx, this.cy, color, this.isBoss ? 6 : 2.5, this.timer * 1000);
+    if (move === "beam") {
+      const y = GROUND_Y - 75;
+      const [minX, maxX] = this.scene.arenaBounds();
+      const x0 = this.facing > 0 ? this.x : minX;
+      const x1 = this.facing > 0 ? maxX : this.x;
+      const line = this.scene.add.rectangle((x0 + x1) / 2, y, x1 - x0, 6, color, 0.7).setDepth(DEPTH.fx);
+      this.scene.tweens.add({ targets: line, alpha: 0.15, yoyo: true, repeat: -1, duration: 90 });
+      this.telegraph = line;
+      sfx.warn();
+    } else if (move === "slam") {
+      const zone = this.scene.add.rectangle(this.x, GROUND_Y - 6, 260, 12, color, 0.6).setDepth(DEPTH.fx);
+      this.scene.tweens.add({ targets: zone, scaleX: 1.4, alpha: 0.2, yoyo: true, repeat: -1, duration: 160 });
+      this.telegraph = zone;
+      sfx.warn();
+    } else if (move !== "shoot" && move !== "summon") {
+      const mark = this.scene.add
+        .text(this.x, this.y - this.bodyH - 26, "!", { fontFamily: "Arial", fontSize: "38px", fontStyle: "900", color: "#ff3355", stroke: "#000", strokeThickness: 6 })
+        .setOrigin(0.5)
+        .setDepth(DEPTH.text);
+      this.scene.tweens.add({ targets: mark, scale: 1.3, yoyo: true, repeat: -1, duration: 120 });
+      this.telegraph = mark;
+    }
+  }
+
+  private clearTelegraph() {
+    this.telegraph?.destroy();
+    this.telegraph = undefined;
+  }
+
+  private release(target: Hero) {
+    this.clearTelegraph();
+    const d = this.def.damage;
+    switch (this.move) {
+      case "leap":
+        this.vx = this.facing * 640;
+        this.vy = -560;
+        this.setState("active", 0.55);
+        break;
+      case "charge":
+        this.vx = this.facing * 760;
+        this.setState("active", 0.65);
+        sfx.dash();
+        break;
+      case "punch":
+      case "bash":
+      case "whip": {
+        const range = this.move === "whip" ? 420 : this.move === "punch" ? 190 : 170;
+        const rect = new Phaser.Geom.Rectangle(this.facing > 0 ? this.x : this.x - range, this.y - this.bodyH * 0.9, range, this.bodyH * 0.9);
+        this.scene.enemyAttack(this, rect, { damage: this.move === "whip" ? d * 1.1 : d, dir: this.facing, knock: 560, launch: 380, color: 0xff3355 });
+        this.scene.fx.slash(this.x + this.facing * range * 0.55, this.y - this.bodyH * 0.5, this.facing, 0xff4466, this.move === "whip" ? 2.4 : 1.3);
+        this.vx = this.facing * 200;
+        sfx.swing();
+        this.setState("active", 0.2);
+        break;
+      }
+      case "shoot": {
+        const sx = this.x + this.facing * this.bodyW * 0.45;
+        const sy = this.flying ? this.y - 20 : this.y - this.bodyH * 0.55;
+        const angle = Phaser.Math.Angle.Between(sx, sy, target.x, target.y - 70);
+        const speed = 520;
+        const aim = this.flying ? angle : this.facing > 0 ? 0 : Math.PI;
+        this.scene.spawnProjectile({
+          owner: this, x: sx, y: sy, vx: Math.cos(aim) * speed, vy: Math.sin(aim) * speed, size: 16, color: 0xff4d6d, pierce: 1,
+          hit: { damage: d, dir: this.facing, knock: 220, color: 0xff4d6d },
+        });
+        sfx.enemyShot();
+        this.setState("active", 0.15);
+        break;
+      }
+      case "slam": {
+        this.scene.fx.shake(0.018, 280);
+        sfx.boom();
+        this.scene.fx.burst(this.x, GROUND_Y - 10, 0x6fb6ff, 24, 700, 1);
+        for (const dir of [-1, 1]) this.scene.spawnShockwave(this, this.x + dir * 120, dir, this.enraged ? 620 : 520, d);
+        this.setState("active", 0.3);
+        break;
+      }
+      case "beam": {
+        const [minX, maxX] = this.scene.arenaBounds();
+        const x0 = this.facing > 0 ? this.x + 60 : minX;
+        const x1 = this.facing > 0 ? maxX : this.x - 60;
+        this.scene.spawnBeam(this, x0, x1, GROUND_Y - 75, 80, d * 1.2);
+        this.setState("active", 0.5);
+        break;
+      }
+      case "summon":
+        sfx.warn();
+        for (let i = 0; i < (this.enraged ? 3 : 2); i += 1) this.scene.time.delayedCall(i * 200, () => this.scene.spawnEnemy("crawler", i % 2 ? "left" : "right"));
+        this.setState("active", 0.3);
+        break;
+    }
+  }
+
+  /** Contact damage while leaping/charging. */
+  private activeHits() {
+    if (this.move !== "leap" && this.move !== "charge") return;
+    const rect = this.bounds();
+    for (const h of this.scene.heroes) {
+      if (h.dead || this.moveHit.has(h)) continue;
+      if (Phaser.Geom.Intersects.RectangleToRectangle(rect, h.bounds())) {
+        this.moveHit.add(h);
+        this.scene.dealDamage(this, h, { damage: this.def.damage, dir: this.facing, knock: 420, launch: 300, color: 0xff3355 });
+      }
+    }
+    if (this.move === "leap" && this.onGround && this.timer < 0.4) this.timer = 0;
+  }
+
+  /** Aegis shield blocks light frontal hits. Returns the damage multiplier. */
+  shieldFactor(hit: Hit) {
+    if (this.def.type !== "aegis" || hit.heavy || this.isStunned() || this.state === "hurt") return 1;
+    const attackerX = hit.source?.x ?? this.x - hit.dir;
+    const fromFront = Math.sign(attackerX - this.x) === this.facing;
+    return fromFront ? 0.15 : 1;
+  }
+
+  takeHit(hit: Hit) {
+    if (this.state === "dying") return 0;
+    return super.takeHit(hit);
+  }
+
+  protected onHurt(hit: Hit, dealt: number) {
+    // Light enemies get interrupted; heavy ones only flinch from big hits.
+    const threshold = this.isBoss ? Infinity : this.def.type === "mutant" ? 34 : this.def.type === "aegis" ? 24 : 0;
+    if (dealt > threshold && this.state !== "dying") {
+      this.clearTelegraph();
+      this.hitstun = 0.32;
+      this.setState("hurt", 0);
+    }
+    if (this.isBoss && !this.enraged && this.hp < this.maxHp * 0.5) {
+      this.enraged = true;
+      this.scene.onBossEnrage(this);
+    }
+    void hit;
+  }
+
+  protected die(hit: Hit) {
+    this.dead = true;
+    this.clearTelegraph();
+    this.state = "dying";
+    this.timer = this.isBoss ? 2 : 0.5;
+    this.vx = hit.dir * (this.isBoss ? 0 : 380);
+    if (!this.flying && !this.isBoss) this.vy = -420;
+    this.flying = false;
+    this.scene.onEnemyKilled(this, hit);
+    this.scene.tweens.add({
+      targets: this.sprite,
+      alpha: 0,
+      angle: this.isBoss ? 0 : hit.dir * 40,
+      delay: this.isBoss ? 1400 : 200,
+      duration: this.isBoss ? 600 : 300,
+    });
+    this.shadow.setVisible(false);
+  }
+
+  get removable() {
+    return this.state === "dying" && this.timer <= 0;
+  }
+
+  private separate() {
+    for (const other of this.scene.enemies) {
+      if (other === this || other.dead || other.flying) continue;
+      const dx = this.x - other.x;
+      const min = (this.bodyW + other.bodyW) * 0.3;
+      if (Math.abs(dx) < min) this.x += Math.sign(dx || Math.random() - 0.5) * (min - Math.abs(dx)) * 0.1;
+    }
+  }
+
+  private render() {
+    let tex = this.def.sprite;
+    if (this.isBoss) {
+      if (this.enraged && this.state !== "active") tex = "boss_rage";
+      if (this.state === "windup" && this.move === "slam") tex = "boss_slam";
+      if (this.state === "active" && this.move === "whip") tex = "boss_whip";
+      if (this.state === "active" && this.move === "beam") tex = "boss_idle";
+    } else if (this.def.type === "mutant" && (this.state === "windup" || this.state === "active")) {
+      tex = "mutant_punch";
+    }
+    if (this.sprite.texture.key !== tex) {
+      this.sprite.setTexture(tex);
+      this.baseScale = (tex === this.def.sprite ? this.def.height : this.def.height * 0.95) / textureHeight(tex);
+    }
+    const flip = this.facing !== this.def.artFacing;
+    const ax = anchorX(tex);
+    this.sprite.setFlipX(flip).setOrigin(flip ? 1 - ax : ax, 1);
+
+    let sx = this.baseScale;
+    let sy = this.baseScale;
+    const t = this.scene.time.now / 1000;
+    if (this.state === "windup") {
+      sx *= 1 + Math.sin(t * 50) * 0.03;
+      sy *= 0.95;
+    } else if (this.state === "move" && Math.abs(this.vx) > 20) {
+      sy *= 1 + Math.sin(t * 16) * 0.03;
+    }
+    this.sprite.setPosition(this.x + (this.state === "windup" ? Math.sin(t * 80) * 2 : 0), this.y).setScale(sx, sy);
+    this.renderCommon();
+    if (this.state === "windup" && this.flashTime <= 0 && !this.isStunned()) this.sprite.setTint(0xffc4cc);
   }
 
   destroy() {
-    this.aura.destroy();
-    this.shadow.destroy();
-    this.sprite.destroy();
-    this.statusText.destroy();
-    this.statusVisuals.destroy();
-  }
-
-  private updateGround(dt: number, distance: number): EnemyAction[] {
-    const actions: EnemyAction[] = [];
-    const speed = this.data.speed * this.getSpeedMultiplier();
-    const enrageScale = this.isEnraged() ? 1.25 : 1;
-    const damage = this.data.damage * this.damageScale * enrageScale;
-
-    if (this.kind === "crawler" && this.leapWindup > 0) {
-      this.vx = Phaser.Math.Linear(this.vx, 0, 0.34);
-      this.leapWindup -= dt;
-      this.attackTimer = Math.max(this.attackTimer, 0.08);
-      if (this.leapWindup <= 0) {
-        this.vx = this.facing * 430;
-        this.vy = -340;
-        actions.push({
-          type: "leap",
-          hitbox: this.attackBounds(104, 76),
-          damage: (this.data.leapDamage ?? 14) * this.damageScale,
-          source: this,
-        });
-      }
-      return actions;
-    }
-
-    if (this.data.boss && this.slamWindup > 0) {
-      this.vx = Phaser.Math.Linear(this.vx, 0, 0.42);
-      this.slamWindup -= dt;
-      this.attackTimer = Math.max(this.attackTimer, 0.1);
-      if (this.slamWindup <= 0) {
-        const impactX = this.sprite.x + this.facing * 118;
-        actions.push({
-          type: "slam",
-          hitbox: {
-            x: impactX - 92,
-            y: PLATFORM_Y - 116,
-            width: 184,
-            height: 108,
-          },
-          damage: (this.data.slamDamage ?? 28) * this.damageScale * enrageScale,
-          source: this,
-          impactX,
-        });
-      }
-      return actions;
-    }
-
-    if (this.kind === "crawler" && distance > 120 && distance < 280 && this.leapCooldown <= 0) {
-      this.leapCooldown = 3;
-      this.attackCooldown = 0.72;
-      this.attackTimer = 0.26;
-      this.leapWindup = 0.22;
-      this.vx = -this.facing * 34;
-      return actions;
-    }
-
-    if (this.data.boss && distance < (this.kind === "abyssal_colossus" ? 260 : 215) && this.slamCooldown <= 0) {
-      this.slamCooldown = 4 * (this.isEnraged() ? 0.8 : 1);
-      this.attackCooldown = 0.94;
-      this.attackTimer = 0.44;
-      this.slamWindup = 0.36;
-      this.vx = 0;
-      return actions;
-    }
-
-    if (this.data.ranged && distance < 420 && distance > 150 && this.shotCooldown <= 0) {
-      this.shotCooldown = this.kind === "abyssal_colossus" ? 2.8 : 2.2;
-      this.attackTimer = 0.22;
-      actions.push({
-        type: "shot",
-        source: this,
-        x: this.sprite.x + this.facing * (this.data.boss ? 78 : 48),
-        y: this.sprite.y - this.sprite.displayHeight * 0.52,
-        damage: this.data.damage * this.damageScale * 0.85,
-        facing: this.facing,
-      });
-      return actions;
-    }
-
-    if (distance > this.data.stopDistance) {
-      this.vx = Phaser.Math.Linear(this.vx, this.facing * speed, 0.08);
-    } else if (distance < this.data.stopDistance * 0.62) {
-      this.vx = Phaser.Math.Linear(this.vx, -this.facing * speed * 0.62, 0.1);
-    } else {
-      this.vx = Phaser.Math.Linear(this.vx, 0, 0.18);
-      if (this.attackCooldown <= 0 && distance <= this.data.attackRange) {
-        this.attackCooldown = this.data.attackCooldown * (this.isEnraged() ? 0.8 : 1);
-        this.attackTimer = 0.22;
-        actions.push({ type: "melee", hitbox: this.attackBounds(), damage, source: this });
-      }
-    }
-
-    if (Math.abs(this.vx) > 8) this.step += dt * 8;
-    return actions;
-  }
-
-  private updateFlying(dt: number, target: Player, distance: number): EnemyAction[] {
-    const actions: EnemyAction[] = [];
-    const speed = this.data.speed * this.getSpeedMultiplier();
-    const desiredY = PLATFORM_Y - 210 + Math.sin(this.scene.time.now * 0.004 + this.bob) * 22;
-    this.sprite.y = Phaser.Math.Linear(this.sprite.y, desiredY, 0.045);
-
-    if (distance > this.data.stopDistance) this.vx = Phaser.Math.Linear(this.vx, this.facing * speed, 0.05);
-    else this.vx = Phaser.Math.Linear(this.vx, 0, 0.1);
-
-    if (distance < this.data.attackRange && this.shotCooldown <= 0) {
-      this.shotCooldown = 2;
-      this.attackTimer = 0.18;
-      actions.push({
-        type: "shot",
-        source: this,
-        x: this.sprite.x + this.facing * 52,
-        y: this.sprite.y - this.sprite.displayHeight * 0.46,
-        damage: this.data.damage * this.damageScale,
-        facing: this.facing,
-      });
-      this.facing = target.sprite.x >= this.sprite.x ? 1 : -1;
-    }
-
-    this.step += dt * 8;
-    return actions;
-  }
-
-  private integrate(dt: number) {
-    this.sprite.x += this.vx * dt;
-    if (!this.data.flying) {
-      this.vy += GRAVITY * dt;
-      this.sprite.y += this.vy * dt;
-      if (this.sprite.y >= PLATFORM_Y) {
-        this.sprite.y = PLATFORM_Y;
-        this.vy = 0;
-      }
-    }
-  }
-
-  private updateStatuses(dt: number) {
-    for (const status of this.statuses) {
-      status.duration -= dt;
-      if (status.type !== "burn" && status.type !== "poison") continue;
-      status.tick -= dt;
-      if (status.tick <= 0) {
-        status.tick += 0.5;
-        this.hp = Math.max(0, this.hp - (status.type === "burn" ? 4 : 3));
-        this.hurtTimer = Math.max(this.hurtTimer, 0.07);
-        if (this.hp <= 0) {
-          this.alive = false;
-          this.statuses.length = 0;
-          this.statusText.setVisible(false);
-          this.statusVisuals.clear();
-        }
-      }
-    }
-    for (let i = this.statuses.length - 1; i >= 0; i--) {
-      if (this.statuses[i].duration <= 0) this.statuses.splice(i, 1);
-    }
-  }
-
-  private refreshVisuals() {
-    this.shadow.setPosition(this.sprite.x, PLATFORM_Y + 9);
-    this.shadow.setScale(this.data.flying ? 0.76 : this.data.boss ? 1.12 : this.data.elite ? 1.02 : 1, 1);
-    const pulse = 0.5 + Math.sin(this.scene.time.now * 0.008 + this.bob) * 0.5;
-    const auraColor = this.isEnraged() ? 0xff5b5b : this.statuses.some((status) => status.type === "poison") ? 0x58ff9c : 0x18e6ff;
-    this.aura
-      .setPosition(this.sprite.x, this.data.flying ? this.sprite.y - this.sprite.displayHeight * 0.38 : this.sprite.y - this.sprite.displayHeight * 0.46)
-      .setSize(this.sprite.displayWidth * (this.data.boss ? 0.82 : this.data.elite ? 0.76 : 0.68), this.sprite.displayHeight * (this.data.boss ? 0.88 : this.data.elite ? 0.82 : 0.74))
-      .setFillStyle(auraColor, this.hurtTimer > 0 ? 0.22 : this.isEnraged() ? 0.2 + pulse * 0.08 : 0.055 + pulse * 0.03);
-    this.sprite.setFlipX(this.facing < 0);
-    this.applyTexture(this.pickTexture());
-
-    const primaryStatus = this.statuses[0];
-    this.drawStatusVisuals();
-    this.statusText
-      .setPosition(this.sprite.x, this.sprite.y - this.sprite.displayHeight - 16)
-      .setVisible(Boolean(primaryStatus));
-    if (primaryStatus) {
-      const color =
-        primaryStatus.type === "burn"
-          ? "#ff7a32"
-          : primaryStatus.type === "poison"
-            ? "#4ef3a5"
-            : primaryStatus.type === "slow"
-              ? "#67f6ff"
-              : "#ffef72";
-      this.statusText.setText(primaryStatus.type.toUpperCase()).setColor(color);
-    }
-
-    if (this.hurtTimer > 0) {
-      this.sprite.setTintFill(0xff5b5b);
-      this.sprite.setAlpha(Math.floor(this.scene.time.now * 0.05) % 2 === 0 ? 0.62 : 1);
-    } else if (this.isStunned()) {
-      this.sprite.setTint(0xffef72);
-      this.sprite.setAlpha(0.95);
-    } else if (this.isEnraged()) {
-      this.sprite.setTint(0xff6d57);
-      this.sprite.setAlpha(1);
-    } else if (this.statuses.some((status) => status.type === "poison")) {
-      this.sprite.setTint(0x74ffb8);
-      this.sprite.setAlpha(1);
-    } else if (this.statuses.some((status) => status.type === "slow")) {
-      this.sprite.setTint(0x8cf8ff);
-      this.sprite.setAlpha(1);
-    } else if (this.statuses.some((status) => status.type === "burn")) {
-      this.sprite.setTint(0xff8a2a);
-      this.sprite.setAlpha(1);
-    } else {
-      this.sprite.clearTint();
-      this.sprite.setAlpha(1);
-    }
-  }
-
-  private drawStatusVisuals() {
-    this.statusVisuals.clear();
-    const time = this.scene.time.now * 0.006;
-    const topY = this.sprite.y - this.sprite.displayHeight * 0.72;
-    const footY = this.data.flying ? this.sprite.y - 18 : PLATFORM_Y - 2;
-    this.drawHealthPip();
-
-    if (this.statuses.some((status) => status.type === "slow")) {
-      this.statusVisuals.lineStyle(2, 0x67f6ff, 0.68);
-      this.statusVisuals.strokeEllipse(this.sprite.x, footY, 74 + Math.sin(time) * 8, 18);
-      this.statusVisuals.lineStyle(1, 0xc9fbff, 0.44);
-      this.statusVisuals.strokeEllipse(this.sprite.x, footY, 48, 11);
-    }
-
-    if (this.isEnraged()) {
-      const pulse = 0.5 + Math.sin(time * 2.2) * 0.18;
-      this.statusVisuals.lineStyle(4, 0xff4c4c, 0.45 + pulse * 0.2);
-      this.statusVisuals.strokeEllipse(this.sprite.x, footY - 2, 118 + pulse * 18, 24 + pulse * 5);
-      this.statusVisuals.fillStyle(0xff2f2f, 0.09);
-      this.statusVisuals.fillEllipse(this.sprite.x, this.sprite.y - this.sprite.displayHeight * 0.48, this.sprite.displayWidth * 0.78, this.sprite.displayHeight * 0.72);
-    }
-
-    if (this.statuses.some((status) => status.type === "burn")) {
-      for (let i = 0; i < 3; i++) {
-        const x = this.sprite.x - 18 + i * 18;
-        const y = topY - 5 + Math.sin(time * 2 + i) * 5;
-        this.statusVisuals.fillStyle(i === 1 ? 0xffd35a : 0xff6f22, 0.74);
-        this.statusVisuals.fillTriangle(x, y + 16, x + 7, y - 7, x + 15, y + 16);
-      }
-    }
-
-    if (this.statuses.some((status) => status.type === "poison")) {
-      for (let i = 0; i < 4; i++) {
-        const angle = time + i * 1.35;
-        const x = this.sprite.x + Math.cos(angle) * 30;
-        const y = topY + Math.sin(angle * 1.3) * 12;
-        this.statusVisuals.fillStyle(0x58ff9c, 0.22);
-        this.statusVisuals.fillCircle(x, y, 9 + Math.sin(time + i) * 2);
-        this.statusVisuals.lineStyle(1, 0xb6ffd4, 0.35);
-        this.statusVisuals.strokeCircle(x, y, 11);
-      }
-    }
-
-    if (this.statuses.some((status) => status.type === "stun")) {
-      this.statusVisuals.lineStyle(3, 0xffef72, 0.92);
-      for (let i = 0; i < 3; i++) {
-        const x = this.sprite.x - 24 + i * 24;
-        const y = topY - 18 + Math.sin(time * 3 + i) * 5;
-        this.statusVisuals.lineBetween(x, y, x + 9, y + 13);
-        this.statusVisuals.lineBetween(x + 9, y + 13, x - 1, y + 25);
-      }
-    }
-  }
-
-  private drawHealthPip() {
-    if (!this.alive) return;
-    const pct = Phaser.Math.Clamp(this.hp / this.maxHp, 0, 1);
-    const width = Phaser.Math.Clamp(this.sprite.displayWidth * (this.data.boss ? 0.38 : 0.52), this.data.boss ? 112 : 54, this.data.boss ? 168 : 104);
-    const height = this.data.boss ? 8 : 6;
-    const x = this.sprite.x - width / 2;
-    const y = this.sprite.y - this.sprite.displayHeight - (this.data.boss ? 22 : 14);
-    const fill = pct > 0.55 ? 0x4ef3a5 : pct > 0.25 ? 0xffd66d : 0xff5b6d;
-    this.statusVisuals.fillStyle(0x02070d, 0.82);
-    this.statusVisuals.fillRoundedRect(x, y, width, height, 3);
-    this.statusVisuals.fillStyle(fill, 0.94);
-    this.statusVisuals.fillRoundedRect(x + 2, y + 2, Math.max(0, (width - 4) * pct), Math.max(2, height - 4), 2);
-    this.statusVisuals.lineStyle(1, this.data.boss ? 0xff6d57 : 0x8cf8ff, this.hp < this.maxHp ? 0.78 : 0.36);
-    this.statusVisuals.strokeRoundedRect(x, y, width, height, 3);
-  }
-
-  private nearestTarget(targets: Player[]) {
-    const alive = targets.filter((target) => target.alive);
-    if (alive.length === 0) return undefined;
-    return alive.reduce((best, target) => {
-      const currentDistance = Math.abs(target.sprite.x - this.sprite.x);
-      const bestDistance = Math.abs(best.sprite.x - this.sprite.x);
-      return currentDistance < bestDistance ? target : best;
-    }, alive[0]);
-  }
-
-  private attackBounds(width = this.data.boss ? 152 : this.data.elite ? 118 : 84, height = this.data.boss ? 140 : this.data.elite ? 104 : 68): RectLike {
-    return {
-      x: this.sprite.x + this.facing * (width * 0.52) - width / 2,
-      y: this.sprite.y - height - 18,
-      width,
-      height,
-    };
-  }
-
-  private pickTexture() {
-    if (this.attackTimer > 0 && this.data.attack) return this.data.attack;
-    if (this.isEnraged() && this.kind === "abyssal_colossus" && this.scene.textures.exists(AssetKeys.bossRage)) return AssetKeys.bossRage;
-    if (this.isEnraged() && this.kind === "horned_mutant" && this.scene.textures.exists(AssetKeys.mutantCharge)) return AssetKeys.mutantCharge;
-    if (Math.abs(this.vx) > 8) return this.data.walk[Math.floor(this.step) % this.data.walk.length];
-    return this.data.idle;
-  }
-
-  private applyTexture(key: string) {
-    if (!this.scene.textures.exists(key)) return;
-    if (this.sprite.texture.key !== key) this.sprite.setTexture(key);
-    const source = this.scene.textures.get(key).getSourceImage() as { height?: number };
-    const sourceHeight = source.height && source.height > 0 ? source.height : this.sprite.height;
-    this.sprite.setScale(this.data.targetHeight / sourceHeight);
-  }
-
-  private isEnraged() {
-    return Boolean(this.data.boss) && this.hp <= this.maxHp * 0.4;
+    this.clearTelegraph();
+    super.destroy();
   }
 }
