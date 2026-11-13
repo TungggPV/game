@@ -1,3 +1,4 @@
+import type { HeroElement } from "../systems/Fx";
 import type { SkillSlot } from "./constants";
 
 export type StatusKind = "burn" | "poison" | "slow" | "stun";
@@ -45,6 +46,7 @@ export type HeroDef = {
   id: string;
   name: string;
   role: string;
+  element: HeroElement;
   color: number;
   hp: number;
   speed: number;
@@ -60,6 +62,7 @@ export const HEROES: HeroDef[] = [
     id: "nova_blade",
     name: "Nova Blade",
     role: "Cân bằng · Plasma",
+    element: "plasma",
     color: 0x18e6ff,
     hp: 260,
     speed: 360,
@@ -86,6 +89,7 @@ export const HEROES: HeroDef[] = [
     id: "crimson_flare",
     name: "Crimson Flare",
     role: "Sát thương · Lửa",
+    element: "fire",
     color: 0xff4e3a,
     hp: 290,
     speed: 330,
@@ -117,6 +121,7 @@ export const HEROES: HeroDef[] = [
     id: "volt_sentinel",
     name: "Volt Sentinel",
     role: "Tốc độ · Sét",
+    element: "volt",
     color: 0xffd93a,
     hp: 235,
     speed: 400,
@@ -145,6 +150,7 @@ export const HEROES: HeroDef[] = [
     id: "emerald_phantom",
     name: "Emerald Phantom",
     role: "Cơ động · Độc",
+    element: "wind",
     color: 0x3df2a0,
     hp: 225,
     speed: 430,

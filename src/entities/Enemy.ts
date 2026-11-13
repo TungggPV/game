@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { DEPTH, GROUND_Y } from "../config/constants";
 import { ENEMIES, type EnemyDef, type EnemyType } from "../config/content";
 import { anchorX, textureHeight } from "../systems/assets";
+import { PALETTE } from "../systems/Fx";
 import { sfx } from "../systems/sfx";
 import type { GameScene } from "../scenes/GameScene";
 import { Actor, type Hit } from "./Actor";
@@ -184,29 +185,34 @@ export class Enemy extends Actor {
   }
 
   private telegraphFor(move: Move) {
-    const color = 0xff3355;
-    this.scene.fx.glow(this.cx, this.cy, color, this.isBoss ? 6 : 2.5, this.timer * 1000);
+    const pal = this.isBoss ? PALETTE.boss : PALETTE.enemy;
+    const color = PALETTE.enemy.main;
+    this.scene.fx.glow(this.cx, this.cy, color, this.isBoss ? 5 : 2.2, this.timer * 1000);
     if (move === "beam") {
       const y = GROUND_Y - 75;
       const [minX, maxX] = this.scene.arenaBounds();
       const x0 = this.facing > 0 ? this.x : minX;
       const x1 = this.facing > 0 ? maxX : this.x;
-      const line = this.scene.add.rectangle((x0 + x1) / 2, y, x1 - x0, 6, color, 0.7).setDepth(DEPTH.fx);
-      this.scene.tweens.add({ targets: line, alpha: 0.15, yoyo: true, repeat: -1, duration: 90 });
+      const line = this.scene.add.image((x0 + x1) / 2, y, "beam").setTint(color).setBlendMode(Phaser.BlendModes.ADD).setDisplaySize(x1 - x0, 10).setDepth(DEPTH.fx);
+      this.scene.tweens.add({ targets: line, alpha: 0.25, yoyo: true, repeat: -1, duration: 80 });
       this.telegraph = line;
+      this.scene.fx.charge(this.x + this.facing * 60, y, pal, this.timer * 1000, 220, 30);
       sfx.warn();
     } else if (move === "slam") {
-      const zone = this.scene.add.rectangle(this.x, GROUND_Y - 6, 260, 12, color, 0.6).setDepth(DEPTH.fx);
-      this.scene.tweens.add({ targets: zone, scaleX: 1.4, alpha: 0.2, yoyo: true, repeat: -1, duration: 160 });
+      const zone = this.scene.add.image(this.x, GROUND_Y - 4, "glyph").setTint(color).setBlendMode(Phaser.BlendModes.ADD).setScale(2.4, 0.6).setAlpha(0.8).setDepth(DEPTH.shadow + 1);
+      this.scene.tweens.add({ targets: zone, rotation: 3, scaleX: 3, alpha: 0.35, yoyo: true, repeat: -1, duration: 300 });
       this.telegraph = zone;
       sfx.warn();
     } else if (move !== "shoot" && move !== "summon") {
       const mark = this.scene.add
         .text(this.x, this.y - this.bodyH - 26, "!", { fontFamily: "Arial", fontSize: "38px", fontStyle: "900", color: "#ff3355", stroke: "#000", strokeThickness: 6 })
         .setOrigin(0.5)
-        .setDepth(DEPTH.text);
-      this.scene.tweens.add({ targets: mark, scale: 1.3, yoyo: true, repeat: -1, duration: 120 });
+        .setDepth(DEPTH.text)
+        .setScale(0.2);
+      this.scene.tweens.add({ targets: mark, scale: 1.2, duration: 140, ease: "Back.easeOut" });
       this.telegraph = mark;
+    } else if (move === "shoot") {
+      this.scene.fx.charge(this.x + this.facing * this.bodyW * 0.45, this.flying ? this.y - 20 : this.y - this.bodyH * 0.55, pal, this.timer * 1000, 70, 10);
     }
   }
 
@@ -216,6 +222,7 @@ export class Enemy extends Actor {
   }
 
   private release(target: Hero) {
+    this.impulse(1.16, 0.88);
     this.clearTelegraph();
     const d = this.def.damage;
     switch (this.move) {
@@ -235,7 +242,7 @@ export class Enemy extends Actor {
         const range = this.move === "whip" ? 420 : this.move === "punch" ? 190 : 170;
         const rect = new Phaser.Geom.Rectangle(this.facing > 0 ? this.x : this.x - range, this.y - this.bodyH * 0.9, range, this.bodyH * 0.9);
         this.scene.enemyAttack(this, rect, { damage: this.move === "whip" ? d * 1.1 : d, dir: this.facing, knock: 560, launch: 380, color: 0xff3355 });
-        this.scene.fx.slash(this.x + this.facing * range * 0.55, this.y - this.bodyH * 0.5, this.facing, 0xff4466, this.move === "whip" ? 2.4 : 1.3);
+        this.scene.fx.slash(this.x + this.facing * range * 0.4, this.y - this.bodyH * 0.5, this.facing, this.isBoss ? PALETTE.boss : PALETTE.enemy, { scale: this.move === "whip" ? 2.6 : 1.4, tilt: this.move === "whip" ? 0.3 : 0.5, sweep: 1.5, duration: 260 });
         this.vx = this.facing * 200;
         sfx.swing();
         this.setState("active", 0.2);
@@ -248,7 +255,7 @@ export class Enemy extends Actor {
         const speed = 520;
         const aim = this.flying ? angle : this.facing > 0 ? 0 : Math.PI;
         this.scene.spawnProjectile({
-          owner: this, x: sx, y: sy, vx: Math.cos(aim) * speed, vy: Math.sin(aim) * speed, size: 16, color: 0xff4d6d, pierce: 1,
+          owner: this, x: sx, y: sy, vx: Math.cos(aim) * speed, vy: Math.sin(aim) * speed, size: 16, color: 0xff4d6d, pierce: 1, style: "enemy",
           hit: { damage: d, dir: this.facing, knock: 220, color: 0xff4d6d },
         });
         sfx.enemyShot();
@@ -258,7 +265,11 @@ export class Enemy extends Actor {
       case "slam": {
         this.scene.fx.shake(0.018, 280);
         sfx.boom();
-        this.scene.fx.burst(this.x, GROUND_Y - 10, 0x6fb6ff, 24, 700, 1);
+        this.scene.fx.flashCore(this.x, GROUND_Y - 20, 2.2, 220);
+        this.scene.fx.ring(this.x, GROUND_Y - 4, PALETTE.boss.main, 420, 600, 0.22);
+        this.scene.fx.shards(this.x, GROUND_Y - 20, { main: 0x7a86a0, light: 0xcfd8ea, dark: 0x30384a }, 18, 800);
+        this.scene.fx.dust(this.x, 1, 2);
+        this.scene.fx.dust(this.x, -1, 2);
         for (const dir of [-1, 1]) this.scene.spawnShockwave(this, this.x + dir * 120, dir, this.enraged ? 620 : 520, d);
         this.setState("active", 0.3);
         break;
@@ -307,6 +318,7 @@ export class Enemy extends Actor {
   }
 
   protected onHurt(hit: Hit, dealt: number) {
+    this.impulse(0.9, 1.08);
     // Light enemies get interrupted; heavy ones only flinch from big hits.
     const threshold = this.isBoss ? Infinity : this.def.type === "mutant" ? 34 : this.def.type === "aegis" ? 24 : 0;
     if (dealt > threshold && this.state !== "dying") {
@@ -353,36 +365,95 @@ export class Enemy extends Actor {
     }
   }
 
+  private anim = { sx: 1, sy: 1, vx: 0, vy: 0, lean: 0, turn: 1, stride: 0, wasGround: true, lastTex: "" };
+
+  impulse(sx: number, sy: number) {
+    this.anim.sx = sx;
+    this.anim.sy = sy;
+    this.anim.vx = 0;
+    this.anim.vy = 0;
+  }
+
   private render() {
+    const dt = this.scene.dt || 1 / 60;
+    const a = this.anim;
+    const moving = this.state === "move" && Math.abs(this.vx) > 20;
+
     let tex = this.def.sprite;
     if (this.isBoss) {
       if (this.enraged && this.state !== "active") tex = "boss_rage";
       if (this.state === "windup" && this.move === "slam") tex = "boss_slam";
       if (this.state === "active" && this.move === "whip") tex = "boss_whip";
       if (this.state === "active" && this.move === "beam") tex = "boss_idle";
-    } else if (this.def.type === "mutant" && (this.state === "windup" || this.state === "active")) {
-      tex = "mutant_punch";
+    } else if (this.def.type === "mutant") {
+      if (this.state === "windup" || this.state === "active") tex = "mutant_punch";
+      else if (moving) tex = Math.floor(a.stride) % 2 ? "mutant_walk1" : "mutant";
     }
-    if (this.sprite.texture.key !== tex) {
+    if (tex !== a.lastTex) {
       this.sprite.setTexture(tex);
       this.baseScale = (tex === this.def.sprite ? this.def.height : this.def.height * 0.95) / textureHeight(tex);
+      a.lastTex = tex;
     }
-    const flip = this.facing !== this.def.artFacing;
+
+    if (this.onGround && !a.wasGround) {
+      this.impulse(1.2, 0.8);
+      this.scene.fx.dust(this.x, 1, this.bodyW / 140);
+      this.scene.fx.dust(this.x, -1, this.bodyW / 140);
+    }
+    a.wasGround = this.onGround;
+
+    const k = 420;
+    const c = 22;
+    a.vx += ((1 - a.sx) * k - a.vx * c) * dt;
+    a.vy += ((1 - a.sy) * k - a.vy * c) * dt;
+    a.sx += a.vx * dt;
+    a.sy += a.vy * dt;
+    if (moving) a.stride += (Math.abs(this.vx) * dt) / (this.isBoss ? 60 : 40);
+
+    a.turn += (this.facing - a.turn) * Math.min(1, dt * (this.isBoss ? 10 : 18));
+    const sign = a.turn >= 0 ? 1 : -1;
+    const flip = sign !== this.def.artFacing;
     const ax = anchorX(tex);
     this.sprite.setFlipX(flip).setOrigin(flip ? 1 - ax : ax, 1);
 
-    let sx = this.baseScale;
-    let sy = this.baseScale;
     const t = this.scene.time.now / 1000;
+    let lean = 0;
+    let yOff = 0;
+    let sx = 1;
+    let sy = 1;
     if (this.state === "windup") {
-      sx *= 1 + Math.sin(t * 50) * 0.03;
-      sy *= 0.95;
-    } else if (this.state === "move" && Math.abs(this.vx) > 20) {
-      sy *= 1 + Math.sin(t * 16) * 0.03;
+      // Anticipation: lean back and crouch, building toward the strike.
+      const p = 1 - Math.max(0, this.timer) / 0.6;
+      lean = -this.facing * 0.1 * Math.min(1, p);
+      sy = 1 - 0.07 * Math.min(1, p);
+      sx = 1 + 0.05 * Math.min(1, p);
+      yOff = 0;
+    } else if (this.state === "active") {
+      lean = this.facing * 0.12;
+    } else if (this.state === "hurt") {
+      lean = -this.facing * 0.18;
+    } else if (moving) {
+      const cyc = a.stride * Math.PI;
+      yOff = this.flying ? 0 : -Math.abs(Math.sin(cyc)) * (this.def.type === "crawler" ? 3 : 6);
+      sy = 1 + Math.cos(cyc * 2) * 0.03;
+      lean = (this.vx / (this.def.speed * 1.5)) * 0.08;
+    } else {
+      sy = 1 + Math.sin(t * 2.6 + this.hoverSeed) * 0.015;
     }
-    this.sprite.setPosition(this.x + (this.state === "windup" ? Math.sin(t * 80) * 2 : 0), this.y).setScale(sx, sy);
+    if (this.flying) lean = Phaser.Math.Clamp(this.vx / 900, -0.25, 0.25) + Math.sin(t * 3 + this.hoverSeed) * 0.04;
+    if (this.state === "dying") lean = a.lean + (this.isBoss ? 0 : dt * 2 * this.facing);
+    a.lean += (lean - a.lean) * Math.min(1, dt * 12);
+
+    const scale = this.baseScale;
+    this.sprite
+      .setPosition(this.x, this.y + yOff)
+      .setScale(scale * a.sx * sx * Math.max(0.25, Math.abs(a.turn)), scale * a.sy * sy)
+      .setRotation(a.lean);
     this.renderCommon();
-    if (this.state === "windup" && this.flashTime <= 0 && !this.isStunned()) this.sprite.setTint(0xffc4cc);
+    if (this.state === "windup" && this.flashTime <= 0 && !this.isStunned()) {
+      const pulse = 0.5 + Math.sin(t * 30) * 0.5;
+      this.sprite.setTint(Phaser.Display.Color.GetColor(255, 196 + pulse * 59, 204 + pulse * 51));
+    }
   }
 
   destroy() {

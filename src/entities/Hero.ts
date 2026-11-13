@@ -2,8 +2,9 @@ import Phaser from "phaser";
 import { DEPTH, GROUND_Y, type SkillSlot } from "../config/constants";
 import { baseMods, type HeroMods } from "../config/content";
 import type { HeroDef, SkillDef } from "../config/heroes";
-import { anchorX, heroKey, textureHeight, type HeroPose } from "../systems/assets";
+import { anchorX, artFacesLeft, heroKey, textureHeight, type HeroPose } from "../systems/assets";
 import { ACTIONS, type Action, type PlayerControls } from "../systems/controls";
+import { PALETTE, type Palette } from "../systems/Fx";
 import { sfx } from "../systems/sfx";
 import { castSkill } from "../systems/skills";
 import type { GameScene } from "../scenes/GameScene";
@@ -39,6 +40,10 @@ export class Hero extends Actor {
   private buffer = new Map<Action, number>();
   private scaleFactor: number;
   private ghostTimer = 0;
+  private readonly pal: Palette;
+  private readonly hasWalk: boolean;
+  // Procedural animation state: spring-driven squash/stretch, smoothed lean and turn.
+  private anim = { sx: 1, sy: 1, vx: 0, vy: 0, lean: 0, turn: 1, stride: 0, dust: 0, wasGround: true, lastKey: "" };
 
   constructor(
     scene: GameScene,
@@ -51,6 +56,8 @@ export class Hero extends Actor {
     super(scene, x, heroKey(def.id, "idle"), hpOverride ?? def.hp, { w: 70, h: 140 }, DEPTH.hero + index);
     this.scaleFactor = HERO_HEIGHT / textureHeight(heroKey(def.id, "idle"));
     this.jumpsLeft = def.jumps;
+    this.pal = PALETTE[def.element];
+    this.hasWalk = scene.textures.exists(heroKey(def.id, "walk_1"));
     this.facing = index === 0 ? 1 : -1;
   }
 
@@ -109,7 +116,7 @@ export class Hero extends Actor {
 
     if (this.dead) {
       this.updateDown(dt);
-      this.render();
+      this.render(dt);
       return;
     }
 
@@ -127,7 +134,7 @@ export class Hero extends Actor {
     if (this.onGround) this.jumpsLeft = this.def.jumps;
     const friction = this.state === "free" ? 0 : 7;
     this.physics(dt, this.state === "dash" || this.state === "sweep" ? 0 : friction);
-    this.render();
+    this.render(dt);
   }
 
   private take(a: Action) {
@@ -152,7 +159,7 @@ export class Hero extends Actor {
         this.vy = 0;
         this.ghostTimer -= this.scene.dt;
         if (this.ghostTimer <= 0) {
-          this.scene.fx.afterimage(this.sprite, this.def.color);
+          this.scene.fx.afterimage(this.sprite, this.pal.main);
           this.ghostTimer = 0.03;
         }
         if (done) {
@@ -195,11 +202,22 @@ export class Hero extends Actor {
     if (dir !== 0) this.facing = dir;
 
     if (this.take("jump") && this.jumpsLeft > 0) {
+      const air = !this.onGround;
       this.jumpsLeft -= 1;
-      this.vy = -JUMP_SPEED * (this.jumpsLeft < this.def.jumps - 1 ? 0.85 : 1);
+      this.vy = -JUMP_SPEED * (air ? 0.85 : 1);
       this.y = Math.min(this.y, GROUND_Y - 1);
+      this.impulse(0.8, 1.25);
       sfx.jump();
-      if (this.jumpsLeft < this.def.jumps - 1) this.scene.fx.ring(this.x, this.y, this.def.color, 50, 260);
+      if (air) {
+        this.scene.fx.ring(this.x, this.y - 10, this.pal.main, 70, 300, 0.35);
+        this.scene.fx.particles(this.x, this.y - 10, "streak", {
+          speed: { min: 120, max: 260 }, angle: { min: 60, max: 120 }, lifespan: 240,
+          scale: { start: 0.5, end: 0 }, color: [0xffffff, this.pal.main], blendMode: Phaser.BlendModes.ADD, rotate: 90,
+        }, 6);
+      } else {
+        this.scene.fx.dust(this.x, 1, 0.8);
+        this.scene.fx.dust(this.x, -1, 0.8);
+      }
     }
     if (this.tryDash()) return;
 
@@ -225,6 +243,8 @@ export class Hero extends Actor {
     this.vy = 0;
     this.queuedBasic = false;
     this.setState("dash", DASH_TIME);
+    this.impulse(1.25, 0.82);
+    this.scene.fx.dust(this.x, this.facing, 1.2);
     sfx.dash();
     return true;
   }
@@ -239,6 +259,7 @@ export class Hero extends Actor {
     if (this.onGround) this.vx = this.facing * (this.comboStep === 3 ? 360 : 180);
     else this.vy = Math.min(this.vy, -120);
     sfx.swing();
+    this.impulse(1.1, 0.94);
   }
 
   private doMelee() {
@@ -246,7 +267,16 @@ export class Hero extends Actor {
     const finisher = this.comboStep === 3;
     const range = b.range * (finisher ? 1.25 : 1);
     const rect = new Phaser.Geom.Rectangle(this.facing > 0 ? this.x - 10 : this.x - range + 10, this.y - 150, range, 140);
-    this.scene.fx.slash(this.x + this.facing * range * 0.5, this.y - 80, this.facing, b.color, finisher ? 1.25 : 0.95, this.comboStep === 2);
+    const step = this.comboStep;
+    const tilt = step === 1 ? 0.45 : step === 2 ? -0.45 : 0;
+    this.scene.fx.slash(this.x + this.facing * range * 0.3, this.y - 82, this.facing, this.pal, {
+      scale: finisher ? 1.5 : 1.1,
+      tilt,
+      sweep: finisher ? 1.8 : 1.3,
+      duration: finisher ? 280 : 200,
+      thin: !finisher,
+    });
+    if (finisher) this.scene.fx.dust(this.x, this.facing, 1);
     const hits = this.scene.meleeHit(this, rect, {
       damage: b.combo[this.comboStep - 1],
       dir: this.facing,
@@ -272,6 +302,7 @@ export class Hero extends Actor {
     const windup = slot === "ultimate" ? 0.32 : 0.08;
     this.pendingCast = { slot, skill, at: windup };
     this.setState("cast", windup + (slot === "ultimate" ? 0.35 : 0.24));
+    this.impulse(0.9, 1.1);
     if (slot === "ultimate") {
       this.invuln = Math.max(this.invuln, 0.9);
       this.scene.ultimateIntro(this, skill);
@@ -338,39 +369,94 @@ export class Hero extends Actor {
     if (this.state === "attack") return "attack_slash";
     if (this.state === "cast") return this.castPose;
     if (!this.onGround) return "jump";
+    if (this.hasWalk && Math.abs(this.vx) > 60) return `walk_${(Math.floor(this.anim.stride) % 4) + 1}` as HeroPose;
     return "idle";
   }
 
-  private render() {
+  /** Kick the squash/stretch spring; it settles back to 1 on its own. */
+  impulse(sx: number, sy: number) {
+    this.anim.sx = sx;
+    this.anim.sy = sy;
+    this.anim.vx = 0;
+    this.anim.vy = 0;
+  }
+
+  private render(dt: number) {
+    const a = this.anim;
+    const grounded = this.onGround;
+    const speed = Math.abs(this.vx);
+    const running = grounded && speed > 60 && (this.state === "free" || this.state === "hurt");
+
+    // Landing squash + dust.
+    if (grounded && !a.wasGround && !this.dead) {
+      this.impulse(1.22, 0.78);
+      this.scene.fx.dust(this.x, 1, 0.7);
+      this.scene.fx.dust(this.x, -1, 0.7);
+    }
+    a.wasGround = grounded;
+
+    // Critically damped-ish spring toward scale 1.
+    const k = 520;
+    const c = 26;
+    a.vx += ((1 - a.sx) * k - a.vx * c) * dt;
+    a.vy += ((1 - a.sy) * k - a.vy * c) * dt;
+    a.sx += a.vx * dt;
+    a.sy += a.vy * dt;
+
+    // Stride advances with distance covered so feet don't skate.
+    if (running) a.stride += (speed * dt) / 34;
+    else a.stride = 0;
+
     const pose = this.pose();
     const key = heroKey(this.def.id, pose);
-    if (this.sprite.texture.key !== key) this.sprite.setTexture(key);
-    const ax = pose === "jump" ? 0.5 : anchorX(key);
-    this.sprite.setFlipX(this.facing < 0).setOrigin(this.facing < 0 ? 1 - ax : ax, 1);
+    if (key !== a.lastKey) {
+      this.sprite.setTexture(key);
+      if (!pose.startsWith("walk") && !a.lastKey.includes("walk")) this.impulse(a.sx * 1.04, a.sy * 0.97);
+      a.lastKey = key;
+    }
 
-    const moving = pose === "idle" && Math.abs(this.vx) > 40;
+    // Turning squeezes through zero width instead of snapping.
+    a.turn += (this.facing - a.turn) * Math.min(1, dt * 28);
+    const sign = a.turn >= 0 ? 1 : -1;
+    const turnScale = Math.max(0.2, Math.abs(a.turn));
+
+    const ax = pose === "jump" ? 0.5 : anchorX(key);
+    const flip = (sign < 0) !== artFacesLeft(key);
+    this.sprite.setFlipX(flip).setOrigin(flip ? 1 - ax : ax, 1);
+
     const t = this.scene.time.now / 1000;
-    let sx = this.scaleFactor;
-    let sy = this.scaleFactor;
-    let rot = 0;
+    let leanTarget = 0;
     let yOff = 0;
-    if (moving) {
-      yOff = -Math.abs(Math.sin(t * 14)) * 7;
-      rot = this.facing * 0.07;
-      sy *= 1 + Math.sin(t * 28) * 0.025;
+    let breathe = 0;
+    if (running) {
+      leanTarget = (this.vx / (this.def.speed * 1.2)) * 0.1;
+      const cycle = a.stride * Math.PI * (this.hasWalk ? 0.5 : 1);
+      yOff = -Math.abs(Math.sin(cycle)) * (this.hasWalk ? 4 : 8);
+      breathe = Math.cos(cycle * 2) * 0.03;
+      a.dust -= dt;
+      if (a.dust <= 0) {
+        this.scene.fx.dust(this.x - this.facing * 20, this.facing, 0.45);
+        a.dust = 0.16;
+      }
+    } else if (!grounded && !this.dead) {
+      leanTarget = Phaser.Math.Clamp(this.vy / 1400, -0.5, 0.5) * 0.25 * this.facing + (this.vx / 2400);
     } else if (pose === "idle") {
-      sy *= 1 + Math.sin(t * 3.2) * 0.015;
+      breathe = Math.sin(t * 3) * 0.018;
+    } else if (this.state === "dash" || this.state === "sweep") {
+      leanTarget = this.facing * 0.12;
+    } else if (this.state === "hurt") {
+      leanTarget = -this.facing * 0.15;
     }
-    if (pose === "attack_slash" && this.state === "attack" && this.stateTime < 0.06) sx *= 1.06;
-    if (this.dead) {
-      // Slumped and faded rather than rotated through the floor.
-      rot = -this.facing * 0.3;
-      sy *= 0.9;
-    }
-    this.sprite.setPosition(this.x, this.y + yOff).setScale(sx, sy).setRotation(rot);
+    if (this.dead) leanTarget = -this.facing * 0.3;
+    a.lean += (leanTarget - a.lean) * Math.min(1, dt * 14);
+
+    const base = this.scaleFactor;
+    const sx = base * a.sx * (1 - breathe * 0.5) * turnScale;
+    const sy = base * a.sy * (1 + breathe) * (this.dead ? 0.9 : 1);
+    this.sprite.setPosition(this.x, this.y + yOff).setScale(sx, sy).setRotation(a.lean);
     this.renderCommon();
     if (this.invuln > 0 && !this.dead && this.state !== "dash" && this.state !== "sweep" && this.state !== "cast") {
-      this.sprite.setAlpha(Math.floor(this.scene.time.now / 60) % 2 ? 0.45 : 1);
+      this.sprite.setAlpha(0.55 + Math.sin(this.scene.time.now / 35) * 0.35);
     } else {
       this.sprite.setAlpha(this.dead ? 0.55 : 1);
     }

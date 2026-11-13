@@ -57,7 +57,7 @@ export class MenuScene extends Phaser.Scene {
     });
     this.modeHint = text(this, 44, 194, "", 15, "#9fb8cc", "700");
 
-    this.artGlow = this.add.image(950, 280, "glow").setBlendMode(Phaser.BlendModes.ADD).setScale(9).setAlpha(0.5);
+    this.artGlow = this.add.image(950, 280, "glow").setBlendMode(Phaser.BlendModes.ADD).setScale(4.5).setAlpha(0.35);
     this.art = this.add.image(950, 270, `${HEROES[0].id}_art`).setScale(0.85);
     this.tweens.add({ targets: this.art, y: 252, yoyo: true, repeat: -1, duration: 1600, ease: "Sine.easeInOut" });
 
