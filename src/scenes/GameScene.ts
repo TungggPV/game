@@ -6,28 +6,38 @@ import type { Actor, Hit } from "../entities/Actor";
 import { Enemy } from "../entities/Enemy";
 import { Hero } from "../entities/Hero";
 import { consumeTouch, PlayerControls, setSceneFlag } from "../systems/controls";
-import { Fx } from "../systems/Fx";
+import { Fx, PALETTE, type Palette } from "../systems/Fx";
 import { sfx } from "../systems/sfx";
 
 export type GameData = { mode: GameMode; heroes: string[] };
 
-type Projectile = {
+export type ProjectileStyle = "plasma" | "fire" | "volt" | "wind" | "enemy";
+
+export type ProjectileSpec = {
   owner: Actor;
-  img: Phaser.GameObjects.Image;
-  core: Phaser.GameObjects.Image;
   x: number;
   y: number;
   vx: number;
   vy: number;
   size: number;
-  life: number;
+  color: number;
   pierce: number;
-  hitSet: Set<Actor>;
+  style: ProjectileStyle;
   explodeRadius?: number;
   chain?: number;
   hit: Hit;
-  color: number;
 };
+
+type Projectile = ProjectileSpec & {
+  parts: Phaser.GameObjects.Image[];
+  trail?: Phaser.GameObjects.Particles.ParticleEmitter;
+  crackle?: Phaser.GameObjects.Graphics;
+  life: number;
+  age: number;
+  hitSet: Set<Actor>;
+};
+
+type FieldStyle = "cage" | "spiral";
 
 type Field = {
   owner: Hero;
@@ -39,8 +49,11 @@ type Field = {
   tick: number;
   acc: number;
   hit: Hit;
-  ring: Phaser.GameObjects.Image;
+  style: FieldStyle;
+  glyph: Phaser.GameObjects.Image;
   glow: Phaser.GameObjects.Image;
+  bars?: Phaser.GameObjects.Graphics;
+  emitter?: Phaser.GameObjects.Particles.ParticleEmitter;
 };
 
 type Hazard = {
@@ -48,13 +61,13 @@ type Hazard = {
   rect: Phaser.Geom.Rectangle;
   vx: number;
   life: number;
+  maxLife: number;
   hitSet: Set<Actor>;
   damage: number;
-  view: Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle;
-  core?: Phaser.GameObjects.Rectangle;
+  parts: Phaser.GameObjects.Image[];
+  trail?: Phaser.GameObjects.Particles.ParticleEmitter;
   kind: "shock" | "beam";
 };
-
 type Pickup = { kind: "health" | "energy" | "coin"; img: Phaser.GameObjects.Image; x: number; y: number; vy: number; life: number };
 
 export type Phase = "intro" | "fight" | "advance" | "stageClear" | "upgrade" | "pkIntro" | "pkFight" | "roundEnd" | "over";
@@ -448,6 +461,7 @@ export class GameScene extends Phaser.Scene {
     this.fx.glow(e.x, e.cy, 0xff3355, 3, 400);
   }
 
+
   // ---------- combat ----------
 
   targetsFor(actor: Actor): Actor[] {
@@ -457,6 +471,12 @@ export class GameScene extends Phaser.Scene {
 
   anyHeroAlive() {
     return this.heroes.some((h) => !h.dead);
+  }
+
+  paletteFor(actor: Actor | undefined): Palette {
+    if (actor instanceof Hero) return PALETTE[actor.def.element];
+    if (actor instanceof Enemy && actor.isBoss) return PALETTE.boss;
+    return PALETTE.enemy;
   }
 
   dealDamage(attacker: Actor | undefined, target: Actor, hit: Hit): number {
@@ -475,12 +495,17 @@ export class GameScene extends Phaser.Scene {
     }
 
     let knock = hit.knock;
+    let blocked = false;
     if (target instanceof Enemy) {
       const shield = target.shieldFactor(hit);
       if (shield < 1) {
+        blocked = true;
         damage *= shield;
         knock = (knock ?? 100) * 0.2;
-        this.fx.sparks(target.x + target.facing * target.bodyW * 0.4, target.cy, 0x9fe8ff, -target.facing, 8);
+        const sx = target.x + target.facing * target.bodyW * 0.45;
+        this.fx.flashCore(sx, target.cy, 0.8);
+        this.fx.ring(sx, target.cy, 0x9fe8ff, 60, 220);
+        this.fx.sparks(sx, target.cy, 0x9fe8ff, target.facing, 10, 700);
         this.fx.label(target.x, target.y - target.bodyH - 20, "CHẶN", "#9fe8ff");
       }
     }
@@ -489,13 +514,15 @@ export class GameScene extends Phaser.Scene {
     if (dealt <= 0) return 0;
 
     const heavy = crit || !!hit.heavy;
-    this.fx.sparks(target.cx - hit.dir * target.bodyW * 0.2, target.cy, hit.color, hit.dir, heavy ? 10 : 6);
-    this.fx.glow(target.cx, target.cy, hit.color, heavy ? 2.4 : 1.4, 140);
+    if (!blocked) this.fx.hit(target.cx - hit.dir * target.bodyW * 0.15, target.cy - 10, hit.dir, this.paletteFor(attacker), heavy);
     if (target instanceof Enemy || this.mode === "pk") this.fx.number(target.cx, target.y - target.bodyH - 10, dealt, 0xffffff, crit);
     if (crit) sfx.crit();
     else sfx.hit();
-    this.hitstop = Math.max(this.hitstop, heavy ? 0.07 : 0.035);
-    if (heavy) this.fx.shake(0.005, 90);
+    this.hitstop = Math.max(this.hitstop, heavy ? 0.075 : 0.04);
+    if (heavy) {
+      this.fx.shake(0.006, 110);
+      this.fx.zoomPunch(0.025, 180);
+    }
 
     if (attacker instanceof Hero) {
       this.combo += 1;
@@ -540,8 +567,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   onHeroDown(hero: Hero) {
+    const pal = PALETTE[hero.def.element];
     this.fx.shake(0.015, 300);
-    this.fx.burst(hero.cx, hero.cy, hero.def.color, 20, 600);
+    this.fx.explosion(hero.cx, hero.cy, pal, 90, false);
     if (this.mode !== "pk" && !this.anyHeroAlive()) this.time.delayedCall(1200, () => this.finish(false));
     else if (this.mode === "coop") this.fx.label(hero.x, hero.y - 190, "Hồi sinh sau 8s", "#ffb0b8");
   }
@@ -556,19 +584,25 @@ export class GameScene extends Phaser.Scene {
       killer.score += points;
       killer.heal(killer.mods.healOnKill);
     }
-    this.fx.burst(enemy.cx, enemy.cy, 0xff9a3a, enemy.isBoss ? 60 : 16, enemy.isBoss ? 1200 : 500, enemy.isBoss ? 1.4 : 0.8);
-    this.fx.glow(enemy.cx, enemy.cy, 0xffc070, enemy.isBoss ? 10 : 3, 420);
+    const blast = { main: 0xff8a2a, light: 0xfff0b0, dark: 0x8a1a1a };
+    const size = Math.min(160, enemy.bodyH * 0.7);
+    this.time.delayedCall(enemy.isBoss ? 0 : 180, () => this.fx.explosion(enemy.cx, enemy.cy, blast, size));
+    this.fx.shards(enemy.cx, enemy.cy, { main: 0x6fa8ff, light: 0xdfeaff, dark: 0x203060 }, enemy.isBoss ? 30 : 10, 600);
     sfx.boom();
     this.fx.label(enemy.cx, enemy.y - enemy.bodyH - 30, `+${points}`, "#ffe45c");
     if (enemy.isBoss) {
       this.fx.flash(0xffffff, 400);
       this.fx.shake(0.03, 900);
-      for (let i = 0; i < 6; i += 1) {
-        this.time.delayedCall(i * 220, () => {
-          this.fx.burst(enemy.x + Phaser.Math.Between(-120, 120), enemy.cy + Phaser.Math.Between(-100, 100), 0xffa040, 20, 700, 1.2);
+      for (let i = 0; i < 7; i += 1) {
+        this.time.delayedCall(i * 200, () => {
+          this.fx.explosion(enemy.x + Phaser.Math.Between(-140, 140), enemy.cy + Phaser.Math.Between(-120, 100), blast, Phaser.Math.Between(90, 160));
           sfx.boom();
         });
       }
+      this.time.delayedCall(1500, () => {
+        this.fx.pillar(enemy.x, 0xffd890, 3, 1.4, 900);
+        this.fx.ring(enemy.x, GROUND_Y - 4, 0xffd890, 700, 900, 0.22);
+      });
       this.aliveEnemies().forEach((e) => e.takeHit({ damage: 9999, dir: 1, color: 0xffffff }));
       this.events.emit("boss", null);
       this.boss = undefined;
@@ -581,22 +615,77 @@ export class GameScene extends Phaser.Scene {
     this.fx.shake(0.02, 500);
     this.events.emit("toast", "Colossus nổi giận!");
     sfx.warn();
-    this.fx.ring(boss.cx, boss.cy, 0xff3355, 400, 600);
+    this.fx.ring(boss.cx, boss.cy, 0xff3355, 420, 700);
+    this.fx.ring(boss.x, GROUND_Y - 4, 0xff3355, 600, 800, 0.22);
+    this.fx.embers(boss.cx, boss.cy, PALETTE.enemy, 30, 140);
   }
 
   ultimateIntro(hero: Hero, skill: SkillDef) {
+    const pal = PALETTE[hero.def.element];
     sfx.ultimate();
     this.hitstop = Math.max(this.hitstop, 0.3);
-    this.fx.glow(hero.cx, hero.cy, skill.color, 8, 600);
+    this.fx.tintScreen(pal.dark, 0.7, 1100);
+    this.fx.charge(hero.cx, hero.cy, pal, 320, 220, 30);
+    this.fx.ring(hero.x, GROUND_Y - 4, pal.main, 220, 600, 0.25, "glyph");
     this.events.emit("cutin", hero, skill);
   }
 
-  // ---------- projectiles & hazards ----------
+  // ---------- projectiles ----------
 
-  spawnProjectile(p: { owner: Actor; x: number; y: number; vx: number; vy: number; size: number; color: number; pierce: number; explodeRadius?: number; chain?: number; hit: Hit }) {
-    const img = this.add.image(p.x, p.y, "glow").setTint(p.color).setBlendMode(Phaser.BlendModes.ADD).setScale(p.size / 14).setDepth(DEPTH.projectile);
-    const core = this.add.image(p.x, p.y, "dot").setScale(p.size / 14, p.size / 22).setDepth(DEPTH.projectile + 1);
-    this.projectiles.push({ ...p, img, core, life: 1.6, hitSet: new Set(), color: p.color });
+  spawnProjectile(spec: ProjectileSpec) {
+    const pal = spec.owner instanceof Hero ? PALETTE[spec.owner.def.element] : PALETTE.enemy;
+    const add = (tex: string, tint: number, sx: number, sy: number, depth = DEPTH.projectile) =>
+      this.add.image(spec.x, spec.y, tex).setTint(tint).setBlendMode(Phaser.BlendModes.ADD).setScale(sx, sy).setDepth(depth);
+    const s = spec.size / 20;
+    const parts: Phaser.GameObjects.Image[] = [];
+    let trail: Phaser.GameObjects.Particles.ParticleEmitter | undefined;
+    let crackle: Phaser.GameObjects.Graphics | undefined;
+    const p = { x: spec.x, y: spec.y };
+
+    switch (spec.style) {
+      case "plasma":
+        parts.push(add("glow", pal.main, 1.4 * s, 0.9 * s), add("streak", pal.main, 2.2 * s, 3.2 * s), add("streak", 0xffffff, 1.5 * s, 1.6 * s, DEPTH.projectile + 1));
+        trail = this.fx.trail(p, "streak", {
+          speed: 0, lifespan: 260, frequency: 12, scale: { start: 0.9 * s, end: 0 }, alpha: { start: 0.8, end: 0 },
+          color: [pal.light, pal.main, pal.dark], blendMode: Phaser.BlendModes.ADD, rotate: Math.atan2(spec.vy, spec.vx) * (180 / Math.PI),
+        });
+        break;
+      case "fire":
+        parts.push(add("glow", pal.main, 1.8 * s, 1.8 * s), add("core", pal.light, 0.9 * s, 0.9 * s, DEPTH.projectile + 1));
+        trail = this.fx.trail(p, "flame", {
+          speedX: { min: -spec.vx * 0.15, max: -spec.vx * 0.05 }, speedY: { min: -90, max: -20 },
+          lifespan: { min: 220, max: 420 }, frequency: 14, quantity: 2,
+          scale: { start: 0.75 * s, end: 0.1 }, alpha: { start: 0.9, end: 0 }, rotate: { min: -20, max: 20 },
+          color: [0xffffff, pal.light, pal.main, pal.dark], blendMode: Phaser.BlendModes.ADD,
+        });
+        break;
+      case "volt":
+        parts.push(add("glow", pal.main, 1.2 * s, 0.8 * s), add("streak", 0xffffff, 2.6 * s, 2 * s, DEPTH.projectile + 1));
+        crackle = this.add.graphics().setDepth(DEPTH.projectile).setBlendMode(Phaser.BlendModes.ADD);
+        trail = this.fx.trail(p, "dot", {
+          speed: { min: 40, max: 160 }, lifespan: { min: 120, max: 260 }, frequency: 10,
+          scale: { start: 0.5, end: 0 }, color: [0xffffff, pal.main], blendMode: Phaser.BlendModes.ADD,
+        });
+        break;
+      case "wind":
+        parts.push(add("arc", pal.main, 0.55 * s, 0.85 * s), add("arc", 0xffffff, 0.42 * s, 0.6 * s, DEPTH.projectile + 1), add("glow", pal.main, 1.2 * s, 1.6 * s));
+        parts.forEach((o) => o.setRotation(spec.vx < 0 ? Math.PI : 0));
+        trail = this.fx.trail(p, "leaf", {
+          speedX: { min: -spec.vx * 0.2, max: -spec.vx * 0.05 }, speedY: { min: -120, max: 120 },
+          lifespan: { min: 300, max: 600 }, frequency: 25, scale: { start: 0.8, end: 0.2 },
+          rotate: { start: 0, end: 720 }, color: [pal.light, pal.main, pal.dark], alpha: { start: 1, end: 0 },
+        });
+        break;
+      case "enemy":
+        parts.push(add("glow", pal.main, 1.2 * s, 1.2 * s), add("core", pal.light, 0.6 * s, 0.6 * s, DEPTH.projectile + 1), add("ring", pal.main, 0.22 * s, 0.22 * s));
+        trail = this.fx.trail(p, "dot", {
+          speed: 0, lifespan: 220, frequency: 16, scale: { start: 0.9 * s, end: 0 }, color: [pal.light, pal.main], blendMode: Phaser.BlendModes.ADD,
+        });
+        break;
+    }
+    this.projectiles.push({ ...spec, parts, trail, crackle, life: 1.6, age: 0, hitSet: new Set() });
+    // Trail follows a plain object we move each frame.
+    (this.projectiles[this.projectiles.length - 1] as Projectile & { anchor: { x: number; y: number } }).anchor = p;
   }
 
   private updateProjectiles(dt: number) {
@@ -604,9 +693,22 @@ export class GameScene extends Phaser.Scene {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.life -= dt;
-      p.img.setPosition(p.x, p.y).setRotation(Math.atan2(p.vy, p.vx));
-      p.core.setPosition(p.x, p.y).setRotation(Math.atan2(p.vy, p.vx));
-      if (Math.random() < 0.6) this.fx.burst(p.x, p.y, p.color, 1, 60, p.size / 30);
+      p.age += dt;
+      const anchor = (p as Projectile & { anchor: { x: number; y: number } }).anchor;
+      anchor.x = p.x;
+      anchor.y = p.y;
+      const angle = Math.atan2(p.vy, p.vx);
+      const pulse = 1 + Math.sin(p.age * 40) * 0.08;
+      p.parts.forEach((o, i) => {
+        o.setPosition(p.x, p.y);
+        if (p.style === "wind") o.setRotation((p.vx < 0 ? Math.PI : 0) + Math.sin(p.age * 30) * 0.12);
+        else if (p.style === "fire") o.setRotation(p.age * 8 * (i + 1));
+        else o.setRotation(angle);
+        if (i === 0) o.setAlpha(0.75 + Math.sin(p.age * 50) * 0.25);
+      });
+      if (p.style === "enemy") p.parts[2]?.setScale((p.size / 20) * 0.22 * pulse * 1.4);
+      if (p.crackle) this.drawCrackle(p);
+
       const box = new Phaser.Geom.Rectangle(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
       for (const t of this.targetsFor(p.owner)) {
         if (t.dead || p.hitSet.has(t) || p.pierce <= 0) continue;
@@ -615,7 +717,7 @@ export class GameScene extends Phaser.Scene {
         p.pierce -= 1;
         const dir = Math.sign(p.vx) || 1;
         if (p.explodeRadius) {
-          this.explode(p.owner, p.x, p.y, p.explodeRadius, p.hit, p.color);
+          this.explode(p.owner, p.x, p.y, p.explodeRadius, p.hit);
           p.pierce = 0;
         } else {
           this.dealDamage(p.owner, t, { ...p.hit, dir });
@@ -624,22 +726,44 @@ export class GameScene extends Phaser.Scene {
       }
       const [minX, maxX] = this.arenaBounds();
       if (p.pierce <= 0 || p.life <= 0 || p.x < minX - 60 || p.x > maxX + 60 || p.y > GROUND_Y) {
-        if (p.explodeRadius && p.pierce > 0) this.explode(p.owner, p.x, Math.min(p.y, GROUND_Y - 20), p.explodeRadius, p.hit, p.color);
+        if (p.explodeRadius && p.pierce > 0) this.explode(p.owner, p.x, Math.min(p.y, GROUND_Y - 20), p.explodeRadius, p.hit);
         p.life = -1;
-        this.fx.burst(p.x, p.y, p.color, 6, 240, 0.6);
-        p.img.destroy();
-        p.core.destroy();
+        const pal = this.paletteFor(p.owner);
+        this.fx.flashCore(p.x, p.y, 0.6);
+        this.fx.ring(p.x, p.y, pal.main, 50, 220);
+        this.fx.sparks(p.x, p.y, pal.main, -Math.sign(p.vx) || 1, 5, 400, 80);
+        p.parts.forEach((o) => o.destroy());
+        p.crackle?.destroy();
+        this.fx.stopTrail(p.trail, 700);
       }
     }
     this.projectiles = this.projectiles.filter((p) => p.life > 0);
   }
 
-  private explode(owner: Actor, x: number, y: number, radius: number, hit: Hit, color: number) {
+  private drawCrackle(p: Projectile) {
+    const g = p.crackle!;
+    g.clear();
+    const pal = this.paletteFor(p.owner);
+    for (let k = 0; k < 3; k += 1) {
+      let x = p.x;
+      let y = p.y;
+      const ang = Math.random() * Math.PI * 2;
+      g.lineStyle(k === 0 ? 3 : 2, k === 0 ? 0xffffff : pal.main, 0.9);
+      g.beginPath();
+      g.moveTo(x, y);
+      for (let s = 0; s < 4; s += 1) {
+        x += Math.cos(ang) * 10 + (Math.random() - 0.5) * 14 - Math.sign(p.vx) * 8;
+        y += Math.sin(ang) * 10 + (Math.random() - 0.5) * 14;
+        g.lineTo(x, y);
+      }
+      g.strokePath();
+    }
+  }
+
+  private explode(owner: Actor, x: number, y: number, radius: number, hit: Hit) {
     sfx.boom();
-    this.fx.ring(x, y, color, radius);
-    this.fx.glow(x, y, color, radius / 18, 320);
-    this.fx.burst(x, y, color, 16, 500, 0.9);
-    this.fx.shake(0.007, 120);
+    this.fx.explosion(x, y, this.paletteFor(owner), radius);
+    this.fx.shake(0.008, 140);
     this.areaHit(owner, x, y, radius, hit);
   }
 
@@ -652,69 +776,178 @@ export class GameScene extends Phaser.Scene {
         .sort((a, b) => Math.abs(a.x - cur.x) - Math.abs(b.x - cur.x))[0];
       if (!next) return;
       done.add(next);
-      this.fx.chain(cur.cx, cur.cy, next.cx, next.cy, color);
+      const [fx, fy, tx, ty] = [cur.cx, cur.cy, next.cx, next.cy];
+      this.time.delayedCall(i * 70, () => {
+        this.fx.lightning(fx, fy, tx, ty, color, 0.7, 1, 220);
+        this.fx.flashCore(tx, ty, 0.7);
+      });
       this.dealDamage(owner, next, { ...hit, damage: hit.damage * 0.7, dir: Math.sign(next.x - cur.x) || 1, stun: 0.3 });
       cur = next;
     }
   }
 
-  spawnField(f: { owner: Hero; offset: number; x: number; y: number; radius: number; duration: number; tick: number; color: number; hit: Hit }) {
-    const ring = this.add.image(f.x, f.y, "ring").setTint(f.color).setBlendMode(Phaser.BlendModes.ADD).setScale(f.radius / 60, f.radius / 120).setDepth(DEPTH.fx);
-    const glow = this.add.image(f.x, f.y, "glow").setTint(f.color).setBlendMode(Phaser.BlendModes.ADD).setScale(f.radius / 22, f.radius / 34).setAlpha(0.5).setDepth(DEPTH.fx - 1);
-    this.fields.push({ ...f, time: f.duration, acc: f.tick, ring, glow });
+  // ---------- fields (Electric Cage, Toxic Spiral) ----------
+
+  spawnField(f: { owner: Hero; offset: number; x: number; y: number; radius: number; duration: number; tick: number; color: number; hit: Hit; style: FieldStyle }) {
+    const pal = PALETTE[f.owner.def.element];
+    const glyph = this.add.image(f.x, GROUND_Y - 4, "glyph").setTint(pal.main).setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.shadow + 1)
+      .setScale(0.1, 0.03).setAlpha(0.9);
+    this.tweens.add({ targets: glyph, scaleX: f.radius / 120, scaleY: f.radius / 120 * 0.28, duration: 220, ease: "Back.easeOut" });
+    const glow = this.add.image(f.x, f.y, "glow").setTint(pal.main).setBlendMode(Phaser.BlendModes.ADD).setScale(f.radius / 60, f.radius / 90).setAlpha(0.4).setDepth(DEPTH.fx - 1);
+    let bars: Phaser.GameObjects.Graphics | undefined;
+    let emitter: Phaser.GameObjects.Particles.ParticleEmitter | undefined;
+    if (f.style === "cage") {
+      bars = this.add.graphics().setDepth(DEPTH.fx).setBlendMode(Phaser.BlendModes.ADD);
+      this.fx.lightning(f.x, this.cameras.main.worldView.y - 20, f.x, GROUND_Y - 10, pal.main, 1.2, 3, 300);
+      this.fx.ring(f.x, GROUND_Y - 4, pal.light, f.radius * 1.3, 400, 0.28);
+    } else {
+      emitter = this.add.particles(f.x, f.y, "bubble", {
+        emitZone: { type: "random", source: new Phaser.Geom.Ellipse(0, 40, f.radius * 1.6, 60) as unknown as Phaser.Types.GameObjects.Particles.RandomZoneSource },
+        speedY: { min: -160, max: -50 }, speedX: { min: -30, max: 30 },
+        lifespan: { min: 500, max: 900 }, frequency: 25, quantity: 2,
+        scale: { start: 0.25, end: 0.8 }, alpha: { start: 0.9, end: 0 },
+        color: [pal.light, pal.main, pal.dark], blendMode: Phaser.BlendModes.ADD,
+      }).setDepth(DEPTH.fx);
+      this.fx.ring(f.x, f.y, pal.main, f.radius, 400);
+    }
+    this.fields.push({ ...f, time: f.duration, acc: f.tick, glyph, glow, bars, emitter });
   }
 
   private updateFields(dt: number) {
     for (const f of this.fields) {
       f.time -= dt;
       if (f.offset === 0) f.x = f.owner.x;
-      f.ring.setPosition(f.x, f.y).setRotation(f.ring.rotation + dt * 4);
-      f.glow.setPosition(f.x, f.y).setAlpha(0.35 + Math.sin(this.time.now / 70) * 0.15);
+      const pal = PALETTE[f.owner.def.element];
+      const fade = Math.min(1, f.time / 0.3);
+      f.glyph.setPosition(f.x, GROUND_Y - 4).setRotation(f.glyph.rotation + dt * (f.style === "spiral" ? 3 : 1.2)).setAlpha(0.9 * fade);
+      f.glow.setPosition(f.x, f.y).setAlpha((0.3 + Math.sin(this.time.now / 70) * 0.12) * fade);
+      f.emitter?.setPosition(f.x, f.y);
+      if (f.bars) this.drawCage(f, pal, fade);
+      if (f.style === "spiral" && Math.random() < dt * 30) {
+        const a = this.time.now / 140 + Math.random() * 0.4;
+        this.fx.particles(f.x + Math.cos(a) * f.radius * 0.8, f.y + Math.sin(a) * 40, "leaf", {
+          speedX: { min: -Math.sin(a) * 260, max: -Math.sin(a) * 180 }, speedY: { min: -120, max: -40 },
+          lifespan: 420, scale: { start: 0.9, end: 0.2 }, rotate: { start: 0, end: 540 }, color: [pal.light, pal.main], alpha: { start: 1, end: 0 },
+        }, 1);
+      }
       f.acc += dt;
       if (f.acc >= f.tick) {
         f.acc -= f.tick;
         this.areaHit(f.owner, f.x, f.y, f.radius, f.hit);
-        this.fx.burst(f.x + Phaser.Math.Between(-f.radius, f.radius) * 0.7, f.y + Phaser.Math.Between(-40, 40), f.hit.color, 3, 200, 0.6, "spark");
       }
       if (f.time <= 0) {
-        f.ring.destroy();
+        f.glyph.destroy();
         f.glow.destroy();
+        f.bars?.destroy();
+        this.fx.stopTrail(f.emitter, 900);
+        this.fx.ring(f.x, f.y, pal.main, f.radius, 300);
       }
     }
     this.fields = this.fields.filter((f) => f.time > 0);
   }
 
+  private drawCage(f: Field, pal: Palette, fade: number) {
+    const g = f.bars!;
+    g.clear();
+    const top = f.y - f.radius * 1.1;
+    const bottom = GROUND_Y - 4;
+    const n = 7;
+    for (let i = 0; i < n; i += 1) {
+      const a = (i / n) * Math.PI * 2 + this.time.now / 600;
+      const x = f.x + Math.cos(a) * f.radius;
+      const front = Math.sin(a) > 0;
+      g.lineStyle(front ? 4 : 2, front ? 0xffffff : pal.main, (front ? 0.9 : 0.45) * fade);
+      g.beginPath();
+      g.moveTo(x, top);
+      for (let y = top; y < bottom; y += 26) g.lineTo(x + (Math.random() - 0.5) * 12, Math.min(bottom, y + 26));
+      g.strokePath();
+    }
+    g.lineStyle(3, pal.main, 0.7 * fade).strokeEllipse(f.x, top, f.radius * 2, f.radius * 0.4);
+    if (Math.random() < 0.35) {
+      const a1 = Math.random() * Math.PI * 2;
+      const a2 = a1 + Math.PI * (0.5 + Math.random());
+      g.lineStyle(2, 0xffffff, 0.9 * fade);
+      g.lineBetween(f.x + Math.cos(a1) * f.radius, f.y + Math.sin(a1) * 50, f.x + Math.cos(a2) * f.radius, f.y + Math.sin(a2) * 50);
+    }
+  }
+
+  // ---------- meteors & hazards ----------
+
   spawnMeteor(owner: Hero, x: number, radius: number, hit: Hit) {
-    const startX = x - 260;
-    const startY = this.cameras.main.worldView.y - 80;
-    const rock = this.add.image(startX, startY, "glow").setTint(hit.color).setBlendMode(Phaser.BlendModes.ADD).setScale(2.4).setDepth(DEPTH.projectile);
-    const core = this.add.image(startX, startY, "dot").setTint(0xfff0c0).setScale(2).setDepth(DEPTH.projectile + 1);
+    const pal = PALETTE[owner.def.element];
+    const mark = this.add.image(x, GROUND_Y - 4, "glyph").setTint(pal.main).setBlendMode(Phaser.BlendModes.ADD).setScale(radius / 120, radius / 120 * 0.26).setAlpha(0).setDepth(DEPTH.shadow + 1);
+    this.tweens.add({ targets: mark, alpha: 0.9, rotation: 2, duration: 420 });
+    const startX = x - 320;
+    const startY = this.cameras.main.worldView.y - 100;
+    const rock = { x: startX, y: startY };
+    const head = this.add.image(startX, startY, "glow").setTint(pal.main).setBlendMode(Phaser.BlendModes.ADD).setScale(2.2).setDepth(DEPTH.projectile);
+    const core = this.add.image(startX, startY, "core").setTint(pal.light).setBlendMode(Phaser.BlendModes.ADD).setScale(1.3).setDepth(DEPTH.projectile + 1);
+    const angle = Math.atan2(GROUND_Y - 40 - startY, x - startX) * (180 / Math.PI);
+    const tail = this.fx.trail(rock, "flame", {
+      speed: { min: 20, max: 80 }, lifespan: { min: 260, max: 480 }, frequency: 8, quantity: 2,
+      scale: { start: 1.3, end: 0.1 }, alpha: { start: 1, end: 0 }, rotate: angle + 90,
+      color: [0xffffff, pal.light, pal.main, pal.dark], blendMode: Phaser.BlendModes.ADD,
+    });
+    const smoke = this.fx.trail(rock, "smoke", { speed: 20, lifespan: 600, frequency: 40, scale: { start: 0.4, end: 1.2 }, alpha: { start: 0.4, end: 0 }, tint: 0x30262a }, DEPTH.projectile - 2);
     this.tweens.add({
-      targets: [rock, core],
+      targets: [head, core, rock],
       x,
-      y: GROUND_Y - 30,
-      duration: 380,
+      y: GROUND_Y - 40,
+      delay: 120,
+      duration: 360,
       ease: "Quad.easeIn",
-      onUpdate: () => this.fx.burst(rock.x, rock.y, hit.color, 2, 120, 0.8),
       onComplete: () => {
-        rock.destroy();
+        head.destroy();
         core.destroy();
-        this.explode(owner, x, GROUND_Y - 60, radius, hit, hit.color);
+        mark.destroy();
+        this.fx.stopTrail(tail, 500);
+        this.fx.stopTrail(smoke, 700);
+        this.fx.pillar(x, pal.main, 1.4, 0.8, 500);
+        this.explode(owner, x, GROUND_Y - 60, radius, hit);
       },
     });
   }
 
   spawnShockwave(owner: Enemy, x: number, dir: number, speed: number, damage: number) {
-    const view = this.add.image(x, GROUND_Y - 30, "glow").setTint(0x6fb6ff).setBlendMode(Phaser.BlendModes.ADD).setScale(1.6, 2.4).setDepth(DEPTH.fx);
-    this.hazards.push({ owner, rect: new Phaser.Geom.Rectangle(x - 30, GROUND_Y - 60, 60, 60), vx: dir * speed, life: 2.2, hitSet: new Set(), damage, view, kind: "shock" });
+    const pal = PALETTE.boss;
+    const mk = (tex: string, tint: number, sx: number, sy: number, d: number) =>
+      this.add.image(x, GROUND_Y - 10, tex).setOrigin(0.5, 1).setTint(tint).setBlendMode(Phaser.BlendModes.ADD).setScale(sx, sy).setDepth(d);
+    const parts = [mk("flame", pal.main, 1.4, 1.4, DEPTH.fx), mk("flame", pal.light, 0.7, 0.9, DEPTH.fx + 1), mk("glow", pal.main, 1.6, 1.0, DEPTH.fx - 1)];
+    const anchor = { x, y: GROUND_Y - 10 };
+    const trail = this.fx.trail(anchor, "shard", {
+      speedY: { min: -420, max: -160 }, speedX: { min: -80, max: 80 }, gravityY: 1200,
+      lifespan: { min: 300, max: 600 }, frequency: 25, scale: { start: 0.7, end: 0.2 }, rotate: { start: 0, end: 360 },
+      color: [pal.light, 0x7a86a0], 
+    }, DEPTH.fx);
+    this.hazards.push({
+      owner, rect: new Phaser.Geom.Rectangle(x - 30, GROUND_Y - 60, 60, 60), vx: dir * speed, life: 2.2, maxLife: 2.2,
+      hitSet: new Set(), damage, parts, trail, kind: "shock",
+    });
+    (this.hazards[this.hazards.length - 1] as Hazard & { anchor: { x: number; y: number } }).anchor = anchor;
   }
 
   spawnBeam(owner: Enemy, x0: number, x1: number, y: number, height: number, damage: number) {
     sfx.boom();
-    this.fx.shake(0.012, 400);
-    const view = this.add.rectangle((x0 + x1) / 2, y, x1 - x0, height, 0x6fb6ff, 0.55).setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.fx);
-    const core = this.add.rectangle((x0 + x1) / 2, y, x1 - x0, height * 0.35, 0xffffff, 0.9).setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.fx + 1);
-    this.hazards.push({ owner, rect: new Phaser.Geom.Rectangle(x0, y - height / 2, x1 - x0, height), vx: 0, life: 0.5, hitSet: new Set(), damage, view, core, kind: "beam" });
+    this.fx.shake(0.014, 450);
+    const pal = PALETTE.boss;
+    const w = x1 - x0;
+    const cx = (x0 + x1) / 2;
+    const mk = (tint: number, sy: number, d: number) =>
+      this.add.image(cx, y, "beam").setTint(tint).setBlendMode(Phaser.BlendModes.ADD).setDisplaySize(w, height * sy).setDepth(d);
+    const parts = [mk(pal.dark, 2.2, DEPTH.fx - 1), mk(pal.main, 1.2, DEPTH.fx), mk(0xffffff, 0.45, DEPTH.fx + 1)];
+    const muzzleX = owner.facing > 0 ? x0 : x1;
+    this.fx.flashCore(muzzleX, y, 2);
+    this.fx.glow(muzzleX, y, pal.main, 4, 500);
+    const anchor = { x: owner.facing > 0 ? x1 : x0, y };
+    const trail = this.fx.trail(anchor, "streak", {
+      speed: { min: 200, max: 600 }, angle: owner.facing > 0 ? { min: 120, max: 240 } : { min: -60, max: 60 },
+      lifespan: 300, frequency: 20, quantity: 3, scale: { start: 0.7, end: 0 }, rotate: { onEmit: () => 0, onUpdate: (p: Phaser.GameObjects.Particles.Particle) => Math.atan2(p.velocityY, p.velocityX) * (180 / Math.PI) },
+      color: [0xffffff, pal.main], blendMode: Phaser.BlendModes.ADD,
+    }, DEPTH.fx + 2);
+    this.hazards.push({
+      owner, rect: new Phaser.Geom.Rectangle(x0, y - height / 2, w, height), vx: 0, life: 0.55, maxLife: 0.55,
+      hitSet: new Set(), damage, parts, trail, kind: "beam",
+    });
   }
 
   private updateHazards(dt: number) {
@@ -722,11 +955,18 @@ export class GameScene extends Phaser.Scene {
       h.life -= dt;
       h.rect.x += h.vx * dt;
       if (h.kind === "shock") {
-        (h.view as Phaser.GameObjects.Image).setPosition(h.rect.centerX, GROUND_Y - 30).setScale(1.6 + Math.random() * 0.4, 2.2 + Math.random() * 0.8);
-        if (Math.random() < 0.5) this.fx.burst(h.rect.centerX, GROUND_Y - 10, 0x9fd0ff, 2, 260, 0.7, "spark");
+        const anchor = (h as Hazard & { anchor: { x: number; y: number } }).anchor;
+        anchor.x = h.rect.centerX;
+        h.parts.forEach((o, i) => o.setPosition(h.rect.centerX, GROUND_Y - (i === 2 ? 30 : 6)).setScale(
+          (i === 0 ? 1.4 : i === 1 ? 0.7 : 1.6) * (0.9 + Math.random() * 0.2),
+          (i === 0 ? 1.4 : i === 1 ? 0.9 : 1.0) * (0.85 + Math.random() * 0.3),
+        ));
+        if (Math.random() < 0.5) this.fx.dust(h.rect.centerX, Math.sign(h.vx), 0.8);
       } else {
-        h.view.setScale(1, 0.8 + Math.random() * 0.4);
-        h.core?.setScale(1, 0.6 + Math.random() * 0.6);
+        const t = 1 - h.life / h.maxLife;
+        const thick = t < 0.15 ? t / 0.15 : t > 0.75 ? (1 - t) / 0.25 : 1;
+        const sizes = [2.2, 1.2, 0.45];
+        h.parts.forEach((o, i) => o.setDisplaySize(h.rect.width, h.rect.height * sizes[i] * thick * (0.85 + Math.random() * 0.3)));
       }
       for (const hero of this.heroes) {
         if (hero.dead || h.hitSet.has(hero)) continue;
@@ -737,8 +977,8 @@ export class GameScene extends Phaser.Scene {
       const [minX, maxX] = this.arenaBounds();
       if (h.life <= 0 || h.rect.right < minX || h.rect.left > maxX) {
         h.life = -1;
-        h.view.destroy();
-        h.core?.destroy();
+        h.parts.forEach((o) => o.destroy());
+        this.fx.stopTrail(h.trail, 700);
       }
     }
     this.hazards = this.hazards.filter((h) => h.life > 0);
@@ -772,6 +1012,7 @@ export class GameScene extends Phaser.Scene {
       if (hero && p.vy === 0) {
         p.life = -1;
         sfx.pickup();
+        const color = p.kind === "health" ? 0x7dff9a : p.kind === "energy" ? 0x7de8ff : 0xffe45c;
         if (p.kind === "health") {
           hero.heal(45);
           this.fx.label(hero.x, hero.y - 170, "+45 HP", "#7dff9a");
@@ -782,7 +1023,8 @@ export class GameScene extends Phaser.Scene {
           this.score += 50;
           hero.score += 50;
         }
-        this.fx.burst(p.x, p.y, 0xffffff, 8, 200, 0.5);
+        this.fx.ring(p.x, p.y, color, 50, 260);
+        this.fx.embers(p.x, p.y, { main: color, light: 0xffffff, dark: color }, 8, 16);
       }
       if (p.life <= 0) p.img.destroy();
     }

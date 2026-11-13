@@ -19,6 +19,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1] / "public" / "assets"
 OUT = ROOT / "game"
+MANIFEST = Path(__file__).resolve().parents[1] / "src" / "config" / "sprites.json"
 
 HERO_SRC = {
     "nova_blade": "hero",
@@ -26,12 +27,14 @@ HERO_SRC = {
     "volt_sentinel": "processed/volt_sentinel",
     "emerald_phantom": "processed/emerald_phantom",
 }
+WALK_HEROES = {"nova_blade"}  # other heroes' walk cells are mis-cut in the source sheets
 HERO_POSES = ["idle", "jump", "attack_slash", "attack_blast", "dash", "hit_reaction"]
 
 ENEMIES = {
     "crawler": "enemies/crawler/crawler_main.png",
     "hunter": "enemies/sky_hunter/sky_hunter_main.png",
     "mutant": "enemies/horned_mutant/mutant_main.png",
+    "mutant_walk1": "enemies/horned_mutant/walk_1.png",
     "mutant_punch": "enemies/horned_mutant/walk_2.png",
     "aegis": "enemies/aegis_elite/aegis_main.png",
     "boss": "enemies/boss/abyssal_colossus_main.png",
@@ -183,7 +186,8 @@ def main() -> None:
     manifest: dict[str, dict] = {}
 
     for hero, src in HERO_SRC.items():
-        for pose in HERO_POSES:
+        poses = HERO_POSES + ([f"walk_{i}" for i in range(1, 5)] if hero in WALK_HEROES else [])
+        for pose in poses:
             a = load(f"{src}/sprites/{pose}.png")
             strip_floor_shadow(a)
             keep_main(a, 0.08)
@@ -217,7 +221,7 @@ def main() -> None:
     for bg in ["city_neon", "lab_sewer", "lava_fortress"]:
         manifest[f"bg_{bg}"] = save_background(bg)
 
-    (OUT / "manifest.json").write_text(json.dumps(manifest, indent=1))
+    MANIFEST.write_text(json.dumps(manifest, indent=1))
     print(f"wrote {len(manifest)} entries")
 
 

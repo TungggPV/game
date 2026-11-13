@@ -35,6 +35,30 @@
   "h": 129,
   "ax": 0.2543103448275862
  },
+ "nova_blade_walk_1": {
+  "file": "nova_blade_walk_1.png",
+  "w": 99,
+  "h": 108,
+  "ax": 0.5
+ },
+ "nova_blade_walk_2": {
+  "file": "nova_blade_walk_2.png",
+  "w": 88,
+  "h": 108,
+  "ax": 0.4715909090909091
+ },
+ "nova_blade_walk_3": {
+  "file": "nova_blade_walk_3.png",
+  "w": 68,
+  "h": 108,
+  "ax": 0.4411764705882353
+ },
+ "nova_blade_walk_4": {
+  "file": "nova_blade_walk_4.png",
+  "w": 60,
+  "h": 108,
+  "ax": 0.48333333333333334
+ },
  "nova_blade_art": {
   "file": "nova_blade_art.png",
   "w": 555,
@@ -260,6 +284,12 @@
   "w": 194,
   "h": 170,
   "ax": 0.5567010309278351
+ },
+ "mutant_walk1": {
+  "file": "mutant_walk1.png",
+  "w": 98,
+  "h": 98,
+  "ax": 0.4336734693877551
  },
  "mutant_punch": {
   "file": "mutant_punch.png",

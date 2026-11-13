@@ -152,7 +152,7 @@ export abstract class Actor {
       this.statusAura
         .setPosition(this.cx, this.cy)
         .setTint(auraColor)
-        .setScale((this.bodyW / 64) * 1.6, (this.bodyH / 64) * 1.3)
+        .setScale((this.bodyW / 128) * 1.6, (this.bodyH / 128) * 1.3)
         .setAlpha(0.35 + Math.sin(this.scene.time.now / 90) * 0.15)
         .setVisible(true);
     } else {
