@@ -13,6 +13,7 @@ type Move = "leap" | "punch" | "charge" | "shoot" | "bash" | "slam" | "beam" | "
 
 export class Enemy extends Actor {
   readonly team = "enemy" as const;
+  readonly view: Phaser.GameObjects.Image;
   readonly def: EnemyDef;
   state: State = "idle";
   private timer = 0.6 + Math.random() * 0.5;
@@ -28,7 +29,8 @@ export class Enemy extends Actor {
 
   constructor(scene: GameScene, type: EnemyType, x: number, hpScale: number) {
     const def = ENEMIES[type];
-    super(scene, x, def.sprite, Math.round(def.hp * hpScale), def.body, DEPTH.enemy);
+    super(scene, x, Math.round(def.hp * hpScale), def.body);
+    this.view = scene.add.image(x, this.y, def.sprite).setOrigin(0.5, 1).setDepth(DEPTH.enemy);
     this.def = def;
     this.flying = !!def.flying;
     this.baseScale = def.height / textureHeight(def.sprite);
@@ -38,6 +40,10 @@ export class Enemy extends Actor {
     // Spawn in from the edge with a short fade so waves read clearly.
     this.sprite.setAlpha(0);
     scene.tweens.add({ targets: this.sprite, alpha: 1, duration: 300 });
+  }
+
+  get sprite() {
+    return this.view;
   }
 
   get isBoss() {
@@ -159,6 +165,18 @@ export class Enemy extends Actor {
       case "aegis":
         if (dist < 150) return "bash";
         return dist < 650 ? "shoot" : null;
+      case "warlord": {
+        this.attackIndex += 1;
+        if (this.attackIndex % 4 === 0) return "slam";
+        if (dist < 210) return "punch";
+        return dist > 320 ? "charge" : null;
+      }
+      case "commander": {
+        this.attackIndex += 1;
+        if (this.attackIndex % 5 === 0 && this.scene.aliveEnemies().length < 4) return "summon";
+        if (dist < 190) return "bash";
+        return "shoot";
+      }
       case "boss": {
         const cycle: Move[] = this.enraged ? ["slam", "beam", "whip", "summon", "beam", "slam"] : ["slam", "beam", "whip", "summon"];
         let m = cycle[this.attackIndex % cycle.length];
