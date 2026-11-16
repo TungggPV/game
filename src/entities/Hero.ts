@@ -3,7 +3,8 @@ import { DEPTH, GROUND_Y, type SkillSlot } from "../config/constants";
 import { baseMods, type HeroMods } from "../config/content";
 import type { HeroDef, SkillDef } from "../config/heroes";
 import { anchorX, artFacesLeft, heroKey, textureHeight, type HeroPose } from "../systems/assets";
-import { ACTIONS, type Action, type PlayerControls } from "../systems/controls";
+import { ACTIONS, type Action, type Controls } from "../systems/controls";
+import { getDifficultyModifiers } from "../systems/difficulty";
 import { PALETTE, type Palette } from "../systems/Fx";
 import { sfx } from "../systems/sfx";
 import { castSkill } from "../systems/skills";
@@ -13,7 +14,7 @@ import { Actor, type Hit } from "./Actor";
 type State = "free" | "attack" | "cast" | "dash" | "hurt" | "sweep" | "down";
 
 const HERO_HEIGHT = 150;
-const BUFFER = 0.18;
+const BUFFER = 0.22;
 const DASH_TIME = 0.18;
 const DASH_SPEED = 1150;
 const JUMP_SPEED = 1000;
@@ -50,7 +51,7 @@ export class Hero extends Actor {
     x: number,
     readonly def: HeroDef,
     readonly index: 0 | 1,
-    readonly controls: PlayerControls,
+    readonly controls: Controls,
     hpOverride?: number,
   ) {
     super(scene, x, heroKey(def.id, "idle"), hpOverride ?? def.hp, { w: 70, h: 140 }, DEPTH.hero + index);
@@ -59,6 +60,9 @@ export class Hero extends Actor {
     this.pal = PALETTE[def.element];
     this.hasWalk = scene.textures.exists(heroKey(def.id, "walk_1"));
     this.facing = index === 0 ? 1 : -1;
+    this.applyMods();
+    const upEnergy = (this.mods.energyGain - 1) * 100;
+    this.energy = 30 + Math.max(0, Math.round(upEnergy));
   }
 
   get speed() {
@@ -78,6 +82,10 @@ export class Hero extends Actor {
     this.maxHp = this.maxHpTotal();
     this.hp = this.mods.healFull ? this.maxHp : Math.round(this.maxHp * ratio);
     this.mods.healFull = false;
+  }
+
+  get dodging() {
+    return this.state === "dash";
   }
 
   gainEnergy(amount: number) {
@@ -153,6 +161,9 @@ export class Hero extends Actor {
     const done = this.stateTime >= this.stateDuration;
     switch (this.state) {
       case "hurt":
+        if (this.buffer.has("ultimate")) {
+          this.tryCast("ultimate");
+        }
         if (this.hitstun <= 0) this.setState("free", 0);
         return;
       case "dash":
@@ -174,6 +185,16 @@ export class Hero extends Actor {
           this.meleeAt = -1;
           this.doMelee();
         }
+        if (this.meleeAt < 0 && this.stateTime >= 0.09) {
+          if (this.take("skill1")) {
+            this.tryCast("skill1");
+            return;
+          }
+          if (this.take("skill2")) {
+            this.tryCast("skill2");
+            return;
+          }
+        }
         if (this.take("basic")) this.queuedBasic = true;
         if (this.tryDash()) return;
         if (done) {
@@ -187,6 +208,7 @@ export class Hero extends Actor {
           this.pendingCast = undefined;
           castSkill(this.scene, this, slot, skill);
         }
+        if (this.stateTime >= 0.15 && this.tryDash()) return;
         if (done) this.setState("free", 0);
         return;
       case "free":
@@ -238,7 +260,7 @@ export class Hero extends Actor {
     const dir = (this.controls.down("right") ? 1 : 0) - (this.controls.down("left") ? 1 : 0);
     if (dir !== 0) this.facing = dir;
     this.cooldowns.dash = 0.55 * this.mods.dashCooldown;
-    this.invuln = Math.max(this.invuln, DASH_TIME + 0.06);
+    this.invuln = Math.max(this.invuln, (DASH_TIME + 0.06) * getDifficultyModifiers().dodgeWindowMult);
     this.vx = this.facing * DASH_SPEED;
     this.vy = 0;
     this.queuedBasic = false;
@@ -277,11 +299,14 @@ export class Hero extends Actor {
       thin: !finisher,
     });
     if (finisher) this.scene.fx.dust(this.x, this.facing, 1);
+    if (finisher && !this.onGround) {
+      this.vy = Math.max(this.vy, 900);
+    }
     const hits = this.scene.meleeHit(this, rect, {
       damage: b.combo[this.comboStep - 1],
       dir: this.facing,
-      knock: finisher ? 480 : 140,
-      launch: finisher ? 420 : 0,
+      knock: finisher ? (this.onGround ? 480 : 260) : 140,
+      launch: finisher ? (this.onGround ? 420 : 0) : 0,
       color: b.color,
       status: finisher ? b.finisherStatus : undefined,
       source: this,
@@ -392,6 +417,7 @@ export class Hero extends Actor {
       this.impulse(1.22, 0.78);
       this.scene.fx.dust(this.x, 1, 0.7);
       this.scene.fx.dust(this.x, -1, 0.7);
+      this.scene.fx.ring(this.x, GROUND_Y - 4, this.pal.main, 100, 260, 0.25);
     }
     a.wasGround = grounded;
 

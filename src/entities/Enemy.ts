@@ -2,14 +2,15 @@ import Phaser from "phaser";
 import { DEPTH, GROUND_Y } from "../config/constants";
 import { ENEMIES, type EnemyDef, type EnemyType } from "../config/content";
 import { anchorX, textureHeight } from "../systems/assets";
+import { getDifficultyModifiers } from "../systems/difficulty";
 import { PALETTE } from "../systems/Fx";
 import { sfx } from "../systems/sfx";
 import type { GameScene } from "../scenes/GameScene";
 import { Actor, type Hit } from "./Actor";
 import type { Hero } from "./Hero";
 
-type State = "idle" | "move" | "windup" | "active" | "recover" | "hurt" | "dying";
-type Move = "leap" | "punch" | "charge" | "shoot" | "bash" | "slam" | "beam" | "whip" | "summon";
+type State = "idle" | "move" | "windup" | "active" | "recover" | "hurt" | "dying" | "selfDestruct";
+type Move = "leap" | "punch" | "charge" | "shoot" | "bash" | "slam" | "beam" | "whip" | "summon" | "explode" | "snipe" | "buff";
 
 export class Enemy extends Actor {
   readonly team = "enemy" as const;
@@ -25,14 +26,25 @@ export class Enemy extends Actor {
   private hoverSeed = Math.random() * 10;
   private attackIndex = 0;
   enraged = false;
+  phase: 1 | 2 | 3 = 1;
+  shieldHp = 0;
+  maxShieldHp = 0;
 
   constructor(scene: GameScene, type: EnemyType, x: number, hpScale: number) {
     const def = ENEMIES[type];
-    super(scene, x, def.sprite, Math.round(def.hp * hpScale), def.body, DEPTH.enemy);
+    const diff = getDifficultyModifiers();
+    const finalHpScale = hpScale * diff.hpMult;
+    super(scene, x, def.sprite, Math.round(def.hp * finalHpScale), def.body, DEPTH.enemy);
     this.def = def;
     this.flying = !!def.flying;
-    this.baseScale = def.height / textureHeight(def.sprite);
-    this.weight = type === "boss" ? 0.1 : type === "mutant" ? 0.35 : type === "aegis" ? 0.5 : 1;
+    this.baseScale = (def.height / textureHeight(def.sprite)) * (def.scale ?? 1);
+    this.weight = type === "boss" ? 0.1 : type === "aegis_prime" ? 0.2 : type === "mutant" ? 0.35 : type === "aegis" ? 0.5 : 1;
+    if (type === "aegis_prime") {
+      this.shieldHp = this.maxShieldHp = Math.round(300 * finalHpScale);
+    }
+    if (def.tint) {
+      this.sprite.setTint(def.tint);
+    }
     if (this.flying) this.y = GROUND_Y - 280;
     this.sprite.setOrigin(anchorX(def.sprite), 1).setScale(this.baseScale);
     // Spawn in from the edge with a short fade so waves read clearly.
@@ -70,7 +82,8 @@ export class Enemy extends Actor {
     if (this.dead) return;
 
     const target = this.target();
-    const speedMul = (this.isSlowed() ? 0.5 : 1) * (this.enraged ? 1.35 : 1);
+    const modSpeed = this.scene.activeModifier === "fast" ? 1.35 : 1;
+    const speedMul = (this.isSlowed() ? 0.5 : 1) * (this.enraged ? 1.35 : 1) * modSpeed;
     this.timer -= dt * (this.isSlowed() ? 0.6 : 1);
     this.cooldown -= dt * speedMul;
 
@@ -159,8 +172,23 @@ export class Enemy extends Actor {
       case "aegis":
         if (dist < 150) return "bash";
         return dist < 650 ? "shoot" : null;
+      case "aegis_prime":
+        if (dist < 200) return "bash";
+        return dist < 700 ? "shoot" : null;
+      case "bomber":
+        return dist < 220 ? "explode" : null;
+      case "sniper":
+        return dist < 950 ? "snipe" : null;
+      case "drone":
+        return "buff";
       case "boss": {
-        const cycle: Move[] = this.enraged ? ["slam", "beam", "whip", "summon", "beam", "slam"] : ["slam", "beam", "whip", "summon"];
+        const cycle: Move[] = this.phase === 3
+          ? ["slam", "charge", "beam", "whip", "summon"]
+          : this.phase === 2
+          ? ["charge", "slam", "beam", "summon"]
+          : this.enraged
+          ? ["slam", "beam", "whip", "summon", "beam", "slam"]
+          : ["slam", "beam", "whip", "summon"];
         let m = cycle[this.attackIndex % cycle.length];
         this.attackIndex += 1;
         if (m === "whip" && dist > 380) m = "beam";
@@ -177,10 +205,12 @@ export class Enemy extends Actor {
     this.vx = 0;
     this.facing = target.x >= this.x ? 1 : -1;
     const fast = this.enraged ? 0.75 : 1;
+    const diff = getDifficultyModifiers();
     const windups: Record<Move, number> = {
       leap: 0.42, punch: 0.55, charge: 0.6, shoot: 0.55, bash: 0.45, slam: 0.95, beam: 1.05, whip: 0.6, summon: 0.6,
+      explode: 1.2, snipe: 1.3, buff: 0.8,
     };
-    this.setState("windup", windups[move] * fast);
+    this.setState("windup", windups[move] * fast * diff.telegraphMult);
     this.telegraphFor(move);
   }
 
@@ -203,7 +233,29 @@ export class Enemy extends Actor {
       this.scene.tweens.add({ targets: zone, rotation: 3, scaleX: 3, alpha: 0.35, yoyo: true, repeat: -1, duration: 300 });
       this.telegraph = zone;
       sfx.warn();
-    } else if (move !== "shoot" && move !== "summon") {
+    } else if (move === "explode") {
+      const mark = this.scene.add
+        .text(this.x, this.y - this.bodyH - 26, "💣 NỔ!", { fontFamily: "Arial", fontSize: "28px", fontStyle: "900", color: "#ff8800", stroke: "#000", strokeThickness: 5 })
+        .setOrigin(0.5)
+        .setDepth(DEPTH.text);
+      this.scene.tweens.add({ targets: mark, scale: 1.3, yoyo: true, repeat: -1, duration: 150 });
+      this.telegraph = mark;
+      this.scene.fx.ring(this.x, this.y - 30, 0xff4400, 180, this.timer * 1000);
+      sfx.warn();
+    } else if (move === "snipe") {
+      const [minX, maxX] = this.scene.arenaBounds();
+      const aimY = this.y - 20;
+      const x0 = this.facing > 0 ? this.x : minX;
+      const x1 = this.facing > 0 ? maxX : this.x;
+      const line = this.scene.add.image((x0 + x1) / 2, aimY, "beam").setTint(0xaa44ff).setBlendMode(Phaser.BlendModes.ADD).setDisplaySize(x1 - x0, 2).setDepth(DEPTH.fx);
+      this.scene.tweens.add({ targets: line, alpha: 0.8, yoyo: true, repeat: -1, duration: 90 });
+      this.telegraph = line;
+      sfx.warn();
+    } else if (move === "buff") {
+      this.scene.fx.ring(this.x, this.y - 20, 0x33ffaa, 220, this.timer * 1000);
+    } else if (move === "shoot") {
+      this.scene.fx.charge(this.x + this.facing * this.bodyW * 0.45, this.flying ? this.y - 20 : this.y - this.bodyH * 0.55, pal, this.timer * 1000, 70, 10);
+    } else if (move !== "summon") {
       const mark = this.scene.add
         .text(this.x, this.y - this.bodyH - 26, "!", { fontFamily: "Arial", fontSize: "38px", fontStyle: "900", color: "#ff3355", stroke: "#000", strokeThickness: 6 })
         .setOrigin(0.5)
@@ -211,8 +263,6 @@ export class Enemy extends Actor {
         .setScale(0.2);
       this.scene.tweens.add({ targets: mark, scale: 1.2, duration: 140, ease: "Back.easeOut" });
       this.telegraph = mark;
-    } else if (move === "shoot") {
-      this.scene.fx.charge(this.x + this.facing * this.bodyW * 0.45, this.flying ? this.y - 20 : this.y - this.bodyH * 0.55, pal, this.timer * 1000, 70, 10);
     }
   }
 
@@ -224,7 +274,7 @@ export class Enemy extends Actor {
   private release(target: Hero) {
     this.impulse(1.16, 0.88);
     this.clearTelegraph();
-    const d = this.def.damage;
+    const d = Math.round(this.def.damage * getDifficultyModifiers().damageMult);
     switch (this.move) {
       case "leap":
         this.vx = this.facing * 640;
@@ -258,6 +308,13 @@ export class Enemy extends Actor {
           owner: this, x: sx, y: sy, vx: Math.cos(aim) * speed, vy: Math.sin(aim) * speed, size: 16, color: 0xff4d6d, pierce: 1, style: "enemy",
           hit: { damage: d, dir: this.facing, knock: 220, color: 0xff4d6d },
         });
+        if (this.scene.activeModifier === "double_shot") {
+          const aim2 = aim + (this.flying ? 0.2 : 0.08);
+          this.scene.spawnProjectile({
+            owner: this, x: sx, y: sy, vx: Math.cos(aim2) * speed, vy: Math.sin(aim2) * speed, size: 14, color: 0xff4d6d, pierce: 1, style: "enemy",
+            hit: { damage: Math.round(d * 0.8), dir: this.facing, knock: 200, color: 0xff4d6d },
+          });
+        }
         sfx.enemyShot();
         this.setState("active", 0.15);
         break;
@@ -284,8 +341,43 @@ export class Enemy extends Actor {
       }
       case "summon":
         sfx.warn();
-        for (let i = 0; i < (this.enraged ? 3 : 2); i += 1) this.scene.time.delayedCall(i * 200, () => this.scene.spawnEnemy("crawler", i % 2 ? "left" : "right"));
+        const summonType = this.phase >= 2 ? "bomber" : "crawler";
+        for (let i = 0; i < (this.enraged ? 3 : 2); i += 1) {
+          this.scene.time.delayedCall(i * 200, () => this.scene.spawnEnemy(summonType, i % 2 ? "left" : "right"));
+        }
         this.setState("active", 0.3);
+        break;
+      case "explode":
+        sfx.boom();
+        this.scene.fx.explosion(this.cx, this.cy, { main: 0xff4400, light: 0xffffaa, dark: 0x991100 }, 220);
+        this.scene.areaHit(this, this.cx, this.cy, 200, { damage: d, dir: this.facing, knock: 550, color: 0xff4400 });
+        for (const e of this.scene.enemies) {
+          if (e !== this && !e.dead && Phaser.Math.Distance.Between(this.cx, this.cy, e.cx, e.cy) < 220) {
+            e.takeHit({ damage: Math.round(d * 0.75), dir: Math.sign(e.x - this.x) || 1, knock: 300, color: 0xff4400 });
+          }
+        }
+        this.die({ damage: 9999, dir: this.facing, color: 0xff4400 });
+        break;
+      case "snipe": {
+        sfx.shoot();
+        const [minX, maxX] = this.scene.arenaBounds();
+        const aimY = this.y - 20;
+        const x0 = this.facing > 0 ? this.x : minX;
+        const x1 = this.facing > 0 ? maxX : this.x;
+        this.scene.spawnBeam(this, x0, x1, aimY, 30, d * 1.5);
+        this.setState("active", 0.3);
+        break;
+      }
+      case "buff":
+        sfx.zap();
+        this.scene.fx.ring(this.x, this.y - 20, 0x33ffaa, 260, 400);
+        for (const e of this.scene.enemies) {
+          if (e !== this && !e.dead && Phaser.Math.Distance.Between(this.x, this.y, e.x, e.y) < 360) {
+            e.vx *= 1.3;
+            this.scene.fx.label(e.x, e.y - e.bodyH - 10, "BUFF!", "#33ffaa");
+          }
+        }
+        this.setState("active", 0.4);
         break;
     }
   }
@@ -298,15 +390,24 @@ export class Enemy extends Actor {
       if (h.dead || this.moveHit.has(h)) continue;
       if (Phaser.Geom.Intersects.RectangleToRectangle(rect, h.bounds())) {
         this.moveHit.add(h);
-        this.scene.dealDamage(this, h, { damage: this.def.damage, dir: this.facing, knock: 420, launch: 300, color: 0xff3355 });
+        this.scene.dealDamage(this, h, { damage: Math.round(this.def.damage * getDifficultyModifiers().damageMult), dir: this.facing, knock: 420, launch: 300, color: 0xff3355 });
       }
     }
     if (this.move === "leap" && this.onGround && this.timer < 0.4) this.timer = 0;
   }
 
-  /** Aegis shield blocks light frontal hits. Returns the damage multiplier. */
+  /** Aegis and Aegis Prime shield blocks light frontal hits or absorbs shield HP. */
   shieldFactor(hit: Hit) {
-    if (this.def.type !== "aegis" || hit.heavy || this.isStunned() || this.state === "hurt") return 1;
+    if (this.def.type === "aegis_prime" && this.shieldHp > 0) {
+      this.shieldHp = Math.max(0, this.shieldHp - hit.damage);
+      if (this.shieldHp <= 0) {
+        this.scene.fx.flashCore(this.cx, this.cy, 1.5);
+        this.scene.fx.label(this.x, this.y - this.bodyH - 20, "VỠ KHIÊN!", "#ffdd55");
+        sfx.boom();
+      }
+      return 0.1;
+    }
+    if ((this.def.type !== "aegis" && this.def.type !== "aegis_prime") || hit.heavy || this.isStunned() || this.state === "hurt") return 1;
     const attackerX = hit.source?.x ?? this.x - hit.dir;
     const fromFront = Math.sign(attackerX - this.x) === this.facing;
     return fromFront ? 0.15 : 1;
@@ -326,9 +427,20 @@ export class Enemy extends Actor {
       this.hitstun = 0.32;
       this.setState("hurt", 0);
     }
-    if (this.isBoss && !this.enraged && this.hp < this.maxHp * 0.5) {
-      this.enraged = true;
-      this.scene.onBossEnrage(this);
+    if (this.isBoss) {
+      if (this.hp < this.maxHp * 0.33 && this.phase < 3) {
+        this.phase = 3;
+        this.enraged = true;
+        this.scene.onBossEnrage(this);
+        this.scene.events.emit("toast", "Colossus bước vào Pha 3: Nộ Khí Cuồng Nộ!");
+      } else if (this.hp < this.maxHp * 0.66 && this.phase < 2) {
+        this.phase = 2;
+        this.scene.onBossEnrage(this);
+        this.scene.events.emit("toast", "Colossus bước vào Pha 2: Thiết Giáp Phá!");
+      } else if (!this.enraged && this.hp < this.maxHp * 0.5) {
+        this.enraged = true;
+        this.scene.onBossEnrage(this);
+      }
     }
     void hit;
   }

@@ -1,10 +1,16 @@
 // Tiny WebAudio synth so the game has punchy feedback without shipping audio files.
+import { loadSettings, saveSettings } from "./settings";
+
 type Wave = OscillatorType;
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 let noiseBuffer: AudioBuffer | null = null;
-let muted = false;
+
+const initialSettings = loadSettings();
+let muted = initialSettings.muted;
+let currentVolume = Math.max(0, Math.min(1, initialSettings.volume));
+const BASE_GAIN = 0.32;
 
 const audio = () => {
   if (!ctx) {
@@ -12,7 +18,7 @@ const audio = () => {
     if (!Ctor) return null;
     ctx = new Ctor();
     master = ctx.createGain();
-    master.gain.value = 0.32;
+    master.gain.value = BASE_GAIN * currentVolume;
     master.connect(ctx.destination);
     noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 0.5, ctx.sampleRate);
     const data = noiseBuffer.getChannelData(0);
@@ -58,7 +64,16 @@ const noise = (dur: number, vol = 0.4, cutoff = 2000, delay = 0) => {
 
 export const sfx = {
   unlock: () => audio(),
-  toggleMute: () => (muted = !muted),
+  setVolume: (v: number) => {
+    currentVolume = Math.max(0, Math.min(1, v));
+    if (master) master.gain.value = BASE_GAIN * currentVolume;
+    saveSettings({ volume: currentVolume });
+  },
+  toggleMute: () => {
+    muted = !muted;
+    saveSettings({ muted });
+    return muted;
+  },
   isMuted: () => muted,
   swing: () => { noise(0.08, 0.25, 4000); tone(520, 260, 0.07, "triangle", 0.12); },
   hit: () => { noise(0.1, 0.45, 2600); tone(180, 60, 0.1, "square", 0.25); },
@@ -68,6 +83,10 @@ export const sfx = {
   boom: () => { noise(0.45, 0.7, 1200); tone(120, 30, 0.4, "sine", 0.5); },
   jump: () => tone(300, 620, 0.1, "triangle", 0.15),
   dash: () => noise(0.16, 0.3, 3200),
+  dodge: () => {
+    tone(1200, 400, 0.15, "sine", 0.3);
+    noise(0.08, 0.2, 4000);
+  },
   pickup: () => { tone(880, 880, 0.06, "square", 0.12); tone(1320, 1320, 0.08, "square", 0.12, 0.06); },
   hurt: () => { tone(240, 80, 0.2, "sawtooth", 0.25); noise(0.12, 0.3, 1500); },
   enemyShot: () => tone(500, 180, 0.16, "square", 0.1),

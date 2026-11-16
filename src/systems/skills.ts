@@ -89,6 +89,13 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
         fx.embers(cx, cy, pal, 20, skill.radius * 0.6);
         fx.smoke(cx, cy, 5, 60);
         fx.shake(0.01, 180);
+      } else if (hero.def.element === "earth") {
+        // Earth Barrier: heavy rock burst, shockwave, and pillar
+        fx.pillar(cx, pal.main, 1.8, 1.2, 500);
+        fx.ring(cx, GROUND_Y - 4, pal.main, skill.radius * 1.5, 500, 0.25);
+        fx.shards(cx, cy, pal, 25, 900);
+        fx.dust(cx, dir, 1.5);
+        fx.shake(0.015, 220);
       } else {
         // Rising Blade: three stacked upward crescents and a plasma pillar.
         [0, 1, 2].forEach((i) => {

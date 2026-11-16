@@ -1,12 +1,25 @@
 import Phaser from "phaser";
 import { GAME_HEIGHT, GAME_WIDTH } from "./config/constants";
 import { BootScene } from "./scenes/BootScene";
+import { CodexScene } from "./scenes/CodexScene";
 import { GameScene } from "./scenes/GameScene";
 import { MenuScene } from "./scenes/MenuScene";
 import { UIScene } from "./scenes/UIScene";
+import { WorkshopScene } from "./scenes/WorkshopScene";
 import { bindTouchControls } from "./systems/controls";
 
 bindTouchControls();
+
+const fsBtn = document.getElementById("fullscreenBtn");
+if (fsBtn) {
+  fsBtn.addEventListener("click", () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  });
+}
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -17,7 +30,7 @@ const game = new Phaser.Game({
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   render: { antialias: true, powerPreference: "high-performance" },
   input: { activePointers: 4 },
-  scene: [BootScene, MenuScene, GameScene, UIScene],
+  scene: [BootScene, MenuScene, GameScene, UIScene, WorkshopScene, CodexScene],
 });
 
 // Exposed for automated smoke tests.

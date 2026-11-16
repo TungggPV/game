@@ -1,7 +1,8 @@
 import Phaser from "phaser";
 import { DEPTH, FONT, GAME_HEIGHT, GAME_WIDTH, GROUND_Y, hex } from "../config/constants";
+import { loadSettings } from "./settings";
 
-export type HeroElement = "plasma" | "fire" | "volt" | "wind";
+export type HeroElement = "plasma" | "fire" | "volt" | "wind" | "earth";
 export type Element = HeroElement | "enemy" | "boss";
 
 export type Palette = { main: number; light: number; dark: number };
@@ -11,6 +12,7 @@ export const PALETTE: Record<Element, Palette> = {
   fire: { main: 0xff6a1a, light: 0xfff0a0, dark: 0xc0142a },
   volt: { main: 0xffd93a, light: 0xfffbe6, dark: 0x8a5cff },
   wind: { main: 0x3df2a0, light: 0xe0fff0, dark: 0x0b8f74 },
+  earth: { main: 0xcca052, light: 0xffe6a8, dark: 0x704812 },
   enemy: { main: 0xff3355, light: 0xffd0d8, dark: 0x6a0a2a },
   boss: { main: 0x8f6bff, light: 0xeee6ff, dark: 0x2c1690 },
 };
@@ -28,8 +30,25 @@ const alignToVelocity = {
 
 export class Fx {
   private dim?: Phaser.GameObjects.Image;
+  private textPool: Phaser.GameObjects.Text[] = [];
 
-  constructor(private scene: Phaser.Scene) {}
+  constructor(private scene: Phaser.Scene) {
+    for (let i = 0; i < 40; i += 1) {
+      const t = this.scene.add
+        .text(0, 0, "", {
+          fontFamily: FONT,
+          fontSize: "24px",
+          fontStyle: "900",
+          color: "#ffffff",
+          stroke: "#05070c",
+          strokeThickness: 5,
+        })
+        .setOrigin(0.5)
+        .setDepth(DEPTH.text)
+        .setVisible(false);
+      this.textPool.push(t);
+    }
+  }
 
   // ---------- primitives ----------
 
@@ -309,6 +328,7 @@ export class Fx {
   // ---------- screen ----------
 
   shake(intensity = 0.006, duration = 120) {
+    if (!loadSettings().shake) return;
     this.scene.cameras.main.shake(duration, intensity);
   }
 
@@ -340,24 +360,60 @@ export class Fx {
     this.dim = v;
   }
 
+  lavaGeyser(x: number) {
+    this.pillar(x, 0xff5511, 2.2, 1.4, 700);
+    this.ring(x, GROUND_Y - 4, 0xff7722, 160, 500, 0.25);
+    this.shards(x, GROUND_Y - 30, { main: 0xff4400, light: 0xffffaa, dark: 0x991100 }, 20, 800);
+    this.smoke(x, GROUND_Y - 40, 6, 80);
+    this.shake(0.012, 200);
+  }
+
+  debrisFall(x: number) {
+    this.shards(x, GROUND_Y - 20, { main: 0x5a4a3a, light: 0x8a7a6a, dark: 0x2a1a0a }, 15, 600);
+    this.dust(x, 1, 1.2);
+    this.dust(x, -1, 1.2);
+  }
+
   // ---------- text ----------
 
   number(x: number, y: number, value: number, color: number, crit = false) {
-    const t = this.scene.add
-      .text(x + (Math.random() - 0.5) * 30, y, crit ? `${value}!` : String(value), {
-        fontFamily: FONT,
-        fontSize: crit ? "34px" : "24px",
-        fontStyle: "900",
-        color: crit ? "#ffe45c" : hex(color),
-        stroke: "#05070c",
-        strokeThickness: 5,
-      })
-      .setOrigin(0.5)
-      .setDepth(DEPTH.text)
-      .setScale(crit ? 1.6 : 1.25);
+    if (!loadSettings().damageNumbers) return;
+    let t = this.textPool.find((item) => !item.visible);
+    if (!t) {
+      t = this.scene.add
+        .text(0, 0, "", {
+          fontFamily: FONT,
+          fontSize: "24px",
+          fontStyle: "900",
+          color: "#ffffff",
+          stroke: "#05070c",
+          strokeThickness: 5,
+        })
+        .setOrigin(0.5)
+        .setDepth(DEPTH.text);
+      this.textPool.push(t);
+    }
+    const startX = x + (Math.random() - 0.5) * 30;
+    this.scene.tweens.killTweensOf(t);
+    t.setPosition(startX, y)
+      .setText(crit ? `${value}!` : String(value))
+      .setFontSize(crit ? "34px" : "24px")
+      .setColor(crit ? "#ffe45c" : hex(color))
+      .setAlpha(1)
+      .setScale(crit ? 1.6 : 1.25)
+      .setVisible(true);
+
     this.scene.tweens.add({ targets: t, scale: 1, duration: 160, ease: "Back.easeOut" });
     this.scene.tweens.add({ targets: t, y: y - 64, duration: 700, ease: "Cubic.easeOut" });
-    this.scene.tweens.add({ targets: t, alpha: 0, delay: 420, duration: 280, onComplete: () => t.destroy() });
+    this.scene.tweens.add({
+      targets: t,
+      alpha: 0,
+      delay: 420,
+      duration: 280,
+      onComplete: () => {
+        t.setVisible(false);
+      },
+    });
   }
 
   label(x: number, y: number, text: string, color: string) {

@@ -11,7 +11,16 @@
     <main class="game-shell">
       <section class="stage" aria-label="Element Armor game">
         <div id="gameMount" tabindex="0"></div>
+        <button id="fullscreenBtn" class="corner-btn fullscreen-btn" type="button" aria-label="Toggle Fullscreen" title="Toàn màn hình">⛶</button>
       </section>
+
+      <div id="orientationOverlay" class="orientation-overlay" aria-hidden="true">
+        <div class="orientation-box">
+          <div class="rotate-phone-icon">📱↻</div>
+          <div class="rotate-phone-text">VUI LÒNG XOAY NGANG ĐIỆN THOẠI</div>
+          <div class="rotate-phone-sub">Để có trải nghiệm chiến đấu tốt nhất</div>
+        </div>
+      </div>
 
       <nav class="touch-controls" aria-label="Mobile touch controls">
         <div class="touch-cluster move-cluster" aria-label="Move controls">

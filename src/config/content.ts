@@ -1,4 +1,6 @@
-export type EnemyType = "crawler" | "mutant" | "hunter" | "aegis" | "boss";
+import { loadProgress } from "../systems/progress";
+
+export type EnemyType = "crawler" | "mutant" | "hunter" | "aegis" | "boss" | "bomber" | "sniper" | "drone" | "aegis_prime";
 
 export type EnemyDef = {
   type: EnemyType;
@@ -11,8 +13,9 @@ export type EnemyDef = {
   score: number;
   body: { w: number; h: number };
   flying?: boolean;
-  /** Sprites are drawn facing this way in the source art. */
   artFacing: 1 | -1;
+  tint?: number;
+  scale?: number;
 };
 
 export const ENEMIES: Record<EnemyType, EnemyDef> = {
@@ -20,8 +23,14 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
   mutant: { type: "mutant", name: "Horned Mutant", sprite: "mutant", height: 170, hp: 210, speed: 105, damage: 26, score: 300, body: { w: 120, h: 160 }, artFacing: 1 },
   hunter: { type: "hunter", name: "Sky Hunter", sprite: "hunter", height: 78, hp: 70, speed: 180, damage: 14, score: 200, body: { w: 140, h: 70 }, flying: true, artFacing: 1 },
   aegis: { type: "aegis", name: "Aegis Elite", sprite: "aegis", height: 150, hp: 160, speed: 90, damage: 18, score: 350, body: { w: 110, h: 145 }, artFacing: 1 },
-  boss: { type: "boss", name: "Abyssal Colossus", sprite: "boss", height: 300, hp: 2300, speed: 70, damage: 34, score: 5000, body: { w: 260, h: 280 }, artFacing: 1 },
+  boss: { type: "boss", name: "Abyssal Colossus", sprite: "boss", height: 300, hp: 2600, speed: 70, damage: 34, score: 5000, body: { w: 260, h: 280 }, artFacing: 1 },
+  bomber: { type: "bomber", name: "Volatile Bomber", sprite: "bomber", height: 74, hp: 70, speed: 260, damage: 45, score: 250, body: { w: 110, h: 70 }, artFacing: 1, tint: 0xff6622 },
+  sniper: { type: "sniper", name: "Particle Sniper", sprite: "sniper", height: 80, hp: 85, speed: 120, damage: 32, score: 350, body: { w: 130, h: 75 }, flying: true, artFacing: 1, tint: 0x9955ff },
+  drone: { type: "drone", name: "Support Drone", sprite: "drone", height: 70, hp: 95, speed: 160, damage: 0, score: 300, body: { w: 120, h: 65 }, flying: true, artFacing: 1, tint: 0x33ffaa },
+  aegis_prime: { type: "aegis_prime", name: "Aegis Prime", sprite: "aegis", height: 210, hp: 650, speed: 85, damage: 28, score: 1500, body: { w: 154, h: 200 }, artFacing: 1, scale: 1.4, tint: 0x55ccff },
 };
+
+export const STAGE_POWER = [1, 1.35, 1.75, 2.1];
 
 export type StageDef = {
   name: string;
@@ -54,7 +63,7 @@ export const STAGES: StageDef[] = [
     waves: [
       ["aegis", "crawler", "crawler", "crawler"],
       ["mutant", "hunter", "mutant", "crawler", "crawler"],
-      ["aegis", "hunter", "aegis", "hunter", "crawler", "crawler"],
+      ["aegis_prime", "hunter", "crawler", "crawler"],
     ],
   },
   {
@@ -65,8 +74,20 @@ export const STAGES: StageDef[] = [
     floor: 0x24100a,
     waves: [
       ["mutant", "aegis", "hunter", "hunter", "crawler", "crawler"],
-      ["crawler", "crawler", "crawler", "mutant", "crawler", "crawler", "aegis", "hunter"],
+      ["crawler", "bomber", "crawler", "mutant", "aegis", "hunter"],
       ["boss"],
+    ],
+  },
+  {
+    name: "Quỹ Đạo Tan Vỡ",
+    subtitle: "Màn 4",
+    background: "bg_orbit",
+    accent: 0xa855f7,
+    floor: 0x150b2e,
+    waves: [
+      ["sniper", "drone", "crawler", "crawler"],
+      ["bomber", "bomber", "sniper", "drone", "mutant"],
+      ["aegis_prime", "sniper", "drone", "bomber", "crawler"],
     ],
   },
 ];
@@ -91,17 +112,25 @@ export type HeroMods = {
   healFull: boolean;
 };
 
-export const baseMods = (): HeroMods => ({
-  damage: 1,
-  maxHp: 0,
-  energyGain: 1,
-  cooldown: 1,
-  speed: 1,
-  dashCooldown: 1,
-  healOnKill: 0,
-  crit: 0.05,
-  healFull: false,
-});
+export const baseMods = (): HeroMods => {
+  const p = loadProgress();
+  const up = p.upgrades || {};
+  const hpBonus = (up.hp ?? 0) * 15;
+  const energyGainBonus = (up.energy ?? 0) * 0.08;
+  const cdReduction = Math.pow(0.96, up.cooldown ?? 0);
+
+  return {
+    damage: 1,
+    maxHp: hpBonus,
+    energyGain: 1 + energyGainBonus,
+    cooldown: cdReduction,
+    speed: 1,
+    dashCooldown: 1,
+    healOnKill: 0,
+    crit: 0.05,
+    healFull: false,
+  };
+};
 
 export const UPGRADES: Upgrade[] = [
   { id: "core", name: "Lõi Công Phá", desc: "+20% sát thương mọi đòn", icon: "item_chip", apply: (m) => (m.damage *= 1.2) },

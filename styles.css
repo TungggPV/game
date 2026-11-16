@@ -295,7 +295,81 @@ body:not([data-scene="game"]) .touch-controls {
     height: clamp(50px, 7.8vw, 72px);
   }
 
-  .pause-btn {
+.pause-btn {
     width: clamp(62px, 8.8vw, 84px);
+  }
+}
+
+.corner-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 40px;
+  height: 40px;
+  background: rgba(4, 18, 36, 0.75);
+  border: 1px solid rgba(24, 230, 255, 0.4);
+  color: var(--cyan);
+  border-radius: 6px;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 50;
+  transition: all 0.2s ease;
+}
+
+.corner-btn:hover {
+  background: rgba(24, 230, 255, 0.25);
+  border-color: var(--cyan);
+  box-shadow: 0 0 12px rgba(24, 230, 255, 0.4);
+}
+
+.orientation-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 7, 13, 0.96);
+  z-index: 9999;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 24px;
+}
+
+.orientation-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  color: #fff;
+}
+
+.rotate-phone-icon {
+  font-size: 54px;
+  color: var(--cyan);
+  animation: pulseRotate 2s infinite ease-in-out;
+}
+
+.rotate-phone-text {
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--gold);
+  letter-spacing: 1px;
+}
+
+.rotate-phone-sub {
+  font-size: 14px;
+  color: #9fb8cc;
+}
+
+@keyframes pulseRotate {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(90deg) scale(1.1); }
+}
+
+@media screen and (orientation: portrait) and (max-width: 820px) {
+  .orientation-overlay {
+    display: flex;
   }
 }

@@ -100,7 +100,10 @@ export abstract class Actor {
     this.flashTime = 0.09;
     const knock = (hit.knock ?? 120) * this.weight;
     this.vx = hit.dir * knock;
-    if (hit.launch && !this.flying) this.vy = -hit.launch * this.weight;
+    if (hit.launch && !this.flying) {
+      const launchMultiplier = this.y < GROUND_Y - 40 ? 0.45 : 1;
+      this.vy = -hit.launch * this.weight * launchMultiplier;
+    }
     if (hit.status) this.applyStatus(hit.status);
     if (hit.stun) this.applyStatus({ kind: "stun", time: hit.stun });
     this.onHurt(hit, dealt);
@@ -113,7 +116,8 @@ export abstract class Actor {
 
   protected physics(dt: number, friction: number) {
     if (!this.flying) {
-      this.vy += GRAVITY * dt;
+      const gMultiplier = !this.onGround && this.hitstun > 0 ? 0.55 : 1;
+      this.vy += GRAVITY * gMultiplier * dt;
       this.y += this.vy * dt;
       if (this.y >= GROUND_Y) {
         this.y = GROUND_Y;

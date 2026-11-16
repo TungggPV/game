@@ -37,6 +37,7 @@ export class UIScene extends Phaser.Scene {
   private comboShown = 0;
   private bossBar?: { root: Phaser.GameObjects.Container; fill: Phaser.GameObjects.Rectangle; trail: Phaser.GameObjects.Rectangle; boss: Enemy; t: number };
   private goArrow!: Phaser.GameObjects.Container;
+  private coopIndicators: Phaser.GameObjects.Container[] = [];
   private overlay?: { root: Phaser.GameObjects.Container; group: ButtonGroup; extraKeys?: Phaser.Input.Keyboard.Key[] };
   private pauseKeys: Phaser.Input.Keyboard.Key[] = [];
 
@@ -50,8 +51,18 @@ export class UIScene extends Phaser.Scene {
     this.overlay = undefined;
     this.bossBar = undefined;
     this.comboShown = 0;
+    this.coopIndicators = [];
 
-    this.game_.heroes.forEach((h, i) => this.panels.push(this.buildPanel(h, i)));
+    this.game_.heroes.forEach((h, i) => {
+      this.panels.push(this.buildPanel(h, i));
+      if (this.game_.mode === "coop") {
+        const ind = this.add.container(0, 0).setVisible(false).setDepth(90);
+        const tri = this.add.triangle(0, 0, 0, 0, 0, 20, 16, 10, h.def.color).setOrigin(0.5);
+        const tag = text(this, 0, -18, `P${i + 1}`, 13, hex(h.def.color), "900").setOrigin(0.5);
+        ind.add([tri, tag]);
+        this.coopIndicators.push(ind);
+      }
+    });
 
     this.scoreText = text(this, GAME_WIDTH / 2, 18, "", 30, "#ffffff", "900").setOrigin(0.5, 0);
     this.stageText = text(this, GAME_WIDTH / 2, 54, "", 15, "#9fb8cc", "700").setOrigin(0.5, 0);
@@ -146,6 +157,16 @@ export class UIScene extends Phaser.Scene {
       this.scoreText.setText(String(Math.max(0, Math.ceil(game.pkTimer))));
       this.scoreText.setColor(game.pkTimer < 10 ? "#ff5a6a" : "#ffffff");
       this.stageText.setText(`HIỆP ${game.pkRound}  ·  ${"●".repeat(game.pkWins[0])}${"○".repeat(2 - game.pkWins[0])}  vs  ${"●".repeat(game.pkWins[1])}${"○".repeat(2 - game.pkWins[1])}`);
+    } else if (game.mode === "endless") {
+      this.scoreText.setText(String(game.score).padStart(6, "0"));
+      const modTag = game.activeModifier !== "none" ? ` · [${game.activeModifier.toUpperCase()}]` : "";
+      this.stageText.setText(`VÔ TẬN · ĐỢT ${game.waveIndex + 1}${modTag}`);
+    } else if (game.mode === "bossrush") {
+      this.scoreText.setText(String(game.score).padStart(6, "0"));
+      this.stageText.setText(`BOSS RUSH · TRÙM ${game.waveIndex + 1} / 3`);
+    } else if (game.mode === "daily") {
+      this.scoreText.setText(String(game.score).padStart(6, "0"));
+      this.stageText.setText(`THỬ THÁCH NGÀY · MÀN ${game.stageIndex + 1} · ĐỢT ${game.waveIndex + 1} / 3`);
     } else {
       this.scoreText.setText(String(game.score).padStart(6, "0"));
       const stage = STAGES[game.stageIndex];
@@ -169,6 +190,24 @@ export class UIScene extends Phaser.Scene {
       b.t += (ratio - b.t) * Math.min(1, dt * 2.5);
       b.trail.width = 620 * b.t;
       b.fill.setFillStyle(b.boss.enraged ? 0xff3355 : 0xb06cff);
+    }
+
+    if (game.mode === "coop" && this.coopIndicators.length === game.heroes.length) {
+      const cam = game.cameras.main;
+      const camLeft = cam.scrollX;
+      const camRight = cam.scrollX + GAME_WIDTH;
+      game.heroes.forEach((h, i) => {
+        const ind = this.coopIndicators[i];
+        if (!ind) return;
+        if (h.dead || (h.x >= camLeft + 40 && h.x <= camRight - 40)) {
+          ind.setVisible(false);
+        } else {
+          ind.setVisible(true);
+          const isLeft = h.x < camLeft + 40;
+          ind.setPosition(isLeft ? 40 : GAME_WIDTH - 40, Phaser.Math.Clamp(h.y - 80, 80, GAME_HEIGHT - 80));
+          ind.setScale(isLeft ? -1 : 1, 1);
+        }
+      });
     }
 
     this.overlay?.group.update();
@@ -364,7 +403,12 @@ export class UIScene extends Phaser.Scene {
   }
 
   private restart() {
-    const data = { mode: this.game_.mode, heroes: this.game_.heroIds };
+    const data = {
+      mode: this.game_.mode,
+      heroes: this.game_.heroIds,
+      botDifficulty: this.game_.botDifficulty,
+      handicaps: this.game_.handicaps,
+    };
     this.closeOverlay();
     this.scene.stop("game");
     this.scene.start("game", data);
