@@ -29,7 +29,7 @@ const game = new Phaser.Game({
   height: GAME_HEIGHT,
   backgroundColor: "#02070d",
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-  render: { antialias: true, powerPreference: "high-performance" },
+  render: { antialias: true, antialiasGL: true, powerPreference: "high-performance", roundPixels: false },
   input: { activePointers: 4 },
   scene: [BootScene, MenuScene, GameScene, UIScene, WorkshopScene, CodexScene, TrainingScene],
 });

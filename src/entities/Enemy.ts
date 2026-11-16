@@ -48,10 +48,11 @@ export class Enemy extends Actor {
     const def = ENEMIES[type];
     const diff = getDifficultyModifiers();
     const finalHpScale = hpScale * diff.hpMult;
-    super(scene, x, def.sprite, Math.round(def.hp * finalHpScale), def.body, DEPTH.enemy);
+    const scaledBody = { w: Math.round(def.body.w * 1.18), h: Math.round(def.body.h * 1.18) };
+    super(scene, x, def.sprite, Math.round(def.hp * finalHpScale), scaledBody, DEPTH.enemy);
     this.def = def;
     this.flying = !!def.flying;
-    this.baseScale = (def.height / textureHeight(def.sprite)) * (def.scale ?? 1);
+    this.baseScale = (def.height / textureHeight(def.sprite)) * (def.scale ?? 1) * 1.18;
     this.weight = type === "archon_zero" ? 0.05 : type === "boss" ? 0.1 : type === "aegis_prime" ? 0.2 : type === "mutant" ? 0.35 : type === "aegis" ? 0.5 : 1;
     if (type === "aegis_prime") {
       this.shieldHp = this.maxShieldHp = Math.round(300 * finalHpScale);

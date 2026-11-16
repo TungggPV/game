@@ -26,7 +26,7 @@ const STATUS_TICK: Record<StatusKind, { every: number; damage: number; color: nu
 
 export abstract class Actor {
   readonly sprite: Phaser.GameObjects.Image;
-  readonly shadow: Phaser.GameObjects.Ellipse;
+  readonly shadow: Phaser.GameObjects.Image;
   x: number;
   y = GROUND_Y;
   vx = 0;
@@ -78,7 +78,7 @@ export abstract class Actor {
     this.hp = this.maxHp = hp;
     this.bodyW = body.w;
     this.bodyH = body.h;
-    this.shadow = scene.add.ellipse(x, GROUND_Y + 2, body.w * 0.9, 16, 0x000000, 0.45).setDepth(DEPTH.shadow);
+    this.shadow = scene.add.image(x, GROUND_Y, "contact_shadow").setDisplaySize(body.w * 1.35, 24).setDepth(DEPTH.shadow);
     this.sprite = scene.add.image(x, this.y, texture).setOrigin(0.5, 1).setDepth(depth);
   }
 
@@ -200,11 +200,14 @@ export abstract class Actor {
   }
 
   protected renderCommon() {
-    this.shadow.setPosition(this.x, GROUND_Y + 2);
+    this.shadow.setPosition(this.x, GROUND_Y);
     const height = Math.max(0, GROUND_Y - this.y);
     const shadowScale = Math.max(0.25, 1 - height / 450);
-    const shadowAlpha = (this.flying ? 0.25 : 0.45) * Math.max(0.2, 1 - height / 500);
-    this.shadow.setScale(shadowScale).setAlpha(shadowAlpha);
+    const shadowAlpha = (this.flying ? 0.35 : 0.85) * Math.max(0.2, 1 - height / 500);
+    this.shadow.setScale(
+      shadowScale * ((this.bodyW * 1.35) / 128),
+      shadowScale * (24 / 64),
+    ).setAlpha(shadowAlpha);
 
     if (this.flashTime > 0) this.sprite.setTintFill(0xffffff);
     else if (this.isStunned()) this.sprite.setTint(0xfff6a0);

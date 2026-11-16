@@ -6,6 +6,7 @@ import { heroById, type SkillDef } from "../config/heroes";
 import type { Actor, Hit } from "../entities/Actor";
 import type { Enemy } from "../entities/Enemy";
 import { Hero } from "../entities/Hero";
+import { EnvironmentProp, type PropType } from "../entities/EnvironmentProp";
 import { EventCallbacks } from "../systems/callbacks";
 import { CombatSystem } from "../systems/combat";
 import { BotControls, consumeTouch, type Controls, PlayerControls, setSceneFlag } from "../systems/controls";
@@ -84,11 +85,12 @@ export class GameScene extends Phaser.Scene {
     bar: Phaser.GameObjects.Rectangle;
     timerText: Phaser.GameObjects.Text;
   };
-  private props: { x: number; y: number; hp: number; img: Phaser.GameObjects.Image }[] = [];
+  private props: EnvironmentProp[] = [];
   private bg!: Phaser.GameObjects.TileSprite;
   private bgScale = 1;
-  private floor!: Phaser.GameObjects.TileSprite;
-  private floorGlow!: Phaser.GameObjects.Rectangle;
+  private dustEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
+  private neonGlows: { img: Phaser.GameObjects.Image; baseAlpha: number; speed: number; seed: number }[] = [];
+  private groundVignette?: Phaser.GameObjects.Rectangle;
   private pauseKeys: Phaser.Input.Keyboard.Key[] = [];
 
   constructor(key = "game") {
@@ -158,7 +160,15 @@ export class GameScene extends Phaser.Scene {
     const K = Phaser.Input.Keyboard.KeyCodes;
     this.pauseKeys = [K.P, K.ESC].map((k) => this.input.keyboard!.addKey(k));
     music.start(this.stageIndex === 4 || this.mode === "bossrush" ? "boss" : "stage");
-    this.events.once("shutdown", () => music.stop());
+    this.events.once("shutdown", () => {
+      music.stop();
+      this.props.forEach((p) => p.destroy());
+      this.props = [];
+      this.dustEmitter?.destroy();
+      this.neonGlows.forEach((n) => n.img.destroy());
+      this.neonGlows = [];
+      this.groundVignette?.destroy();
+    });
     if (this.mode === "pk") this.startPkRound();
     else this.startStage();
   }
@@ -168,56 +178,101 @@ export class GameScene extends Phaser.Scene {
   buildWorld() {
     const stage = this.stage;
     const tex = this.textures.get(stage.background).getSourceImage();
-    this.bgScale = (GROUND_Y + 30) / tex.height;
-    this.bg?.destroy();
+    this.bgScale = GAME_HEIGHT / tex.height;
+    this.bgFarScale = this.bgScale * 0.9;
     this.bgFar?.destroy();
+    this.bg?.destroy();
+    this.dustEmitter?.destroy();
+    this.groundVignette?.destroy();
+    this.neonGlows.forEach((n) => n.img.destroy());
+    this.neonGlows = [];
 
-    if (this.stageIndex === 3) {
-      // Stage 4: 2-layer parallax
-      this.bgFar = this.add
-        .tileSprite(0, 0, GAME_WIDTH, GROUND_Y + 30, "bg_city_neon")
-        .setOrigin(0)
-        .setScrollFactor(0)
-        .setTileScale(this.bgScale * 0.9)
-        .setAlpha(0.4)
-        .setDepth(DEPTH.bg - 1);
-    } else if (this.stageIndex === 4) {
-      // Stage 5: Void 2-layer parallax
-      this.bgFar = this.add
-        .tileSprite(0, 0, GAME_WIDTH, GROUND_Y + 30, "bg_orbit")
-        .setOrigin(0)
-        .setScrollFactor(0)
-        .setTileScale(this.bgScale * 0.85)
-        .setAlpha(0.3)
-        .setDepth(DEPTH.bg - 1);
-    }
+    // 1. Far background layer (bgFar): Far cyberpunk city skyline, scrolling slow at 0.15x
+    // Has a cool cyan-purple atmospheric fog tint
+    const farTexKey = this.stageIndex === 3 ? "bg_city_neon" : this.stageIndex === 4 ? "bg_orbit" : stage.background;
+    this.bgFar = this.add
+      .tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, farTexKey)
+      .setOrigin(0)
+      .setScrollFactor(0)
+      .setTileScale(this.bgFarScale)
+      .setTint(0x5b5490)
+      .setAlpha(0.48)
+      .setDepth(DEPTH.bg - 1);
 
+    // 2. Midground street layer (bg): Full 720px height, street surface sits naturally at GROUND_Y = 568
     this.bg = this.add
-      .tileSprite(0, 0, GAME_WIDTH, GROUND_Y + 30, stage.background)
+      .tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, stage.background)
       .setOrigin(0)
       .setScrollFactor(0)
       .setTileScale(this.bgScale)
       .setDepth(DEPTH.bg);
-    this.floor?.destroy();
-    const floorTex = this.stageIndex === 4 ? "floor_void" : this.stageIndex === 3 ? "floor_orbit" : "floor";
-    this.floor = this.add
-      .tileSprite(0, GROUND_Y, ARENA_WIDTH * 3 + GAME_WIDTH, GAME_HEIGHT - GROUND_Y, floorTex)
+
+    // Soft foreground vignette at the very bottom edge (y=660 to 720) so the curb details stay visible while HUD is clean
+    this.groundVignette = this.add
+      .rectangle(0, 660, ARENA_WIDTH * 3 + GAME_WIDTH, 60, 0x01050a, 0.4)
       .setOrigin(0)
-      .setTint(Phaser.Display.Color.ValueToColor(stage.floor).brighten(60).color)
       .setDepth(DEPTH.floor);
-    this.floorGlow?.destroy();
-    this.floorGlow = this.add.rectangle(0, GROUND_Y, ARENA_WIDTH * 3 + GAME_WIDTH, 3, stage.accent, 0.9).setOrigin(0, 0.5).setDepth(DEPTH.floor + 1);
+
     this.cameras.main.setBounds(0, 0, this.worldWidth, GAME_HEIGHT);
     this.cameras.main.setBackgroundColor(stage.floor);
 
-    // Spawn breakable crates
-    this.props.forEach((p) => p.img.destroy());
+    // 3. Neon signage pulse & street light flicker in Stage 1 / City
+    if (this.stageIndex === 0) {
+      for (let nx = 200; nx < this.worldWidth; nx += 420) {
+        // Cyan pulse around the NOVA.CO. curb / sign area
+        const signGlow = this.add
+          .image(nx, 605, "glow")
+          .setScale(1.2, 0.4)
+          .setTint(0x18e6ff)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setDepth(DEPTH.bg + 1);
+        this.neonGlows.push({ img: signGlow, baseAlpha: 0.35, speed: 3.2, seed: nx });
+
+        // Amber / magenta neon accents higher up on shopfronts
+        const lampGlow = this.add
+          .image(nx + 180, 410, "core")
+          .setScale(0.8, 0.8)
+          .setTint(0xf43f5e)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setDepth(DEPTH.bg + 1);
+        this.neonGlows.push({ img: lampGlow, baseAlpha: 0.4, speed: 4.5, seed: nx + 77 });
+      }
+    }
+
+    // 4. Floating atmospheric neon dust motes drifting across the air
+    this.dustEmitter = this.add
+      .particles(0, 0, "dot", {
+        x: { min: 0, max: this.worldWidth },
+        y: { min: 80, max: GROUND_Y },
+        lifespan: { min: 4000, max: 8000 },
+        speedX: { min: -15, max: 20 },
+        speedY: { min: -12, max: -32 },
+        scale: { start: 0.5, end: 0.12 },
+        alpha: { start: 0, end: 0.3 },
+        tint: [0x18e6ff, 0xa855f7, 0x67e8f9, 0xf472b6],
+        blendMode: Phaser.BlendModes.ADD,
+        frequency: 200,
+        quantity: 1,
+      })
+      .setDepth(DEPTH.fx - 2);
+
+    // 5. Spawn environment props (Crate, Barrel, Supply Chest)
+    this.props.forEach((p) => p.destroy());
     this.props = [];
-    for (let i = 0; i < 3; i += 1) {
-      const px = 400 + i * 350;
-      const py = GROUND_Y - 25;
-      const img = this.add.image(px, py, "item_chip").setScale(1.2).setDepth(DEPTH.shadow + 2);
-      this.props.push({ x: px, y: py, hp: 1, img });
+    const propPatterns: Array<{ offset: number; type: PropType }> = [
+      { offset: 420, type: "crate" },
+      { offset: 780, type: "barrel" },
+      { offset: 1140, type: "chest" },
+      { offset: 1680, type: "barrel" },
+      { offset: 2040, type: "crate" },
+      { offset: 2420, type: "chest" },
+      { offset: 2920, type: "crate" },
+      { offset: 3260, type: "barrel" },
+    ];
+    for (const p of propPatterns) {
+      if (p.offset < this.worldWidth - 100) {
+        this.props.push(new EnvironmentProp(this, p.offset, p.type));
+      }
     }
   }
 
@@ -509,9 +564,17 @@ export class GameScene extends Phaser.Scene {
     this.spawnDirector.update(real);
 
     this.updateCamera(real);
-    this.bg.tilePositionX = (this.cameras.main.scrollX * 0.35) / this.bgScale;
+    this.bg.tilePositionX = (this.cameras.main.scrollX * 1.0) / this.bgScale;
     if (this.bgFar) {
-      this.bgFar.tilePositionX = (this.cameras.main.scrollX * 0.15) / this.bgScale;
+      this.bgFar.tilePositionX = (this.cameras.main.scrollX * 0.15) / this.bgFarScale;
+    }
+
+    // Dynamic neon signage glow flicker & pulse
+    const nowSec = this.time.now / 1000;
+    for (const ng of this.neonGlows) {
+      const flicker = Math.sin(nowSec * ng.speed + ng.seed) * 0.15;
+      const jitter = Math.random() < 0.04 ? -0.15 : 0;
+      ng.img.setAlpha(Math.max(0.1, ng.baseAlpha + flicker + jitter));
     }
 
     if (this.boss && !this.boss.dead) {
@@ -628,17 +691,14 @@ export class GameScene extends Phaser.Scene {
 
     // Environment Props
     for (const p of this.props) {
-      if (p.hp <= 0) continue;
+      if (p.dead) continue;
       for (const h of this.heroes) {
-        if (!h.dead && Math.abs(h.x - p.x) < 40 && h.state === "attack") {
-          p.hp = 0;
-          p.img.destroy();
-          this.fx.shards(p.x, p.y, { main: 0x99bbcc, light: 0xffffff, dark: 0x446688 }, 12, 500);
-          this.dropLoot({ isBoss: false, x: p.x, cy: p.y } as unknown as Enemy);
+        if (!h.dead && Math.abs(h.x - p.x) < 55 && (h.state === "attack" || h.state === "cast")) {
+          p.takeHit(h);
         }
       }
     }
-    this.props = this.props.filter((p) => p.hp > 0);
+    this.props = this.props.filter((p) => !p.dead);
   }
 
   private updatePhase(dt: number) {

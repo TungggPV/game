@@ -193,6 +193,19 @@ const TEXTURES: Record<string, [number, number, Draw]> = {
     c.fillStyle = g;
     c.fillRect(0, 0, w, h);
   }],
+  contact_shadow: [128, 64, (c, w, h) => {
+    const cx = w / 2;
+    const cy = h / 2;
+    const g = c.createRadialGradient(cx, cy, 0, cx, cy, w * 0.48);
+    g.addColorStop(0, "rgba(0, 0, 0, 0.72)");
+    g.addColorStop(0.35, "rgba(0, 0, 0, 0.52)");
+    g.addColorStop(0.7, "rgba(0, 0, 0, 0.18)");
+    g.addColorStop(1, "rgba(0, 0, 0, 0)");
+    c.fillStyle = g;
+    c.beginPath();
+    c.ellipse(cx, cy, w * 0.48, h * 0.44, 0, 0, Math.PI * 2);
+    c.fill();
+  }],
 };
 
 export class BootScene extends Phaser.Scene {

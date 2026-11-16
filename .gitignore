@@ -9,3 +9,4 @@ armor-game-preview.png
 
 .vercel
 .env*
+__pycache__/

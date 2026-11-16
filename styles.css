@@ -41,23 +41,24 @@ button {
   display: grid;
   place-items: center;
   align-content: center;
-  gap: 12px;
-  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom))
-    max(12px, env(safe-area-inset-left));
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
 }
 
 .stage {
   position: relative;
-  width: min(100%, calc((100dvh - 36px) * 16 / 9), 1400px);
+  width: min(96vw, calc(94dvh * 16 / 9));
+  height: min(94dvh, calc(96vw * 9 / 16));
   aspect-ratio: 16 / 9;
   overflow: hidden;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(24, 230, 255, 0.45);
   border-radius: 8px;
   background: var(--black);
   box-shadow:
-    0 22px 70px rgba(0, 0, 0, 0.55),
-    0 0 0 1px rgba(246, 198, 90, 0.1) inset,
-    0 0 34px rgba(24, 230, 255, 0.12);
+    0 12px 48px rgba(0, 0, 0, 0.75),
+    0 0 0 1px rgba(246, 198, 90, 0.16) inset,
+    0 0 24px rgba(24, 230, 255, 0.22);
 }
 
 #gameMount {
@@ -72,11 +73,14 @@ button {
   width: 100%;
   height: 100%;
   outline: none;
-  image-rendering: auto;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: high-quality;
 }
 
 .touch-controls {
-  width: min(100%, 720px);
+  position: absolute;
+  bottom: 12px;
+  width: min(96vw, 760px);
   display: flex;
   justify-content: space-between;
   gap: 12px;

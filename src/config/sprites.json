@@ -350,7 +350,7 @@
  },
  "item_chip": {
   "file": "item_chip.png",
-  "w": 30,
+  "w": 62,
   "h": 64
  },
  "fx_slash1": {
@@ -362,6 +362,24 @@
   "file": "fx_slash2.png",
   "w": 155,
   "h": 127
+ },
+ "prop_crate": {
+  "file": "prop_crate.png",
+  "w": 72,
+  "h": 72,
+  "ax": 0.5
+ },
+ "prop_barrel": {
+  "file": "prop_barrel.png",
+  "w": 44,
+  "h": 50,
+  "ax": 0.5
+ },
+ "prop_chest": {
+  "file": "prop_chest.png",
+  "w": 118,
+  "h": 65,
+  "ax": 0.5
  },
  "bg_city_neon": {
   "file": "bg_city_neon.png",
@@ -377,91 +395,5 @@
   "file": "bg_lava_fortress.png",
   "w": 898,
   "h": 236
- },
- "bg_orbit": {
-  "file": "bg_orbit.png",
-  "w": 1024,
-  "h": 576
- },
- "floor_orbit": {
-  "file": "floor_orbit.png",
-  "w": 512,
-  "h": 256
- },
- "bomber": {
-  "file": "crawler.png",
-  "w": 120,
-  "h": 74
- },
- "sniper": {
-  "file": "hunter.png",
-  "w": 140,
-  "h": 78
- },
- "drone": {
-  "file": "hunter.png",
-  "w": 140,
-  "h": 78
- },
- "obsidian_warden_idle": {
-  "file": "nova_blade_idle.png",
-  "w": 88,
-  "h": 108,
-  "ax": 0.5113636363636364
- },
- "obsidian_warden_jump": {
-  "file": "nova_blade_jump.png",
-  "w": 107,
-  "h": 112,
-  "ax": 0.17289719626168223
- },
- "obsidian_warden_attack_slash": {
-  "file": "nova_blade_attack_slash.png",
-  "w": 154,
-  "h": 158,
-  "ax": 0.7045454545454546
- },
- "obsidian_warden_attack_blast": {
-  "file": "nova_blade_attack_blast.png",
-  "w": 217,
-  "h": 135,
-  "ax": 0.22119815668202766
- },
- "obsidian_warden_dash": {
-  "file": "nova_blade_dash.png",
-  "w": 196,
-  "h": 118,
-  "ax": 0.3673469387755102
- },
- "obsidian_warden_hit_reaction": {
-  "file": "nova_blade_hit_reaction.png",
-  "w": 116,
-  "h": 129,
-  "ax": 0.2543103448275862
- },
- "obsidian_warden_art": {
-  "file": "nova_blade_art.png",
-  "w": 612,
-  "h": 612
- },
- "obsidian_warden_icon_basic": {
-  "file": "nova_blade_icon_basic.png",
-  "w": 64,
-  "h": 64
- },
- "obsidian_warden_icon_skill1": {
-  "file": "nova_blade_icon_skill1.png",
-  "w": 64,
-  "h": 64
- },
- "obsidian_warden_icon_skill2": {
-  "file": "nova_blade_icon_skill2.png",
-  "w": 64,
-  "h": 64
- },
- "obsidian_warden_icon_ultimate": {
-  "file": "nova_blade_icon_ultimate.png",
-  "w": 64,
-  "h": 64
  }
 }

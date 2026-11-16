@@ -15,7 +15,7 @@ import { Actor, type Hit } from "./Actor";
 
 type State = "free" | "attack" | "cast" | "dash" | "hurt" | "sweep" | "down";
 
-const HERO_HEIGHT = 150;
+const HERO_HEIGHT = 178;
 const BUFFER = 0.22;
 const DASH_TIME = 0.18;
 const DASH_SPEED = 1150;
@@ -61,7 +61,7 @@ export class Hero extends Actor {
     readonly controls: Controls,
     hpOverride?: number,
   ) {
-    super(scene, x, heroKey(def.id, "idle"), hpOverride ?? def.hp, { w: 70, h: 140 }, DEPTH.hero + index);
+    super(scene, x, heroKey(def.id, "idle"), hpOverride ?? def.hp, { w: 84, h: 168 }, DEPTH.hero + index);
     this.scaleFactor = HERO_HEIGHT / textureHeight(heroKey(def.id, "idle"));
     this.jumpsLeft = def.jumps;
     this.pal = PALETTE[def.element];

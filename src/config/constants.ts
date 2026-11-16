@@ -1,6 +1,6 @@
 export const GAME_WIDTH = 1280;
 export const GAME_HEIGHT = 720;
-export const GROUND_Y = 618;
+export const GROUND_Y = 568;
 export const GRAVITY = 2600;
 export const ARENA_WIDTH = GAME_WIDTH;
 export const FONT = '"Be Vietnam Pro", "Segoe UI", Roboto, Arial, sans-serif';

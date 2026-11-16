@@ -215,8 +215,25 @@ def main() -> None:
 
     for name, rel in {**ITEMS, **FX}.items():
         a = load(rel)
-        keep_main(a, 0.2)
+        if name == "item_chip":
+            keep_main(a, 0.05)
+        else:
+            keep_main(a, 0.2)
         manifest[name] = save(trim(a), name, 64 if name.startswith("item") else None)
+
+    # City Props (Crate, Barrel, Supply Chest)
+    city_props = Image.open(ROOT / "props" / "city_props.png").convert("RGBA")
+    crate = city_props.crop((0, 0, 72, 72))
+    crate.save(OUT / "prop_crate.png", optimize=True)
+    manifest["prop_crate"] = {"file": "prop_crate.png", "w": 72, "h": 72, "ax": 0.5}
+
+    barrel = city_props.crop((94, 22, 138, 72))
+    barrel.save(OUT / "prop_barrel.png", optimize=True)
+    manifest["prop_barrel"] = {"file": "prop_barrel.png", "w": 44, "h": 50, "ax": 0.5}
+
+    chest = city_props.crop((163, 7, 281, 72))
+    chest.save(OUT / "prop_chest.png", optimize=True)
+    manifest["prop_chest"] = {"file": "prop_chest.png", "w": 118, "h": 65, "ax": 0.5}
 
     for bg in ["city_neon", "lab_sewer", "lava_fortress"]:
         manifest[f"bg_{bg}"] = save_background(bg)
