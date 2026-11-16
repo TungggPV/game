@@ -1,16 +1,19 @@
 import Phaser from "phaser";
-import { DEPTH, GROUND_Y } from "../config/constants";
+import { DEPTH, FONT, GROUND_Y } from "../config/constants";
 import { ENEMIES, type EnemyDef, type EnemyType } from "../config/content";
 import { anchorX, textureHeight } from "../systems/assets";
 import { getDifficultyModifiers } from "../systems/difficulty";
 import { PALETTE } from "../systems/Fx";
+import { AfterimageRingBuffer } from "../systems/motionSynth";
 import { sfx } from "../systems/sfx";
 import type { GameScene } from "../scenes/GameScene";
 import { Actor, type Hit } from "./Actor";
 import type { Hero } from "./Hero";
 
+export type EliteAffix = "vampiric" | "orbit_shield" | "teleporter" | "molten_trail";
+
 type State = "idle" | "move" | "windup" | "active" | "recover" | "hurt" | "dying" | "selfDestruct";
-type Move = "leap" | "punch" | "charge" | "shoot" | "bash" | "slam" | "beam" | "whip" | "summon" | "explode" | "snipe" | "buff";
+type Move = "leap" | "punch" | "charge" | "shoot" | "bash" | "slam" | "beam" | "whip" | "summon" | "explode" | "snipe" | "buff" | "clone_cross" | "dimension_slash";
 
 export class Enemy extends Actor {
   readonly team = "enemy" as const;
@@ -29,6 +32,17 @@ export class Enemy extends Actor {
   phase: 1 | 2 | 3 = 1;
   shieldHp = 0;
   maxShieldHp = 0;
+  readonly afterimages: AfterimageRingBuffer;
+
+  // Elite Affixes
+  isElite = false;
+  affixes: EliteAffix[] = [];
+  eliteAura?: Phaser.GameObjects.Arc;
+  orbitSpheres: Phaser.GameObjects.Arc[] = [];
+  orbitAngle = 0;
+  teleportTimer = 4.5;
+  moltenTimer = 0;
+  dimensionSafeX?: number;
 
   constructor(scene: GameScene, type: EnemyType, x: number, hpScale: number) {
     const def = ENEMIES[type];
@@ -38,10 +52,16 @@ export class Enemy extends Actor {
     this.def = def;
     this.flying = !!def.flying;
     this.baseScale = (def.height / textureHeight(def.sprite)) * (def.scale ?? 1);
-    this.weight = type === "boss" ? 0.1 : type === "aegis_prime" ? 0.2 : type === "mutant" ? 0.35 : type === "aegis" ? 0.5 : 1;
+    this.weight = type === "archon_zero" ? 0.05 : type === "boss" ? 0.1 : type === "aegis_prime" ? 0.2 : type === "mutant" ? 0.35 : type === "aegis" ? 0.5 : 1;
     if (type === "aegis_prime") {
       this.shieldHp = this.maxShieldHp = Math.round(300 * finalHpScale);
+      this.maxPosture = this.posture = 500;
+    } else if (type === "boss") {
+      this.maxPosture = this.posture = 1000;
+    } else if (type === "archon_zero") {
+      this.maxPosture = this.posture = 1500;
     }
+    this.afterimages = new AfterimageRingBuffer(scene, DEPTH.enemy - 1);
     if (def.tint) {
       this.sprite.setTint(def.tint);
     }
@@ -53,7 +73,58 @@ export class Enemy extends Actor {
   }
 
   get isBoss() {
-    return this.def.type === "boss";
+    return this.def.type === "boss" || this.def.type === "archon_zero";
+  }
+
+  makeElite(affixes?: EliteAffix[]) {
+    this.isElite = true;
+    const POOL: EliteAffix[] = ["vampiric", "orbit_shield", "teleporter", "molten_trail"];
+    if (affixes && affixes.length > 0) {
+      this.affixes = affixes;
+    } else {
+      const count = Math.random() < 0.35 ? 2 : 1;
+      Phaser.Utils.Array.Shuffle(POOL);
+      this.affixes = POOL.slice(0, count);
+    }
+    this.baseScale *= 1.22;
+    this.maxHp = Math.round(this.maxHp * 1.6);
+    this.hp = this.maxHp;
+    this.maxPosture = this.posture = 250;
+    this.weight *= 0.5;
+
+    // Glowing elite aura
+    this.eliteAura = this.scene.add.circle(this.x, this.y, 45, 0xffbb00, 0.25)
+      .setStrokeStyle(3, 0xffbb00, 0.8)
+      .setDepth(DEPTH.shadow + 1);
+    this.scene.tweens.add({
+      targets: this.eliteAura,
+      scaleX: 1.15,
+      scaleY: 1.15,
+      alpha: 0.5,
+      duration: 600,
+      yoyo: true,
+      repeat: -1,
+    });
+
+    if (this.affixes.includes("orbit_shield")) {
+      for (let i = 0; i < 2; i++) {
+        const s = this.scene.add.circle(this.x, this.cy, 12, 0x18e6ff, 0.9)
+          .setStrokeStyle(2, 0xffffff, 0.9)
+          .setDepth(DEPTH.enemy + 1);
+        this.orbitSpheres.push(s);
+      }
+    }
+  }
+
+  doTeleport() {
+    const target = this.target();
+    if (!target) return;
+    this.scene.fx.sparks(this.x, this.cy, 0xaa44ff, 1, 14);
+    sfx.dash();
+    const side = Math.random() < 0.5 ? 1 : -1;
+    this.x = Phaser.Math.Clamp(target.x + side * 90, this.scene.arenaMin + 50, this.scene.arenaMax - 50);
+    this.facing = this.x < target.x ? 1 : -1;
+    this.scene.fx.sparks(this.x, this.cy, 0xaa44ff, 1, 14);
   }
 
   private target(): Hero | undefined {
@@ -71,6 +142,8 @@ export class Enemy extends Actor {
   }
 
   update(dt: number) {
+    this.capturePrevTransform();
+    this.afterimages.update(dt);
     this.tickTimers(dt);
     if (this.state === "dying") {
       this.timer -= dt;
@@ -87,7 +160,7 @@ export class Enemy extends Actor {
     this.timer -= dt * (this.isSlowed() ? 0.6 : 1);
     this.cooldown -= dt * speedMul;
 
-    if (this.isStunned()) {
+    if (this.isStunned() || this.isBroken()) {
       this.clearTelegraph();
       if (this.state === "windup" || this.state === "active") this.setState("recover", 0.3);
     } else if (this.state === "hurt") {
@@ -102,6 +175,66 @@ export class Enemy extends Actor {
     }
     this.physics(dt, this.state === "active" ? 1 : 8);
     if (!this.flying) this.separate();
+
+    if (this.isElite) {
+      this.eliteAura?.setPosition(this.x, this.y);
+      if (this.orbitSpheres.length > 0) {
+        this.orbitAngle += dt * 3.5;
+        for (let i = 0; i < this.orbitSpheres.length; i++) {
+          const a = this.orbitAngle + (i * Math.PI * 2) / this.orbitSpheres.length;
+          const ox = this.x + Math.cos(a) * 65;
+          const oy = this.y - this.bodyH * 0.5 + Math.sin(a) * 35;
+          this.orbitSpheres[i].setPosition(ox, oy);
+
+          for (const h of this.scene.heroes) {
+            if (!h.dead && Math.hypot(h.x - ox, (h.y - h.bodyH * 0.5) - oy) < 32) {
+              this.scene.dealDamage(this, h, { damage: 15, dir: Math.sign(h.x - this.x) || 1, knock: 160, color: 0x18e6ff });
+            }
+          }
+        }
+      }
+
+      if (this.affixes.includes("teleporter")) {
+        this.teleportTimer -= dt;
+        if (this.teleportTimer <= 0) {
+          this.teleportTimer = 4.5 + Math.random() * 2;
+          this.doTeleport();
+        }
+      }
+
+      if (this.affixes.includes("molten_trail") && this.onGround && Math.abs(this.vx) > 30) {
+        this.moltenTimer -= dt;
+        if (this.moltenTimer <= 0) {
+          this.moltenTimer = 0.45;
+          const mx = this.x;
+          this.scene.fx.ring(mx, GROUND_Y - 4, 0xff5511, 40, 1800, 0.4);
+          this.scene.time.delayedCall(400, () => {
+            for (const h of this.scene.heroes) {
+              if (!h.dead && Math.abs(h.x - mx) < 40 && h.onGround) {
+                this.scene.dealDamage(this, h, { damage: 10, dir: 1, knock: 50, color: 0xff5511 });
+              }
+            }
+          });
+        }
+      }
+    }
+
+    const disp = Math.hypot(this.x - this.prevX, this.y - this.prevY);
+    if (disp > 16 && (this.state === "active" || this.move === "charge" || this.move === "leap")) {
+      this.afterimages.emitIntermediate(
+        this.prevX,
+        this.prevY,
+        this.x,
+        this.y,
+        this.sprite.texture.key,
+        this.isBoss ? 0xff3355 : 0xaa44ff,
+        this.sprite.scaleX,
+        this.sprite.scaleY,
+        this.sprite.rotation,
+        2,
+      );
+    }
+
     this.render();
   }
 
@@ -181,6 +314,17 @@ export class Enemy extends Actor {
         return dist < 950 ? "snipe" : null;
       case "drone":
         return "buff";
+      case "archon_zero": {
+        const cycle: Move[] = this.phase === 3
+          ? ["dimension_slash", "clone_cross", "slam", "dimension_slash"]
+          : this.phase === 2
+          ? ["clone_cross", "charge", "beam", "whip"]
+          : ["charge", "whip", "slam", "beam"];
+        const m = cycle[this.attackIndex % cycle.length];
+        this.attackIndex += 1;
+        void target;
+        return m;
+      }
       case "boss": {
         const cycle: Move[] = this.phase === 3
           ? ["slam", "charge", "beam", "whip", "summon"]
@@ -208,7 +352,7 @@ export class Enemy extends Actor {
     const diff = getDifficultyModifiers();
     const windups: Record<Move, number> = {
       leap: 0.42, punch: 0.55, charge: 0.6, shoot: 0.55, bash: 0.45, slam: 0.95, beam: 1.05, whip: 0.6, summon: 0.6,
-      explode: 1.2, snipe: 1.3, buff: 0.8,
+      explode: 1.2, snipe: 1.3, buff: 0.8, clone_cross: 0.85, dimension_slash: 1.25,
     };
     this.setState("windup", windups[move] * fast * diff.telegraphMult);
     this.telegraphFor(move);
@@ -255,6 +399,36 @@ export class Enemy extends Actor {
       this.scene.fx.ring(this.x, this.y - 20, 0x33ffaa, 220, this.timer * 1000);
     } else if (move === "shoot") {
       this.scene.fx.charge(this.x + this.facing * this.bodyW * 0.45, this.flying ? this.y - 20 : this.y - this.bodyH * 0.55, pal, this.timer * 1000, 70, 10);
+    } else if (move === "clone_cross") {
+      const leftX = this.scene.arenaMin + 80;
+      const rightX = this.scene.arenaMax - 80;
+      this.scene.fx.ring(leftX, this.cy, 0x8844ff, 120, this.timer * 1000);
+      this.scene.fx.ring(rightX, this.cy, 0x8844ff, 120, this.timer * 1000);
+      sfx.warn();
+    } else if (move === "dimension_slash") {
+      sfx.warn();
+      const [minX, maxX] = this.scene.arenaBounds();
+      const safeX = minX + 220 + Math.random() * (maxX - minX - 440);
+      this.dimensionSafeX = safeX;
+
+      const container = this.scene.add.container(0, 0).setDepth(DEPTH.fx);
+      const w = maxX - minX;
+      const d1 = this.scene.add.rectangle((minX + maxX) / 2, GROUND_Y - 200, w, 60, 0xd946ef, 0.45);
+      const d2 = this.scene.add.rectangle((minX + maxX) / 2, GROUND_Y - 120, w, 60, 0xd946ef, 0.45);
+      const d3 = this.scene.add.rectangle((minX + maxX) / 2, GROUND_Y - 40, w, 60, 0xd946ef, 0.45);
+      const safeBox = this.scene.add.rectangle(safeX, GROUND_Y - 120, 160, 240, 0x37ffb0, 0.25).setStrokeStyle(3, 0x37ffb0, 0.9);
+      const safeText = this.scene.add.text(safeX, GROUND_Y - 230, "VÙNG AN TOÀN", {
+        fontFamily: FONT,
+        fontSize: "18px",
+        fontStyle: "bold",
+        color: "#37ffb0",
+        stroke: "#000",
+        strokeThickness: 4,
+      }).setOrigin(0.5);
+
+      container.add([d1, d2, d3, safeBox, safeText]);
+      this.scene.tweens.add({ targets: [d1, d2, d3], alpha: 0.15, yoyo: true, repeat: -1, duration: 120 });
+      this.telegraph = container;
     } else if (move !== "summon") {
       const mark = this.scene.add
         .text(this.x, this.y - this.bodyH - 26, "!", { fontFamily: "Arial", fontSize: "38px", fontStyle: "900", color: "#ff3355", stroke: "#000", strokeThickness: 6 })
@@ -379,6 +553,43 @@ export class Enemy extends Actor {
         }
         this.setState("active", 0.4);
         break;
+      case "clone_cross": {
+        sfx.dash();
+        this.scene.fx.shockRing(this.x, this.cy, 220, 0x8844ff);
+        const leftX = this.scene.arenaMin + 80;
+        const rightX = this.scene.arenaMax - 80;
+        this.scene.fx.slash(leftX + 120, this.cy, 1, PALETTE.volt, { scale: 2.8, duration: 300 });
+        this.scene.fx.slash(rightX - 120, this.cy, -1, PALETTE.volt, { scale: 2.8, duration: 300 });
+        this.scene.areaHit(this, this.x, this.cy, 360, { damage: Math.round(d * 0.9), dir: this.facing, knock: 350, color: 0x8844ff });
+        this.setState("active", 0.4);
+        break;
+      }
+      case "dimension_slash": {
+        this.scene.fx.shake(0.035, 550);
+        sfx.boom();
+        this.scene.fx.dualImpactFlash(0xd946ef, 0x18e6ff, 350);
+        this.scene.fx.shockRing(this.x, this.cy, 450, 0xd946ef);
+
+        const safeX = this.dimensionSafeX ?? this.x;
+        for (const h of this.scene.heroes) {
+          if (h.dead) continue;
+          if (Math.abs(h.x - safeX) > 90) {
+            this.scene.dealDamage(this, h, {
+              damage: Math.round(d * 1.4),
+              dir: Math.sign(h.x - this.x) || 1,
+              knock: 550,
+              launch: 300,
+              color: 0xd946ef,
+            });
+            this.scene.fx.slash(h.x, h.cy, 1, PALETTE.boss, { scale: 2.5, duration: 250 });
+          } else {
+            this.scene.fx.label(h.x, h.y - h.bodyH - 30, "NÉ THÀNH CÔNG!", "#7dffb0");
+            h.gainEnergy(30);
+          }
+        }
+        this.setState("active", 0.5);
+        break;
+      }
     }
   }
 
@@ -428,18 +639,36 @@ export class Enemy extends Actor {
       this.setState("hurt", 0);
     }
     if (this.isBoss) {
-      if (this.hp < this.maxHp * 0.33 && this.phase < 3) {
-        this.phase = 3;
-        this.enraged = true;
-        this.scene.onBossEnrage(this);
-        this.scene.events.emit("toast", "Colossus bước vào Pha 3: Nộ Khí Cuồng Nộ!");
-      } else if (this.hp < this.maxHp * 0.66 && this.phase < 2) {
-        this.phase = 2;
-        this.scene.onBossEnrage(this);
-        this.scene.events.emit("toast", "Colossus bước vào Pha 2: Thiết Giáp Phá!");
-      } else if (!this.enraged && this.hp < this.maxHp * 0.5) {
-        this.enraged = true;
-        this.scene.onBossEnrage(this);
+      if (this.def.type === "archon_zero") {
+        if (this.hp < this.maxHp * 0.35 && this.phase < 3) {
+          this.phase = 3;
+          this.enraged = true;
+          this.sprite.setTint(0xd946ef);
+          this.scene.onBossEnrage(this);
+          this.scene.events.emit("toast", "Archon Zero chuyển dạng: Lõi Hư Không — Trảm Không Gian!");
+          this.scene.fx.dualImpactFlash(0xd946ef, 0x18e6ff, 320);
+          this.scene.fx.shockRing(this.x, this.cy, 380, 0xd946ef);
+        } else if (this.hp < this.maxHp * 0.7 && this.phase < 2) {
+          this.phase = 2;
+          this.sprite.setTint(0x8844ff);
+          this.scene.onBossEnrage(this);
+          this.scene.events.emit("toast", "Archon Zero chuyển dạng: Lôi Điện Phân Thân!");
+          this.scene.fx.dualImpactFlash(0x8844ff, 0xffe45c, 300);
+        }
+      } else {
+        if (this.hp < this.maxHp * 0.33 && this.phase < 3) {
+          this.phase = 3;
+          this.enraged = true;
+          this.scene.onBossEnrage(this);
+          this.scene.events.emit("toast", "Colossus bước vào Pha 3: Nộ Khí Cuồng Nộ!");
+        } else if (this.hp < this.maxHp * 0.66 && this.phase < 2) {
+          this.phase = 2;
+          this.scene.onBossEnrage(this);
+          this.scene.events.emit("toast", "Colossus bước vào Pha 2: Thiết Giáp Phá!");
+        } else if (!this.enraged && this.hp < this.maxHp * 0.5) {
+          this.enraged = true;
+          this.scene.onBossEnrage(this);
+        }
       }
     }
     void hit;
@@ -568,7 +797,11 @@ export class Enemy extends Actor {
     }
   }
 
-  destroy() {
+  override destroy() {
+    this.eliteAura?.destroy();
+    this.orbitSpheres.forEach((s) => s.destroy());
+    this.orbitSpheres = [];
+    this.afterimages.destroy();
     this.clearTelegraph();
     super.destroy();
   }

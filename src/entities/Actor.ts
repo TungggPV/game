@@ -14,6 +14,7 @@ export type Hit = {
   /** Ignore shields and super armour (skills, ultimates). */
   heavy?: boolean;
   source?: Actor;
+  element?: "pyro" | "cryo" | "electro" | "geo" | "void";
 };
 
 const STATUS_TICK: Record<StatusKind, { every: number; damage: number; color: number }> = {
@@ -45,6 +46,22 @@ export abstract class Actor {
   protected flashTime = 0;
   private statusAura?: Phaser.GameObjects.Image;
 
+  // Sub-Frame Interpolation (GĐ 6)
+  prevX: number;
+  prevY: number;
+  prevScaleX = 1;
+  prevScaleY = 1;
+  prevRotation = 0;
+
+  // Posture / Break Bar (GĐ 7)
+  maxPosture = 0;
+  posture = 0;
+  brokenTimer = 0;
+
+  // Elemental Status (GĐ 7)
+  elementalStatus?: "pyro" | "cryo" | "electro" | "geo" | "void";
+  elementalStatusTimer = 0;
+
   abstract readonly team: Team;
 
   constructor(
@@ -56,6 +73,8 @@ export abstract class Actor {
     depth: number,
   ) {
     this.x = x;
+    this.prevX = x;
+    this.prevY = GROUND_Y;
     this.hp = this.maxHp = hp;
     this.bodyW = body.w;
     this.bodyH = body.h;
@@ -75,6 +94,10 @@ export abstract class Actor {
     return this.y - this.bodyH / 2;
   }
 
+  isBroken(): boolean {
+    return this.brokenTimer > 0;
+  }
+
   bounds() {
     return new Phaser.Geom.Rectangle(this.x - this.bodyW / 2, this.y - this.bodyH, this.bodyW, this.bodyH);
   }
@@ -92,10 +115,22 @@ export abstract class Actor {
     this.status[effect.kind] = { time: Math.max(cur?.time ?? 0, effect.time), acc: cur?.acc ?? 0 };
   }
 
+  capturePrevTransform() {
+    this.prevX = this.x;
+    this.prevY = this.y;
+    this.prevScaleX = this.sprite.scaleX;
+    this.prevScaleY = this.sprite.scaleY;
+    this.prevRotation = this.sprite.rotation;
+  }
+
   /** Returns damage actually dealt (0 if ignored). */
   takeHit(hit: Hit): number {
     if (this.dead || this.invuln > 0) return 0;
-    const dealt = Math.max(1, Math.round(hit.damage));
+    let dealt = Math.max(1, Math.round(hit.damage));
+    if (this.isBroken()) {
+      // 1.5x damage when broken
+      dealt = Math.round(dealt * 1.5);
+    }
     this.hp = Math.max(0, this.hp - dealt);
     this.flashTime = 0.09;
     const knock = (hit.knock ?? 120) * this.weight;
@@ -167,7 +202,10 @@ export abstract class Actor {
   protected renderCommon() {
     this.shadow.setPosition(this.x, GROUND_Y + 2);
     const height = Math.max(0, GROUND_Y - this.y);
-    this.shadow.setScale(Math.max(0.35, 1 - height / 500)).setAlpha(this.flying ? 0.25 : 0.45);
+    const shadowScale = Math.max(0.25, 1 - height / 450);
+    const shadowAlpha = (this.flying ? 0.25 : 0.45) * Math.max(0.2, 1 - height / 500);
+    this.shadow.setScale(shadowScale).setAlpha(shadowAlpha);
+
     if (this.flashTime > 0) this.sprite.setTintFill(0xffffff);
     else if (this.isStunned()) this.sprite.setTint(0xfff6a0);
     else this.sprite.clearTint();
@@ -177,6 +215,18 @@ export abstract class Actor {
     this.flashTime -= dt;
     this.invuln = Math.max(0, this.invuln - dt);
     this.hitstun = Math.max(0, this.hitstun - dt);
+    if (this.brokenTimer > 0) {
+      this.brokenTimer = Math.max(0, this.brokenTimer - dt);
+      if (this.brokenTimer <= 0 && this.maxPosture > 0) {
+        this.posture = this.maxPosture;
+      }
+    }
+    if (this.elementalStatusTimer > 0) {
+      this.elementalStatusTimer -= dt;
+      if (this.elementalStatusTimer <= 0) {
+        this.elementalStatus = undefined;
+      }
+    }
   }
 
   destroy() {

@@ -6,6 +6,7 @@ import { GameScene } from "./scenes/GameScene";
 import { MenuScene } from "./scenes/MenuScene";
 import { UIScene } from "./scenes/UIScene";
 import { WorkshopScene } from "./scenes/WorkshopScene";
+import { TrainingScene } from "./scenes/TrainingScene";
 import { bindTouchControls } from "./systems/controls";
 
 bindTouchControls();
@@ -30,7 +31,7 @@ const game = new Phaser.Game({
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   render: { antialias: true, powerPreference: "high-performance" },
   input: { activePointers: 4 },
-  scene: [BootScene, MenuScene, GameScene, UIScene, WorkshopScene, CodexScene],
+  scene: [BootScene, MenuScene, GameScene, UIScene, WorkshopScene, CodexScene, TrainingScene],
 });
 
 // Exposed for automated smoke tests.

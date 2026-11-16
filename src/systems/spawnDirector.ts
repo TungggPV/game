@@ -86,8 +86,8 @@ export class SpawnDirector {
         this.spawnQueue = ["boss"];
         this.scene.events.emit("banner", "TRÙM 2 / 3", "Abyssal Colossus xuất hiện!", 0xff4d6d);
       } else {
-        this.spawnQueue = ["boss"];
-        this.scene.events.emit("banner", "TRÙM CUỐI", "Abyssal Colossus Nổi Giận!", 0xff1133);
+        this.spawnQueue = ["archon_zero"];
+        this.scene.events.emit("banner", "TRÙM CUỐI (3 / 3)", "Cổ Thần Archon Zero!", 0xd946ef);
       }
       return;
     }
@@ -168,28 +168,39 @@ export class SpawnDirector {
     this.spawnQueue = baseWave;
     const last = this.scene.stageIndex === STAGES.length - 1 && this.scene.waveIndex === waves.length - 1;
     if (last) {
-      this.scene.events.emit("banner", "CẢNH BÁO", "Abyssal Colossus xuất hiện!", 0xff3355);
+      const bossName = this.scene.stageIndex === 4 ? "Archon Zero — Cổ Thần Hư Không" : "Abyssal Colossus";
+      this.scene.events.emit("banner", "CẢNH BÁO", `${bossName} xuất hiện!`, this.scene.stageIndex === 4 ? 0xd946ef : 0xff3355);
     }
   }
 
   spawnEnemy(type: EnemyType, side?: "left" | "right"): Enemy {
     const s = side ? (side === "left" ? -1 : 1) : (this.spawnSide *= -1);
     const x = s > 0 ? this.scene.arenaMax - 70 : this.scene.arenaMin + 70;
-    const isBoss = type === "boss" || type === "aegis_prime";
+    const isBoss = type === "boss" || type === "aegis_prime" || type === "archon_zero";
     const stageScale = isBoss ? 1 : 1 + this.scene.stageIndex * 0.3;
     const coopScale = this.scene.mode === "coop" ? 1.35 : 1;
     const e = new Enemy(this.scene, type, x, stageScale * coopScale);
     e.facing = s > 0 ? -1 : 1;
     this.scene.enemies.push(e);
     unlockEntry("codex", type);
+
+    const canBeElite = !isBoss && (this.scene.stageIndex >= 1 || (this.scene.mode === "endless" && this.scene.waveIndex >= 3));
+    if (canBeElite && Math.random() < 0.22) {
+      e.makeElite();
+      this.scene.fx.label(e.x, e.y - e.bodyH - 30, `ELITE`, "#ffbb00");
+    }
+
     if (isBoss) {
       this.scene.boss = e;
       this.scene.bossStartTime = Date.now();
       e.x = this.scene.arenaMax - 260;
-      this.scene.fx.shake(0.02, 600);
+      this.scene.fx.shake(type === "archon_zero" ? 0.03 : 0.02, 700);
       this.scene.events.emit("boss", e);
+      if (type === "archon_zero") {
+        this.scene.events.emit("banner", "CẢNH BÁO TỐI CAO", "CỔ THẦN ARCHON ZERO ĐÃ THỨC TỈNH!", 0xd946ef);
+      }
     }
-    this.scene.fx.glow(e.x, e.cy, 0xff3355, 3, 400);
+    this.scene.fx.glow(e.x, e.cy, type === "archon_zero" ? 0xd946ef : 0xff3355, 3, 400);
     return e;
   }
 }

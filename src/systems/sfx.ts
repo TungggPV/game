@@ -87,6 +87,19 @@ export const sfx = {
     tone(1200, 400, 0.15, "sine", 0.3);
     noise(0.08, 0.2, 4000);
   },
+  parry: () => {
+    tone(1800, 2400, 0.22, "sine", 0.45);
+    tone(880, 1760, 0.15, "triangle", 0.35);
+    noise(0.12, 0.4, 7000);
+  },
+  break: () => {
+    tone(180, 60, 0.35, "sawtooth", 0.5);
+    noise(0.4, 0.6, 2500);
+  },
+  reaction: () => {
+    tone(587, 880, 0.18, "sine", 0.35);
+    tone(1174, 1760, 0.2, "triangle", 0.3, 0.05);
+  },
   pickup: () => { tone(880, 880, 0.06, "square", 0.12); tone(1320, 1320, 0.08, "square", 0.12, 0.06); },
   hurt: () => { tone(240, 80, 0.2, "sawtooth", 0.25); noise(0.12, 0.3, 1500); },
   enemyShot: () => tone(500, 180, 0.16, "square", 0.1),

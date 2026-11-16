@@ -1,6 +1,7 @@
 import Phaser from "phaser";
-import { ARENA_WIDTH, DEPTH, GAME_HEIGHT, GAME_WIDTH, GROUND_Y, loadBest, type GameMode } from "../config/constants";
+import { ARENA_WIDTH, DEPTH, FONT, GAME_HEIGHT, GAME_WIDTH, GROUND_Y, loadBest, type GameMode } from "../config/constants";
 import { STAGES, UPGRADES, type EnemyType, type StageDef, type Upgrade } from "../config/content";
+import { ARMOR_CORES, type ArmorCore } from "../systems/armorCores";
 import { heroById, type SkillDef } from "../config/heroes";
 import type { Actor, Hit } from "../entities/Actor";
 import type { Enemy } from "../entities/Enemy";
@@ -11,10 +12,12 @@ import { BotControls, consumeTouch, type Controls, PlayerControls, setSceneFlag 
 import { FieldSystem } from "../systems/fields";
 import { Fx, PALETTE, type Palette } from "../systems/Fx";
 import { HazardSystem } from "../systems/hazards";
+import { expDecay, FramePacer } from "../systems/motionSynth";
 import { PickupSystem } from "../systems/pickups";
 import { addCoins, loadProgress, saveDailyRecord, saveEndlessScore, saveProgress, unlockEntry } from "../systems/progress";
 import { ProjectileSystem, type ProjectileSpec } from "../systems/projectiles";
 import { sfx } from "../systems/sfx";
+import { music } from "../systems/music";
 import { SpawnDirector } from "../systems/spawnDirector";
 import { getDailyDateString } from "../config/daily";
 
@@ -55,6 +58,7 @@ export class GameScene extends Phaser.Scene {
   botDifficulty?: "easy" | "normal" | "hard";
   handicaps?: [number, number];
   activeModifier: "none" | "fast" | "lava" | "no_heal" | "double_shot" = "none";
+  framePacer = new FramePacer();
 
   // Subsystems
   combatSys!: CombatSystem;
@@ -68,6 +72,18 @@ export class GameScene extends Phaser.Scene {
   private bgFar?: Phaser.GameObjects.TileSprite;
   private bgFarScale = 1;
   private geyserTimer = 4;
+  private voidPullTimer = 11;
+  private stormTimer = 9;
+  private timeRift?: {
+    x: number;
+    y: number;
+    hp: number;
+    maxHp: number;
+    timeLeft: number;
+    container: Phaser.GameObjects.Container;
+    bar: Phaser.GameObjects.Rectangle;
+    timerText: Phaser.GameObjects.Text;
+  };
   private props: { x: number; y: number; hp: number; img: Phaser.GameObjects.Image }[] = [];
   private bg!: Phaser.GameObjects.TileSprite;
   private bgScale = 1;
@@ -75,8 +91,8 @@ export class GameScene extends Phaser.Scene {
   private floorGlow!: Phaser.GameObjects.Rectangle;
   private pauseKeys: Phaser.Input.Keyboard.Key[] = [];
 
-  constructor() {
-    super("game");
+  constructor(key = "game") {
+    super(key);
   }
 
   get combo() { return this.combatSys?.combo ?? 0; }
@@ -141,6 +157,8 @@ export class GameScene extends Phaser.Scene {
 
     const K = Phaser.Input.Keyboard.KeyCodes;
     this.pauseKeys = [K.P, K.ESC].map((k) => this.input.keyboard!.addKey(k));
+    music.start(this.stageIndex === 4 || this.mode === "bossrush" ? "boss" : "stage");
+    this.events.once("shutdown", () => music.stop());
     if (this.mode === "pk") this.startPkRound();
     else this.startStage();
   }
@@ -163,6 +181,15 @@ export class GameScene extends Phaser.Scene {
         .setTileScale(this.bgScale * 0.9)
         .setAlpha(0.4)
         .setDepth(DEPTH.bg - 1);
+    } else if (this.stageIndex === 4) {
+      // Stage 5: Void 2-layer parallax
+      this.bgFar = this.add
+        .tileSprite(0, 0, GAME_WIDTH, GROUND_Y + 30, "bg_orbit")
+        .setOrigin(0)
+        .setScrollFactor(0)
+        .setTileScale(this.bgScale * 0.85)
+        .setAlpha(0.3)
+        .setDepth(DEPTH.bg - 1);
     }
 
     this.bg = this.add
@@ -172,7 +199,7 @@ export class GameScene extends Phaser.Scene {
       .setTileScale(this.bgScale)
       .setDepth(DEPTH.bg);
     this.floor?.destroy();
-    const floorTex = this.stageIndex === 3 ? "floor_orbit" : "floor";
+    const floorTex = this.stageIndex === 4 ? "floor_void" : this.stageIndex === 3 ? "floor_orbit" : "floor";
     this.floor = this.add
       .tileSprite(0, GROUND_Y, ARENA_WIDTH * 3 + GAME_WIDTH, GAME_HEIGHT - GROUND_Y, floorTex)
       .setOrigin(0)
@@ -200,7 +227,72 @@ export class GameScene extends Phaser.Scene {
 
   // Delegate helpers
   startStage() { this.spawnDirector.startStage(); }
-  startWave() { this.spawnDirector.startWave(); }
+  startWave() {
+    this.spawnDirector.startWave();
+    if ((this.stageIndex >= 1 && this.waveIndex === 1) || (this.mode === "endless" && (this.waveIndex + 1) % 4 === 0)) {
+      this.time.delayedCall(5000, () => this.spawnTimeRift());
+    }
+  }
+
+  spawnTimeRift() {
+    if (this.timeRift || this.phase !== "fight") return;
+    const rx = (this.arenaMin + this.arenaMax) / 2;
+    const ry = GROUND_Y - 140;
+    const container = this.add.container(rx, ry).setDepth(DEPTH.enemy + 1);
+
+    const aura = this.add.circle(0, 0, 45, 0xb06cff, 0.35).setStrokeStyle(3, 0xffbb00, 0.9);
+    const crystal = this.add.polygon(0, 0, [
+      { x: 0, y: -36 },
+      { x: 26, y: 0 },
+      { x: 0, y: 36 },
+      { x: -26, y: 0 },
+    ], 0x18e6ff, 0.9).setStrokeStyle(2, 0xffffff, 0.9);
+
+    const title = this.add.text(0, -56, "CỔNG THỜI GIAN", {
+      fontFamily: FONT,
+      fontSize: "14px",
+      fontStyle: "900",
+      color: "#ffe45c",
+      stroke: "#000",
+      strokeThickness: 3,
+    }).setOrigin(0.5);
+
+    const barBg = this.add.rectangle(0, 48, 84, 8, 0x000000, 0.7).setStrokeStyle(1, 0xffffff, 0.5);
+    const bar = this.add.rectangle(-40, 48, 80, 6, 0xb06cff, 0.95).setOrigin(0, 0.5);
+    const timerText = this.add.text(0, 64, "15s", {
+      fontFamily: FONT,
+      fontSize: "13px",
+      fontStyle: "bold",
+      color: "#9ff8ff",
+      stroke: "#000",
+      strokeThickness: 2,
+    }).setOrigin(0.5);
+
+    container.add([aura, crystal, title, barBg, bar, timerText]);
+
+    this.tweens.add({
+      targets: [crystal, aura],
+      scaleX: 1.15,
+      scaleY: 1.15,
+      duration: 500,
+      yoyo: true,
+      repeat: -1,
+    });
+
+    this.timeRift = {
+      x: rx,
+      y: ry,
+      hp: 450,
+      maxHp: 450,
+      timeLeft: 15,
+      container,
+      bar,
+      timerText,
+    };
+
+    sfx.warn();
+    this.events.emit("banner", "CỔNG THỜI GIAN", "Phá hủy trong 15s để nhận Lõi Giáp!", 0xb06cff);
+  }
   spawnEnemy(type: EnemyType, side?: "left" | "right") { return this.spawnDirector.spawnEnemy(type, side); }
   aliveEnemies() { return this.spawnDirector.aliveEnemies(); }
   targetsFor(actor: Actor) { return this.combatSys.targetsFor(actor); }
@@ -223,9 +315,9 @@ export class GameScene extends Phaser.Scene {
       this.score += 500 + this.waveIndex * 150;
       if (this.waveIndex % 3 === 0) {
         this.setPhase("upgrade", 0);
-        const pool = [...UPGRADES];
+        const pool = [...ARMOR_CORES];
         Phaser.Utils.Array.Shuffle(pool);
-        this.events.emit("upgrade", pool.slice(0, 3));
+        this.events.emit("coreUpgrade", pool.slice(0, 3));
       } else {
         this.setPhase("advance", 0);
         this.events.emit("go", true);
@@ -265,9 +357,23 @@ export class GameScene extends Phaser.Scene {
   private afterStageClear() {
     if (this.stageIndex >= STAGES.length - 1) { this.finish(true); return; }
     this.setPhase("upgrade", 0);
-    const pool = [...UPGRADES];
+    const pool = [...ARMOR_CORES];
     Phaser.Utils.Array.Shuffle(pool);
-    this.events.emit("upgrade", pool.slice(0, 3));
+    this.events.emit("coreUpgrade", pool.slice(0, 3));
+  }
+
+  chooseArmorCore(core: ArmorCore) {
+    this.heroes.forEach((h) => {
+      h.equippedCores.push(core);
+      core.apply(h);
+      h.applyMods();
+    });
+    if (this.mode === "endless") {
+      this.startWave();
+    } else {
+      this.stageIndex += 1;
+      this.startStage();
+    }
   }
 
   chooseUpgrade(upgrade: Upgrade) {
@@ -292,6 +398,7 @@ export class GameScene extends Phaser.Scene {
     if (win) {
       if (this.stageIndex === 0) unlockEntry("achievements", "stage1_clear");
       if (this.stageIndex === 1) unlockEntry("achievements", "stage2_clear");
+      if (this.stageIndex === 4) unlockEntry("achievements", "archon_zero_slayer");
       if (this.heroes.every((h) => !h.dead && h.hp > 0) && unlockEntry("achievements", "no_death")) this.events.emit("toast", "Thành tựu: Không Gục Ngã!");
     }
     if (this.mode === "endless") {
@@ -371,6 +478,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_time: number, deltaMs: number) {
+    this.framePacer.record(deltaMs);
     let real = Math.min(deltaMs / 1000, 1 / 30);
     if (this.timeScaleTimer > 0) {
       this.timeScaleTimer -= real;
@@ -406,6 +514,17 @@ export class GameScene extends Phaser.Scene {
       this.bgFar.tilePositionX = (this.cameras.main.scrollX * 0.15) / this.bgScale;
     }
 
+    if (this.boss && !this.boss.dead) {
+      music.setMode("boss");
+      music.setIntensity(3);
+    } else if (this.combo >= 20 || this.heroes.some((h) => h.overdriveTimer > 0)) {
+      music.setIntensity(2);
+    } else if (this.enemies.some((e) => !e.dead)) {
+      music.setIntensity(1);
+    } else {
+      music.setIntensity(0);
+    }
+
     // Geyser in Lava Fortress (Stage 3) or Endless Lava Modifier
     if ((this.stageIndex === 2 || this.activeModifier === "lava") && this.phase === "fight") {
       this.geyserTimer -= real;
@@ -418,6 +537,89 @@ export class GameScene extends Phaser.Scene {
           for (const h of this.heroes) {
             if (!h.dead && Math.abs(h.x - gx) < 80) {
               this.dealDamage(undefined, h, { damage: 20, dir: 1, launch: 500, color: 0xff5511 });
+            }
+          }
+        });
+      }
+    }
+
+    // Dynamic Event: Time Rift
+    if (this.timeRift) {
+      this.timeRift.timeLeft -= real;
+      this.timeRift.timerText.setText(`${Math.max(0, Math.ceil(this.timeRift.timeLeft))}s`);
+      for (const h of this.heroes) {
+        if (!h.dead && (h.state === "attack" || h.state === "cast") && Math.hypot(h.x - this.timeRift.x, (h.y - 70) - this.timeRift.y) < 70) {
+          this.timeRift.hp -= h.mods.damage * 65 * real;
+          this.fx.clashSpark(this.timeRift.x + (Math.random() - 0.5) * 40, this.timeRift.y + (Math.random() - 0.5) * 40);
+          this.timeRift.bar.width = Math.max(0, (this.timeRift.hp / this.timeRift.maxHp) * 80);
+        }
+      }
+
+      if (this.timeRift.hp <= 0) {
+        this.fx.dualImpactFlash(0xb06cff, 0x18e6ff, 350);
+        this.fx.shockRing(this.timeRift.x, this.timeRift.y, 400, 0xb06cff);
+        sfx.win();
+        this.score += 5000;
+        this.heroes.forEach((h) => h.gainEnergy(50));
+        unlockEntry("achievements", "time_rift_crusher");
+        this.events.emit("toast", "ĐÃ PHÁ VỠ CỔNG THỜI GIAN! (+5000 ĐIỂM)");
+        
+        const pool = [...ARMOR_CORES];
+        Phaser.Utils.Array.Shuffle(pool);
+        this.events.emit("coreUpgrade", pool.slice(0, 3));
+
+        this.timeRift.container.destroy();
+        this.timeRift = undefined;
+      } else if (this.timeRift.timeLeft <= 0) {
+        this.fx.ring(this.timeRift.x, this.timeRift.y, 0xb06cff, 60, 300);
+        this.timeRift.container.destroy();
+        this.timeRift = undefined;
+        this.events.emit("toast", "Cổng Thời Gian đã khép lại!");
+      }
+    }
+
+    // Gravitational Vortex in Stage 5 (Lõi Hư Không)
+    if (this.stageIndex === 4 && this.phase === "fight") {
+      this.voidPullTimer -= real;
+      if (this.voidPullTimer <= 0) {
+        this.voidPullTimer = 11;
+        const cx = (this.arenaMin + this.arenaMax) / 2;
+        this.fx.shockRing(cx, GROUND_Y - 140, 500, 0xd946ef);
+        this.events.emit("toast", "Lực hút Hố Đen đang kéo mọi vật chất!");
+        sfx.warn();
+        
+        this.time.addEvent({
+          delay: 50,
+          repeat: 70,
+          callback: () => {
+            for (const h of this.heroes) {
+              if (!h.dead) {
+                const dir = Math.sign(cx - h.x) || 1;
+                h.x += dir * 2.8;
+              }
+            }
+          },
+        });
+      }
+    }
+
+    // Elemental Storm Hazard in Stage 4 & 5
+    if ((this.stageIndex === 3 || this.stageIndex === 4) && this.phase === "fight") {
+      this.stormTimer -= real;
+      if (this.stormTimer <= 0) {
+        this.stormTimer = 8 + Math.random() * 4;
+        const hero = this.heroes[0];
+        const hx = hero ? hero.x : (this.arenaMin + this.arenaMax) / 2;
+        const strikeX = Phaser.Math.Clamp(hx + (Math.random() - 0.5) * 300, this.arenaMin + 60, this.arenaMax - 60);
+        const col = this.stageIndex === 4 ? 0xd946ef : 0xaa44ff;
+        this.fx.ring(strikeX, GROUND_Y - 4, col, 80, 1100, 0.4);
+        this.time.delayedCall(1100, () => {
+          this.fx.flashCore(strikeX, GROUND_Y - 40, 1.6, 200);
+          this.fx.pillar(strikeX, col, 1.2, 1.4, 250);
+          sfx.boom();
+          for (const h of this.heroes) {
+            if (!h.dead && Math.abs(h.x - strikeX) < 55) {
+              this.dealDamage(undefined, h, { damage: 24, dir: 1, launch: 420, color: col });
             }
           }
         });
@@ -489,7 +691,7 @@ export class GameScene extends Phaser.Scene {
       const desired = avg - GAME_WIDTH * 0.5 + lookAhead;
       target = Math.abs(desired - cam.scrollX) > 160 ? Phaser.Math.Clamp(desired, this.arenaMin, this.arenaMax - GAME_WIDTH) : cam.scrollX;
     }
-    cam.scrollX += (target - cam.scrollX) * Math.min(1, dt * 5);
+    cam.scrollX = expDecay(cam.scrollX, target, 5.5, dt);
   }
 
   // Callbacks

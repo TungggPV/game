@@ -7,6 +7,7 @@ import { setSceneFlag } from "../systems/controls";
 import { getDifficulty, setDifficulty, type DifficultyLevel } from "../systems/difficulty";
 import { getDailyRecord, getEndlessLeaderboard, loadProgress } from "../systems/progress";
 import { sfx } from "../systems/sfx";
+import { music } from "../systems/music";
 import { Button, text } from "../ui/widgets";
 
 const MODES: { id: GameMode; label: string; hint: string }[] = [
@@ -118,19 +119,27 @@ export class MenuScene extends Phaser.Scene {
     });
     text(this, 690, 684, "P1: A/D  ·  P2: ←/→  ·  Tab: đổi chế độ  ·  H: hướng dẫn", 14, "#7f95a8", "700");
 
-    new Button(this, 160, 652, 210, 54, "BẮT ĐẦU", () => this.start(), 0xffe45c).setSelected(true);
-    new Button(this, 310, 652, 130, 46, "Xưởng Giáp", () => this.scene.start("workshop"), 0x18e6ff);
-    new Button(this, 445, 652, 130, 46, "Sổ Tay & TT", () => this.scene.start("codex"), 0x7dffb0);
-    new Button(this, 580, 652, 130, 46, "BXH Vô Tận", () => this.openEndlessLeaderboard(), 0xffa500);
-    new Button(this, 705, 652, 110, 46, "Giúp (H)", () => this.toggleHelp());
+    new Button(this, 130, 652, 170, 52, "BẮT ĐẦU", () => this.start(), 0xffe45c).setSelected(true);
+    new Button(this, 260, 652, 115, 46, "Võ Đường", () => {
+      sfx.confirm();
+      this.scene.start("training");
+    }, 0xd946ef);
+    new Button(this, 385, 652, 115, 46, "Xưởng Giáp", () => this.scene.start("workshop"), 0x18e6ff);
+    new Button(this, 505, 652, 115, 46, "Sổ Tay", () => this.scene.start("codex"), 0x7dffb0);
+    new Button(this, 625, 652, 115, 46, "BXH Vô Tận", () => this.openEndlessLeaderboard(), 0xffa500);
+    new Button(this, 740, 652, 100, 46, "Giúp (H)", () => this.toggleHelp());
 
     const K = Phaser.Input.Keyboard.KeyCodes;
     this.keys = this.input.keyboard!.addKeys({
       a: K.A, d: K.D, left: K.LEFT, right: K.RIGHT, tab: K.TAB, enter: K.ENTER, j: K.J, space: K.SPACE, h: K.H, esc: K.ESC,
     }) as Record<string, Phaser.Input.Keyboard.Key>;
     this.input.keyboard!.addCapture([K.TAB, K.SPACE]);
-    this.input.once("pointerdown", () => sfx.unlock());
-    this.input.keyboard!.once("keydown", () => sfx.unlock());
+    const unlockSound = () => {
+      sfx.unlock();
+      music.start("menu");
+    };
+    this.input.once("pointerdown", unlockSound);
+    this.input.keyboard!.once("keydown", unlockSound);
 
     this.setMode(this.mode, true);
     this.refresh();

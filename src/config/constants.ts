@@ -5,7 +5,7 @@ export const GRAVITY = 2600;
 export const ARENA_WIDTH = GAME_WIDTH;
 export const FONT = '"Be Vietnam Pro", "Segoe UI", Roboto, Arial, sans-serif';
 
-export type GameMode = "solo" | "coop" | "pk" | "endless" | "bossrush" | "daily";
+export type GameMode = "solo" | "coop" | "pk" | "endless" | "bossrush" | "daily" | "training";
 export type Team = "hero" | "enemy";
 export type SkillSlot = "basic" | "skill1" | "skill2" | "ultimate";
 

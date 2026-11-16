@@ -219,7 +219,76 @@ export class BootScene extends Phaser.Scene {
       tex.refresh();
     }
     this.makeFloor();
+    this.makeVoidTextures();
     this.scene.start("menu");
+  }
+
+  private makeVoidTextures() {
+    // 1. bg_void_singularity
+    const bgTex = this.textures.createCanvas("bg_void_singularity", 1280, 720);
+    if (bgTex) {
+      const ctx = bgTex.getContext();
+      const bgGrad = ctx.createRadialGradient(640, 360, 50, 640, 360, 800);
+      bgGrad.addColorStop(0, "#1a082b");
+      bgGrad.addColorStop(0.4, "#0b0416");
+      bgGrad.addColorStop(1, "#030108");
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, 1280, 720);
+
+      // Starfield
+      ctx.fillStyle = "#ffffff";
+      for (let i = 0; i < 180; i++) {
+        const sx = (Math.sin(i * 997.3) * 0.5 + 0.5) * 1280;
+        const sy = (Math.cos(i * 433.7) * 0.5 + 0.5) * 720;
+        const sr = (i % 3 === 0) ? 1.8 : 0.9;
+        ctx.globalAlpha = 0.3 + (i % 5) * 0.14;
+        ctx.beginPath();
+        ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Accretion disk glow & rings
+      ctx.globalAlpha = 1;
+      const diskGrad = ctx.createRadialGradient(640, 360, 40, 640, 360, 340);
+      diskGrad.addColorStop(0, "rgba(0,0,0,1)");
+      diskGrad.addColorStop(0.12, "rgba(0,0,0,1)");
+      diskGrad.addColorStop(0.16, "rgba(255,255,255,0.95)");
+      diskGrad.addColorStop(0.24, "rgba(217,70,239,0.7)");
+      diskGrad.addColorStop(0.45, "rgba(99,102,241,0.35)");
+      diskGrad.addColorStop(0.7, "rgba(168,85,247,0.12)");
+      diskGrad.addColorStop(1, "rgba(0,0,0,0)");
+
+      ctx.fillStyle = diskGrad;
+      ctx.beginPath();
+      ctx.ellipse(640, 360, 480, 180, -0.15, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Black hole event horizon core
+      ctx.fillStyle = "#000000";
+      ctx.beginPath();
+      ctx.arc(640, 360, 45, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Photon ring
+      ctx.strokeStyle = "rgba(255, 230, 255, 0.9)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(640, 360, 47, 0, Math.PI * 2);
+      ctx.stroke();
+
+      bgTex.refresh();
+    }
+
+    // 2. floor_void
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
+    g.fillStyle(0x0a0314).fillRect(0, 0, 160, 110);
+    g.fillStyle(0x150826).fillRect(0, 0, 160, 18);
+    g.fillStyle(0x05010a).fillRect(0, 18, 160, 4).fillRect(158, 0, 2, 110).fillRect(0, 64, 160, 2);
+    g.fillStyle(0x280e45).fillRect(6, 30, 66, 26).fillRect(84, 30, 66, 26).fillRect(6, 74, 144, 28);
+    g.fillStyle(0xd946ef).fillRect(8, 41, 62, 2).fillRect(86, 41, 62, 2).fillRect(8, 87, 140, 2);
+    g.fillStyle(0x818cf8).fillCircle(10, 9, 2.5).fillCircle(150, 9, 2.5);
+    g.generateTexture("floor_void", 160, 110);
+    g.destroy();
   }
 
   private makeFloor() {

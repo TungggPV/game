@@ -8,6 +8,7 @@ import type { Hero } from "../entities/Hero";
 import { heroKey } from "../systems/assets";
 import { setSceneFlag } from "../systems/controls";
 import { sfx } from "../systems/sfx";
+import { ArmorCore, RARITY_COLORS, getActiveSynergies } from "../systems/armorCores";
 import type { GameScene, ResultData } from "./GameScene";
 import { Button, ButtonGroup, text } from "../ui/widgets";
 
@@ -35,7 +36,14 @@ export class UIScene extends Phaser.Scene {
   private stageText!: Phaser.GameObjects.Text;
   private comboText!: Phaser.GameObjects.Text;
   private comboShown = 0;
-  private bossBar?: { root: Phaser.GameObjects.Container; fill: Phaser.GameObjects.Rectangle; trail: Phaser.GameObjects.Rectangle; boss: Enemy; t: number };
+  private bossBar?: {
+    root: Phaser.GameObjects.Container;
+    fill: Phaser.GameObjects.Rectangle;
+    trail: Phaser.GameObjects.Rectangle;
+    postureFill?: Phaser.GameObjects.Rectangle;
+    boss: Enemy;
+    t: number;
+  };
   private goArrow!: Phaser.GameObjects.Container;
   private coopIndicators: Phaser.GameObjects.Container[] = [];
   private overlay?: { root: Phaser.GameObjects.Container; group: ButtonGroup; extraKeys?: Phaser.Input.Keyboard.Key[] };
@@ -84,6 +92,7 @@ export class UIScene extends Phaser.Scene {
       ["cutin", (h: Hero, s: SkillDef) => this.cutin(h, s)],
       ["pause", () => this.openPause()],
       ["upgrade", (c: Upgrade[]) => this.openUpgrade(c)],
+      ["coreUpgrade", (c: ArmorCore[]) => this.openCoreUpgrade(c)],
       ["result", (r: ResultData) => this.openResult(r)],
     ];
     handlers.forEach(([name, fn]) => ev.on(name, fn, this));
@@ -190,6 +199,11 @@ export class UIScene extends Phaser.Scene {
       b.t += (ratio - b.t) * Math.min(1, dt * 2.5);
       b.trail.width = 620 * b.t;
       b.fill.setFillStyle(b.boss.enraged ? 0xff3355 : 0xb06cff);
+      if (b.postureFill && b.boss.maxPosture > 0) {
+        const pRatio = b.boss.isBroken() ? 0 : Math.max(0, b.boss.posture / b.boss.maxPosture);
+        b.postureFill.width = 620 * pRatio;
+        b.postureFill.setFillStyle(b.boss.isBroken() ? 0xff3355 : 0xffa500);
+      }
     }
 
     if (game.mode === "coop" && this.coopIndicators.length === game.heroes.length) {
@@ -254,12 +268,13 @@ export class UIScene extends Phaser.Scene {
     const y = GAME_HEIGHT - 44;
     const root = this.add.container(GAME_WIDTH / 2, y);
     root.add(this.add.rectangle(0, 0, 640, 34, 0x02070d, 0.85).setStrokeStyle(2, 0xb06cff));
-    const trail = this.add.rectangle(-310, 0, 620, 16, 0xffffff, 0.7).setOrigin(0, 0.5);
-    const fill = this.add.rectangle(-310, 0, 620, 16, 0xb06cff).setOrigin(0, 0.5);
-    root.add([trail, fill, text(this, 0, -30, boss.def.name.toUpperCase(), 18, "#e6c8ff", "900").setOrigin(0.5)]);
+    const trail = this.add.rectangle(-310, -2, 620, 14, 0xffffff, 0.7).setOrigin(0, 0.5);
+    const fill = this.add.rectangle(-310, -2, 620, 14, 0xb06cff).setOrigin(0, 0.5);
+    const postureFill = this.add.rectangle(-310, 9, 620, 4, 0xffa500).setOrigin(0, 0.5);
+    root.add([trail, fill, postureFill, text(this, 0, -30, boss.def.name.toUpperCase(), 18, "#e6c8ff", "900").setOrigin(0.5)]);
     root.setAlpha(0);
     this.tweens.add({ targets: root, alpha: 1, duration: 400 });
-    this.bossBar = { root, fill, trail, boss, t: 1 };
+    this.bossBar = { root, fill, trail, postureFill, boss, t: 1 };
   }
 
   // ---------- announcements ----------
@@ -317,26 +332,66 @@ export class UIScene extends Phaser.Scene {
     this.scene.pause("game");
     const root = this.add.container(0, 0).setDepth(100);
     root.add(this.dim());
-    root.add(text(this, GAME_WIDTH / 2, 190, "TẠM DỪNG", 64, "#9ff8ff", "900").setOrigin(0.5));
-    const cx = GAME_WIDTH / 2;
+    root.add(text(this, GAME_WIDTH / 2, 130, "TẠM DỪNG", 56, "#9ff8ff", "900").setOrigin(0.5));
+    
     const resume = () => {
       this.closeOverlay();
       this.game_.resumeFromPause();
       this.scene.resume("game");
     };
-    const mute = new Button(this, cx, 470, 340, 56, "", () => {
+
+    // Left column: Actions
+    const bx = 380;
+    const mute = new Button(this, bx, 440, 320, 52, "", () => {
       sfx.toggleMute();
       mute.setCaption(`Âm thanh: ${sfx.isMuted() ? "TẮT" : "BẬT"}`);
     });
     mute.setCaption(`Âm thanh: ${sfx.isMuted() ? "TẮT" : "BẬT"}`);
     const buttons = [
-      new Button(this, cx, 290, 340, 56, "Tiếp tục", resume),
-      new Button(this, cx, 350, 340, 56, "Chơi lại", () => this.restart()),
-      new Button(this, cx, 410, 340, 56, "Về menu", () => this.toMenu()),
+      new Button(this, bx, 260, 320, 52, "Tiếp tục", resume),
+      new Button(this, bx, 320, 320, 52, "Chơi lại", () => this.restart()),
+      new Button(this, bx, 380, 320, 52, "Về menu", () => this.toMenu()),
       mute,
     ];
     root.add(buttons);
-    root.add(text(this, cx, 560, "Nhấn P hoặc Esc để tiếp tục", 16, "#7f95a8", "700").setOrigin(0.5));
+
+    // Right column: Armor Cores & Active Synergies
+    const sx = 840;
+    const sy = 220;
+    const bgPlate = this.add.rectangle(sx, sy + 130, 480, 340, 0x061524, 0.88).setStrokeStyle(2, 0x244868);
+    root.add(bgPlate);
+    root.add(text(this, sx, sy - 15, "LÕI GIÁP & CỘNG HƯỞNG", 22, "#ffe45c", "900").setOrigin(0.5));
+
+    const hero = this.game_.heroes[0];
+    if (hero) {
+      const cores = hero.equippedCores || [];
+      if (cores.length === 0) {
+        root.add(text(this, sx, sy + 60, "Chưa trang bị Lõi Giáp nào.\n(Hoàn thành màn chơi để nhận Lõi Chiến Thuật)", 16, "#7f95a8", "700").setOrigin(0.5));
+      } else {
+        const coreNames = cores.map((c) => `[${c.rarity.toUpperCase()}] ${c.name} (${c.tags.join(",")})`).join("\n");
+        root.add(this.add.text(sx - 220, sy + 20, "Lõi đang lắp:\n" + coreNames, {
+          fontFamily: FONT,
+          fontSize: "14px",
+          color: "#9ff8ff",
+          lineSpacing: 4,
+        }));
+
+        const synergies = getActiveSynergies(cores);
+        const synText = synergies.length > 0
+          ? synergies.map((s) => `✦ ${s.tag} (${s.count}): ${s.description}`).join("\n\n")
+          : "Chưa đủ lõi cùng hệ để kích hoạt Cộng Hưởng (cần ít nhất 2 lõi cùng tag)";
+
+        root.add(this.add.text(sx - 220, sy + 140, "Cộng hưởng kích hoạt:\n" + synText, {
+          fontFamily: FONT,
+          fontSize: "14px",
+          color: synergies.length > 0 ? "#7dffb0" : "#7f95a8",
+          wordWrap: { width: 440 },
+          lineSpacing: 4,
+        }));
+      }
+    }
+
+    root.add(text(this, GAME_WIDTH / 2, 640, "Nhấn P hoặc Esc để tiếp tục", 16, "#7f95a8", "700").setOrigin(0.5));
     const group = new ButtonGroup(this, buttons);
     group.reset();
     this.overlay = { root, group };
@@ -346,6 +401,65 @@ export class UIScene extends Phaser.Scene {
     };
     this.pauseKeys.forEach((k) => k.once("down", onKey));
     root.once("destroy", () => this.pauseKeys.forEach((k) => k.off("down", onKey)));
+  }
+
+  private openCoreUpgrade(choices: ArmorCore[]) {
+    this.scene.pause("game");
+    const root = this.add.container(0, 0).setDepth(100);
+    root.add(this.dim());
+    root.add(text(this, GAME_WIDTH / 2, 110, "CHỌN LÕI GIÁP CHIẾN THUẬT", 46, "#ffe45c", "900").setOrigin(0.5));
+    root.add(text(this, GAME_WIDTH / 2, 160, "Ghép các lõi cùng Hệ để kích hoạt Cộng Hưởng (Synergy) cực mạnh!", 18, "#9fb8cc", "700").setOrigin(0.5));
+
+    const hero = this.game_.heroes[0];
+    const currentCores = hero ? (hero.equippedCores || []) : [];
+
+    const buttons = choices.map((c, i) => {
+      const x = GAME_WIDTH / 2 + (i - 1) * 350;
+      const rColor = RARITY_COLORS[c.rarity];
+      const card = new Button(this, x, 390, 320, 360, "", () => {
+        this.closeOverlay();
+        this.scene.resume("game");
+        this.game_.chooseArmorCore(c);
+      }, rColor.main, true);
+
+      // Check current synergy progress for this core's tags
+      const tagHints = c.tags.map((tag) => {
+        const matchingCount = currentCores.filter((ec) => ec.tags.includes(tag)).length;
+        const nextCount = matchingCount + 1;
+        if (nextCount >= 4) return `⚡ ${tag}: ĐẠT CẤP MAX (4)`;
+        if (nextCount >= 2) return `⚡ ${tag}: KÍCH HOẠT (${nextCount}/4)`;
+        return `${tag}: (1/2 để kích hoạt)`;
+      }).join("\n");
+
+      card.add([
+        text(this, 0, -140, `[ ${c.rarity.toUpperCase()} ]`, 14, hex(rColor.main), "900").setOrigin(0.5),
+        text(this, 0, -100, c.name, 22, "#ffffff", "900").setOrigin(0.5),
+        text(this, 0, -65, `Hệ: ${c.tags.join(" • ")}`, 15, "#7dffb0", "800").setOrigin(0.5),
+        this.add.text(0, 10, c.desc, {
+          fontFamily: FONT,
+          fontSize: "16px",
+          color: "#e0eaf4",
+          align: "center",
+          wordWrap: { width: 280 },
+          lineSpacing: 4,
+        }).setOrigin(0.5),
+        this.add.text(0, 115, tagHints, {
+          fontFamily: FONT,
+          fontSize: "13px",
+          color: hex(rColor.main),
+          align: "center",
+          wordWrap: { width: 280 },
+          lineSpacing: 2,
+        }).setOrigin(0.5),
+      ]);
+      return card;
+    });
+
+    root.add(buttons);
+    root.add(text(this, GAME_WIDTH / 2, 640, "A/D chọn · J/Enter xác nhận", 16, "#7f95a8", "700").setOrigin(0.5));
+    const group = new ButtonGroup(this, buttons, true);
+    group.reset();
+    this.overlay = { root, group };
   }
 
   private openUpgrade(choices: Upgrade[]) {

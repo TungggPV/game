@@ -2,14 +2,18 @@ import Phaser from "phaser";
 import { ACHIEVEMENTS } from "../config/achievements";
 import { CODEX_ENTRIES } from "../config/codex";
 import { FONT, GAME_HEIGHT, GAME_WIDTH, hex } from "../config/constants";
+import { ARMOR_CORES, RARITY_COLORS } from "../systems/armorCores";
 import { loadProgress } from "../systems/progress";
 import { sfx } from "../systems/sfx";
 import { Button, ButtonGroup, text } from "../ui/widgets";
 
+type TabType = "codex" | "cores" | "reactions" | "achievements";
+
 export class CodexScene extends Phaser.Scene {
-  private tab: "codex" | "achievements" = "codex";
+  private tab: TabType = "codex";
   private listContainer!: Phaser.GameObjects.Container;
   private group!: ButtonGroup;
+  private tabButtons: Button[] = [];
 
   constructor() {
     super("codex");
@@ -18,24 +22,28 @@ export class CodexScene extends Phaser.Scene {
   create() {
     const src = this.textures.get("bg_city_neon").getSourceImage();
     this.add.tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, "bg_city_neon").setOrigin(0).setTileScale(GAME_HEIGHT / src.height);
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.8).setOrigin(0);
+    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.85).setOrigin(0);
 
-    text(this, 60, 40, "SỔ TAY CHIẾN THUẬT & THÀNH TỰU", 36, "#18e6ff", "900");
+    text(this, 60, 36, "SỔ TAY CHIẾN THUẬT & THÀNH TỰU V2.0", 32, "#18e6ff", "900");
 
     const buttons: Button[] = [];
-    const codexBtn = new Button(this, 140, 100, 160, 40, "Sổ Tay", () => this.switchTab("codex"), 0x18e6ff);
-    const achBtn = new Button(this, 320, 100, 160, 40, "Thành Tựu", () => this.switchTab("achievements"), 0xffe45c);
-    const backBtn = new Button(this, GAME_WIDTH - 120, 100, 140, 40, "← Menu", () => this.backToMenu());
-    buttons.push(codexBtn, achBtn, backBtn);
+    const b1 = new Button(this, 125, 95, 130, 38, "Sổ Tay", () => this.switchTab("codex"), 0x18e6ff);
+    const b2 = new Button(this, 265, 95, 130, 38, "Lõi Giáp", () => this.switchTab("cores"), 0xd946ef);
+    const b3 = new Button(this, 405, 95, 130, 38, "Nguyên Tố", () => this.switchTab("reactions"), 0x37ffb0);
+    const b4 = new Button(this, 545, 95, 130, 38, "Thành Tựu", () => this.switchTab("achievements"), 0xffe45c);
+    const backBtn = new Button(this, GAME_WIDTH - 100, 95, 120, 38, "← Menu", () => this.backToMenu());
 
-    this.listContainer = this.add.container(60, 150);
+    this.tabButtons = [b1, b2, b3, b4];
+    buttons.push(b1, b2, b3, b4, backBtn);
+
+    this.listContainer = this.add.container(60, 140);
     this.renderContent();
 
     this.group = new ButtonGroup(this, buttons, true);
     this.group.reset();
   }
 
-  private switchTab(tab: "codex" | "achievements") {
+  private switchTab(tab: TabType) {
     this.tab = tab;
     sfx.select();
     this.renderContent();
@@ -67,6 +75,75 @@ export class CodexScene extends Phaser.Scene {
           const locked = text(this, 280, 45, "🔒 Chưa gặp đối thủ này trong chiến đấu", 16, "#5a6e82", "700").setOrigin(0.5);
           card.add([bg, locked]);
         }
+        this.listContainer.add(card);
+      });
+    } else if (this.tab === "cores") {
+      ARMOR_CORES.forEach((c, i) => {
+        const col = i % 3;
+        const row = Math.floor(i / 3);
+        const x = col * 385;
+        const y = row * 88;
+        const rColor = RARITY_COLORS[c.rarity];
+
+        const card = this.add.container(x, y);
+        const bg = this.add.rectangle(0, 0, 370, 78, 0x081524, 0.92).setOrigin(0).setStrokeStyle(1.5, rColor.main, 0.6);
+        const icon = text(this, 22, 24, c.icon, 20, "#ffffff", "900").setOrigin(0.5);
+        const name = text(this, 44, 12, c.name, 15, "#ffffff", "900");
+        const rarity = text(this, 355, 12, `[${c.rarity.toUpperCase()}]`, 11, hex(rColor.main), "800").setOrigin(1, 0);
+        const tags = text(this, 44, 32, `Hệ: ${c.tags.join(" • ")}`, 12, "#7dffb0", "700");
+        const desc = this.add.text(44, 50, c.desc, {
+          fontFamily: FONT,
+          fontSize: "11px",
+          color: "#c8dcea",
+          wordWrap: { width: 310 },
+        });
+
+        card.add([bg, icon, name, rarity, tags, desc]);
+        this.listContainer.add(card);
+      });
+    } else if (this.tab === "reactions") {
+      const reactions = [
+        {
+          name: "QUÁ TẢI (OVERLOAD)",
+          elements: "Hỏa (Pyro) + Lôi (Electro)",
+          effect: "Tạo vụ nổ năng lượng diện rộng bán kính 140px gây 70 sát thương cực lớn và hất văng đối thủ.",
+          color: 0xff6a1a,
+          icon: "💥",
+        },
+        {
+          name: "SIÊU DẪN (SUPERCONDUCT)",
+          elements: "Băng (Cryo) + Lôi (Electro)",
+          effect: "Phát nổ xung điện diện rộng gây 50 sát thương và làm chậm 50% tốc độ di chuyển của toàn bộ kẻ địch trong 6 giây.",
+          color: 0x9fe8ff,
+          icon: "⚡",
+        },
+        {
+          name: "TAN CHẢY (MELT)",
+          elements: "Hỏa (Pyro) + Băng (Cryo)",
+          effect: "Kích hoạt bộc phá nguyên tố gây 95 sát thương cực đại (x2 sát thương phản ứng bộc phá).",
+          color: 0xffe45c,
+          icon: "🔥",
+        },
+        {
+          name: "KẾT TINH (CRYSTALLIZE)",
+          elements: "Nham (Geo) + Hỏa / Băng / Lôi",
+          effect: "Gây 140 sát thương Posture làm tụt thanh Phá Giáp cực nhanh, tạo mảnh pha lê hấp thu năng lượng (+15 Energy).",
+          color: 0xcca052,
+          icon: "💎",
+        },
+      ];
+
+      reactions.forEach((r, i) => {
+        const x = 0;
+        const y = i * 125;
+        const card = this.add.container(x, y);
+        const bg = this.add.rectangle(0, 0, 1160, 110, 0x081524, 0.92).setOrigin(0).setStrokeStyle(2, r.color, 0.6);
+        const icon = text(this, 40, 55, r.icon, 36, "#ffffff", "900").setOrigin(0.5);
+        const title = text(this, 85, 18, r.name, 22, hex(r.color), "900");
+        const formula = text(this, 85, 46, `Nguyên tố kích hoạt: ${r.elements}`, 15, "#ffffff", "800");
+        const desc = text(this, 85, 74, `Hiệu ứng: ${r.effect}`, 14, "#c8dcea", "600");
+
+        card.add([bg, icon, title, formula, desc]);
         this.listContainer.add(card);
       });
     } else {

@@ -18,4 +18,10 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: "no_death", title: "Không Gục Ngã", desc: "Chiến thắng trận đấu mà không một lần ngã xuống", icon: "🛡️" },
   { id: "coin_hoarder", title: "Triệu Phú Giáp", desc: "Tích lũy tổng cộng 1000 xu trong ví", icon: "💰" },
   { id: "workshop_master", title: "Xưởng Giáp Tối Đa", desc: "Nâng cấp tối đa ít nhất một nhánh trong Xưởng Giáp", icon: "🔨" },
+  { id: "parry_master", title: "Bậc Thầy Giao Kiếm", desc: "Đỡ đòn (Parry) thành công đòn đánh của kẻ địch", icon: "⚡" },
+  { id: "break_master", title: "Phá Giáp Thần Tốc", desc: "Đánh vỡ thanh Posture làm kẻ địch rơi vào trạng thái Phá Giáp", icon: "💥" },
+  { id: "overdrive_awakening", title: "Thức Tỉnh Overdrive", desc: "Kích hoạt Overdrive khi đạt 30 combo hoặc sau Tuyệt Kỹ", icon: "🔥" },
+  { id: "elemental_master", title: "Phù Thủy Nguyên Tố", desc: "Kích hoạt phản ứng nguyên tố (Quá Tải, Tan Chảy, Siêu Dẫn...)", icon: "🌀" },
+  { id: "time_rift_crusher", title: "Kẻ Phá Vỡ Thời Gian", desc: "Phá hủy Cổng Thời Gian trong vòng 15 giây", icon: "⏳" },
+  { id: "archon_zero_slayer", title: "Diệt Thần Hư Không", desc: "Tiêu diệt Cổ Thần Archon Zero ở Màn 5", icon: "🌌" },
 ];

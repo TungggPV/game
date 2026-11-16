@@ -5,7 +5,7 @@ import { loadSettings } from "./settings";
 export type HeroElement = "plasma" | "fire" | "volt" | "wind" | "earth";
 export type Element = HeroElement | "enemy" | "boss";
 
-export type Palette = { main: number; light: number; dark: number };
+export type Palette = { main: number; light: number; dark: number; glow?: number };
 
 export const PALETTE: Record<Element, Palette> = {
   plasma: { main: 0x18e6ff, light: 0xd8feff, dark: 0x1a55ff },
@@ -372,6 +372,41 @@ export class Fx {
     this.shards(x, GROUND_Y - 20, { main: 0x5a4a3a, light: 0x8a7a6a, dark: 0x2a1a0a }, 15, 600);
     this.dust(x, 1, 1.2);
     this.dust(x, -1, 1.2);
+  }
+
+  shockRing(x: number, y: number, radius = 220, color = 0x18e6ff, duration = 280) {
+    const ring = this.scene.add
+      .circle(x, y, 10)
+      .setStrokeStyle(4, color, 0.9)
+      .setDepth(DEPTH.fx + 4)
+      .setBlendMode(ADD);
+    this.scene.tweens.add({
+      targets: ring,
+      radius,
+      alpha: 0,
+      duration,
+      ease: "Cubic.easeOut",
+      onComplete: () => ring.destroy(),
+    });
+  }
+
+  dualImpactFlash(c1 = 0x18e6ff, c2 = 0xff3366, duration = 180) {
+    const cam = this.scene.cameras.main;
+    const col1 = Phaser.Display.Color.IntegerToColor(c1);
+    cam.flash(Math.round(duration * 0.5), col1.red, col1.green, col1.blue);
+    this.scene.time.delayedCall(Math.round(duration * 0.5), () => {
+      const col2 = Phaser.Display.Color.IntegerToColor(c2);
+      cam.flash(Math.round(duration * 0.5), col2.red, col2.green, col2.blue);
+    });
+  }
+
+  clashSpark(x: number, y: number, dir = 1) {
+    this.flashCore(x, y, 1.4, 160);
+    this.glow(x, y, 0xffe45c, 3, 220);
+    this.sparks(x, y, 0xffffff, dir, 16, 950, 140);
+    this.sparks(x, y, 0xffb030, -dir, 16, 950, 140);
+    this.shockRing(x, y, 160, 0xffffff, 220);
+    this.shake(0.015, 200);
   }
 
   // ---------- text ----------

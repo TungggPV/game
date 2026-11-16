@@ -100,6 +100,27 @@ export class ProjectileSystem {
     this.projectiles = [];
   }
 
+  deflectAt(rect: Phaser.Geom.Rectangle, hero: Hero): boolean {
+    let deflected = false;
+    for (const p of this.projectiles) {
+      if (p.owner.team !== "hero") {
+        const box = new Phaser.Geom.Rectangle(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
+        if (Phaser.Geom.Intersects.RectangleToRectangle(rect, box)) {
+          p.owner = hero;
+          p.vx = -p.vx * 1.5;
+          p.vy = -p.vy;
+          p.hit.damage *= 1.8;
+          p.hit.color = hero.def.color;
+          p.hitSet.clear();
+          p.parts.forEach((part) => part.setTint(hero.def.color));
+          deflected = true;
+          this.scene.fx.clashSpark(p.x, p.y, hero.facing);
+        }
+      }
+    }
+    return deflected;
+  }
+
   spawnProjectile(spec: ProjectileSpec) {
     const pal = spec.owner instanceof Hero ? PALETTE[spec.owner.def.element] : PALETTE.enemy;
     const add = (tex: string, tint: number, sx: number, sy: number, depth = DEPTH.projectile) =>

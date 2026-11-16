@@ -2,8 +2,11 @@ export type Settings = {
   v: 1;
   muted: boolean;
   volume: number;
+  musicVolume: number;
   shake: boolean;
   damageNumbers: boolean;
+  motionInterpolation: boolean;
+  graphicsQuality: "high" | "balanced";
 };
 
 const KEY = "element-armor.settings.v1";
@@ -12,8 +15,11 @@ const DEFAULT_SETTINGS: Settings = {
   v: 1,
   muted: false,
   volume: 1,
+  musicVolume: 0.75,
   shake: true,
   damageNumbers: true,
+  motionInterpolation: true,
+  graphicsQuality: "high",
 };
 
 let cachedSettings: Settings | null = null;

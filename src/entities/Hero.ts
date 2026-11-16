@@ -6,6 +6,8 @@ import { anchorX, artFacesLeft, heroKey, textureHeight, type HeroPose } from "..
 import { ACTIONS, type Action, type Controls } from "../systems/controls";
 import { getDifficultyModifiers } from "../systems/difficulty";
 import { PALETTE, type Palette } from "../systems/Fx";
+import { AfterimageRingBuffer, expDecay, ProceduralSmearArc } from "../systems/motionSynth";
+import type { ArmorCore } from "../systems/armorCores";
 import { sfx } from "../systems/sfx";
 import { castSkill } from "../systems/skills";
 import type { GameScene } from "../scenes/GameScene";
@@ -26,6 +28,7 @@ export class Hero extends Actor {
   kills = 0;
   mods: HeroMods = baseMods();
   cooldowns: Record<SkillSlot | "dash", number> = { basic: 0, skill1: 0, skill2: 0, ultimate: 0, dash: 0 };
+  equippedCores: ArmorCore[] = [];
   state: State = "free";
   locked = false;
   reviveTimer = 0;
@@ -45,6 +48,10 @@ export class Hero extends Actor {
   private readonly hasWalk: boolean;
   // Procedural animation state: spring-driven squash/stretch, smoothed lean and turn.
   private anim = { sx: 1, sy: 1, vx: 0, vy: 0, lean: 0, turn: 1, stride: 0, dust: 0, wasGround: true, lastKey: "" };
+  readonly afterimages: AfterimageRingBuffer;
+  readonly smearArc: ProceduralSmearArc;
+  private comboAura?: Phaser.GameObjects.Image;
+  overdriveTimer = 0;
 
   constructor(
     scene: GameScene,
@@ -63,6 +70,9 @@ export class Hero extends Actor {
     this.applyMods();
     const upEnergy = (this.mods.energyGain - 1) * 100;
     this.energy = 30 + Math.max(0, Math.round(upEnergy));
+    this.afterimages = new AfterimageRingBuffer(scene, DEPTH.hero - 1);
+    this.smearArc = new ProceduralSmearArc(scene);
+    this.comboAura = scene.add.image(0, 0, "glow").setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.hero - 1).setVisible(false);
   }
 
   get speed() {
@@ -114,6 +124,11 @@ export class Hero extends Actor {
   }
 
   update(dt: number) {
+    this.capturePrevTransform();
+    this.afterimages.update(dt);
+    this.smearArc.update(dt);
+    if (this.overdriveTimer > 0) this.overdriveTimer = Math.max(0, this.overdriveTimer - dt);
+
     this.tickTimers(dt);
     this.stateTime += dt;
     for (const k of Object.keys(this.cooldowns) as (SkillSlot | "dash")[]) this.cooldowns[k] = Math.max(0, this.cooldowns[k] - dt);
@@ -142,6 +157,23 @@ export class Hero extends Actor {
     if (this.onGround) this.jumpsLeft = this.def.jumps;
     const friction = this.state === "free" ? 0 : 7;
     this.physics(dt, this.state === "dash" || this.state === "sweep" ? 0 : friction);
+
+    const disp = Math.hypot(this.x - this.prevX, this.y - this.prevY);
+    if (disp > 16 && (this.state === "dash" || this.state === "sweep" || this.overdriveTimer > 0)) {
+      this.afterimages.emitIntermediate(
+        this.prevX,
+        this.prevY,
+        this.x,
+        this.y,
+        this.sprite.texture.key,
+        this.pal.main,
+        this.sprite.scaleX,
+        this.sprite.scaleY,
+        this.sprite.rotation,
+        2,
+      );
+    }
+
     this.render(dt);
   }
 
@@ -312,6 +344,21 @@ export class Hero extends Actor {
       source: this,
     });
     if (hits > 0) this.gainEnergy(4 * hits);
+    if (this.overdriveTimer > 0) {
+      const pStyle = this.def.element === "earth" ? "earth" : this.def.element === "fire" ? "fire" : this.def.element === "volt" ? "volt" : "plasma";
+      this.scene.spawnProjectile({
+        owner: this,
+        x: this.x + this.facing * 40,
+        y: this.cy,
+        vx: this.facing * 750,
+        vy: 0,
+        size: 20,
+        color: this.pal.main,
+        pierce: 2,
+        style: pStyle,
+        hit: { damage: 28, dir: this.facing, knock: 240, color: this.pal.main, heavy: true },
+      });
+    }
   }
 
   private tryCast(slot: Exclude<SkillSlot, "basic">) {
@@ -323,6 +370,7 @@ export class Hero extends Actor {
     }
     this.energy -= skill.cost;
     this.cooldowns[slot] = skill.cooldown * (slot === "ultimate" ? 1 : this.mods.cooldown);
+    if (slot === "ultimate") this.overdriveTimer = 6.0;
     this.castPose = skill.kind === "projectile" ? "attack_blast" : skill.kind === "sweep" || skill.kind === "burst" ? "attack_slash" : "attack_blast";
     const windup = slot === "ultimate" ? 0.32 : 0.08;
     this.pendingCast = { slot, skill, at: windup };
@@ -442,7 +490,7 @@ export class Hero extends Actor {
     }
 
     // Turning squeezes through zero width instead of snapping.
-    a.turn += (this.facing - a.turn) * Math.min(1, dt * 28);
+    a.turn = expDecay(a.turn, this.facing, 28, dt);
     const sign = a.turn >= 0 ? 1 : -1;
     const turnScale = Math.max(0.2, Math.abs(a.turn));
 
@@ -474,17 +522,40 @@ export class Hero extends Actor {
       leanTarget = -this.facing * 0.15;
     }
     if (this.dead) leanTarget = -this.facing * 0.3;
-    a.lean += (leanTarget - a.lean) * Math.min(1, dt * 14);
+    a.lean = expDecay(a.lean, leanTarget, 16, dt);
 
     const base = this.scaleFactor;
-    const sx = base * a.sx * (1 - breathe * 0.5) * turnScale;
-    const sy = base * a.sy * (1 + breathe) * (this.dead ? 0.9 : 1);
+    // Velocity-driven deformation
+    const stretchY = 1 + Math.min(0.25, Math.abs(this.vy) * 0.00015);
+    const squashX = 1 / Math.sqrt(stretchY);
+    const sx = base * a.sx * squashX * (1 - breathe * 0.5) * turnScale;
+    const sy = base * a.sy * stretchY * (1 + breathe) * (this.dead ? 0.9 : 1);
     this.sprite.setPosition(this.x, this.y + yOff).setScale(sx, sy).setRotation(a.lean);
     this.renderCommon();
+
+    if (this.scene.combo >= 15 && !this.dead) {
+      const pulse = 1.4 + Math.sin(this.scene.time.now / 110) * 0.2;
+      this.comboAura
+        ?.setVisible(true)
+        .setPosition(this.cx, this.cy)
+        .setTint(this.pal.main)
+        .setScale(pulse * (this.bodyW / 110), pulse * (this.bodyH / 110))
+        .setAlpha(0.45);
+    } else {
+      this.comboAura?.setVisible(false);
+    }
+
     if (this.invuln > 0 && !this.dead && this.state !== "dash" && this.state !== "sweep" && this.state !== "cast") {
       this.sprite.setAlpha(0.55 + Math.sin(this.scene.time.now / 35) * 0.35);
     } else {
       this.sprite.setAlpha(this.dead ? 0.55 : 1);
     }
+  }
+
+  override destroy() {
+    this.afterimages.destroy();
+    this.smearArc.destroy();
+    this.comboAura?.destroy();
+    super.destroy();
   }
 }
