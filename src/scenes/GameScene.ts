@@ -89,6 +89,8 @@ export class GameScene extends Phaser.Scene {
   private bg!: Phaser.GameObjects.TileSprite;
   private bgScale = 1;
   private dustEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
+  private dustFgEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
+  private lampCones: Phaser.GameObjects.Image[] = [];
   private neonGlows: { img: Phaser.GameObjects.Image; baseAlpha: number; speed: number; seed: number }[] = [];
   private groundVignette?: Phaser.GameObjects.Rectangle;
   private pauseKeys: Phaser.Input.Keyboard.Key[] = [];
@@ -160,11 +162,20 @@ export class GameScene extends Phaser.Scene {
     const K = Phaser.Input.Keyboard.KeyCodes;
     this.pauseKeys = [K.P, K.ESC].map((k) => this.input.keyboard!.addKey(k));
     music.start(this.stageIndex === 4 || this.mode === "bossrush" ? "boss" : "stage");
+
+    // Launch Cyberpunk HUD (Step 4)
+    this.scene.launch("ui");
+    this.scene.bringToTop("ui");
+
     this.events.once("shutdown", () => {
       music.stop();
+      this.scene.stop("ui");
       this.props.forEach((p) => p.destroy());
       this.props = [];
       this.dustEmitter?.destroy();
+      this.dustFgEmitter?.destroy();
+      this.lampCones.forEach((c) => c.destroy());
+      this.lampCones = [];
       this.neonGlows.forEach((n) => n.img.destroy());
       this.neonGlows = [];
       this.groundVignette?.destroy();
@@ -177,19 +188,24 @@ export class GameScene extends Phaser.Scene {
 
   buildWorld() {
     const stage = this.stage;
-    const tex = this.textures.get(stage.background).getSourceImage();
+    const mirKey = stage.background + "_mirrored";
+    const bgKey = this.textures.exists(mirKey) ? mirKey : stage.background;
+    const tex = this.textures.get(bgKey).getSourceImage();
     this.bgScale = GAME_HEIGHT / tex.height;
     this.bgFarScale = this.bgScale * 0.9;
     this.bgFar?.destroy();
     this.bg?.destroy();
     this.dustEmitter?.destroy();
+    this.dustFgEmitter?.destroy();
+    this.lampCones.forEach((c) => c.destroy());
+    this.lampCones = [];
     this.groundVignette?.destroy();
     this.neonGlows.forEach((n) => n.img.destroy());
     this.neonGlows = [];
 
     // 1. Far background layer (bgFar): Far cyberpunk city skyline, scrolling slow at 0.15x
     // Has a cool cyan-purple atmospheric fog tint
-    const farTexKey = this.stageIndex === 3 ? "bg_city_neon" : this.stageIndex === 4 ? "bg_orbit" : stage.background;
+    const farTexKey = this.stageIndex === 3 ? "bg_city_neon" : this.stageIndex === 4 ? "bg_orbit" : bgKey;
     this.bgFar = this.add
       .tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, farTexKey)
       .setOrigin(0)
@@ -199,9 +215,9 @@ export class GameScene extends Phaser.Scene {
       .setAlpha(0.48)
       .setDepth(DEPTH.bg - 1);
 
-    // 2. Midground street layer (bg): Full 720px height, street surface sits naturally at GROUND_Y = 568
+    // 2. Midground street layer (bg): Full 720px height with Mirrored Horizontal Tiling (zero vertical seams)
     this.bg = this.add
-      .tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, stage.background)
+      .tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, bgKey)
       .setOrigin(0)
       .setScrollFactor(0)
       .setTileScale(this.bgScale)
@@ -216,8 +232,18 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, this.worldWidth, GAME_HEIGHT);
     this.cameras.main.setBackgroundColor(stage.floor);
 
-    // 3. Neon signage pulse & street light flicker in Stage 1 / City
+    // 3. Volumetric street lamp light cones & Neon signage pulse in Stage 1 / City
     if (this.stageIndex === 0) {
+      for (let lx = 320; lx < this.worldWidth; lx += 480) {
+        const cone = this.add
+          .image(lx, 470, "lamp_cone")
+          .setDisplaySize(160, 200)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setAlpha(0.2)
+          .setDepth(DEPTH.bg + 1);
+        this.lampCones.push(cone);
+      }
+
       for (let nx = 200; nx < this.worldWidth; nx += 420) {
         // Cyan pulse around the NOVA.CO. curb / sign area
         const signGlow = this.add
@@ -239,35 +265,51 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // 4. Floating atmospheric neon dust motes drifting across the air
+    // 4. Dual-layer Cyberpunk dust motes: Background (0.3x) & Foreground (1.2x)
     this.dustEmitter = this.add
       .particles(0, 0, "dot", {
         x: { min: 0, max: this.worldWidth },
         y: { min: 80, max: GROUND_Y },
         lifespan: { min: 4000, max: 8000 },
-        speedX: { min: -15, max: 20 },
-        speedY: { min: -12, max: -32 },
-        scale: { start: 0.5, end: 0.12 },
-        alpha: { start: 0, end: 0.3 },
-        tint: [0x18e6ff, 0xa855f7, 0x67e8f9, 0xf472b6],
+        speedX: { min: -10, max: 15 },
+        speedY: { min: -8, max: -22 },
+        scale: { start: 0.4, end: 0.1 },
+        alpha: { start: 0, end: 0.22 },
+        tint: [0x18e6ff, 0xa855f7],
         blendMode: Phaser.BlendModes.ADD,
-        frequency: 200,
+        frequency: 220,
         quantity: 1,
       })
-      .setDepth(DEPTH.fx - 2);
+      .setDepth(DEPTH.bg + 2);
+
+    this.dustFgEmitter = this.add
+      .particles(0, 0, "dot", {
+        x: { min: 0, max: this.worldWidth },
+        y: { min: 100, max: GROUND_Y },
+        lifespan: { min: 3000, max: 6000 },
+        speedX: { min: -22, max: 30 },
+        speedY: { min: -16, max: -38 },
+        scale: { start: 0.65, end: 0.18 },
+        alpha: { start: 0, end: 0.32 },
+        tint: [0x67e8f9, 0xf472b6, 0xffd07a],
+        blendMode: Phaser.BlendModes.ADD,
+        frequency: 240,
+        quantity: 1,
+      })
+      .setDepth(DEPTH.fx + 10);
 
     // 5. Spawn environment props (Crate, Barrel, Supply Chest)
     this.props.forEach((p) => p.destroy());
     this.props = [];
     const propPatterns: Array<{ offset: number; type: PropType }> = [
-      { offset: 420, type: "crate" },
+      { offset: 420, type: "crate_energy" },
       { offset: 780, type: "barrel" },
-      { offset: 1140, type: "chest" },
-      { offset: 1680, type: "barrel" },
-      { offset: 2040, type: "crate" },
-      { offset: 2420, type: "chest" },
-      { offset: 2920, type: "crate" },
-      { offset: 3260, type: "barrel" },
+      { offset: 1140, type: "crate_gold" },
+      { offset: 1680, type: "crate_health" },
+      { offset: 2040, type: "chest" },
+      { offset: 2420, type: "crate_energy" },
+      { offset: 2920, type: "barrel" },
+      { offset: 3260, type: "chest" },
     ];
     for (const p of propPatterns) {
       if (p.offset < this.worldWidth - 100) {

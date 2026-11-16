@@ -22,6 +22,7 @@ type Panel = {
   hpText: Phaser.GameObjects.Text;
   energy: Phaser.GameObjects.Rectangle;
   energyText: Phaser.GameObjects.Text;
+  coinText?: Phaser.GameObjects.Text;
   slots: { icon: Phaser.GameObjects.Image; shade: Phaser.GameObjects.Graphics; cd: Phaser.GameObjects.Text; frame: Phaser.GameObjects.Arc; slot: SkillSlot }[];
   portrait: Phaser.GameObjects.Image;
   trail: number;
@@ -100,6 +101,13 @@ export class UIScene extends Phaser.Scene {
 
     const K = Phaser.Input.Keyboard.KeyCodes;
     this.pauseKeys = [K.P, K.ESC].map((k) => this.input.keyboard!.addKey(k));
+
+    // Top-right Cyberpunk Pause button
+    const pauseBtn = this.add.container(GAME_WIDTH - 45, 36);
+    const pBg = this.add.circle(0, 0, 18, 0x02070d, 0.8).setStrokeStyle(1.5, 0x18e6ff, 0.7);
+    const pText = text(this, 0, 0, "⏸", 14, "#18e6ff", "900").setOrigin(0.5);
+    pauseBtn.add([pBg, pText]);
+    pauseBtn.setSize(36, 36).setInteractive({ useHandCursor: true }).on("pointerdown", () => this.openPause());
   }
 
   // ---------- HUD ----------
@@ -139,6 +147,15 @@ export class UIScene extends Phaser.Scene {
     const energyText = text(this, right ? bx : bx + BAR_W, 84, "", 11, "#9fe8ff", "800").setOrigin(right ? 0 : 1, 0);
     root.add([energy, energyText]);
 
+    // Cyberpunk Coin Counter
+    const coinBg = this.add.graphics();
+    const cx = right ? bx + BAR_W - 85 : bx;
+    coinBg.fillStyle(0x02070d, 0.75).fillRoundedRect(cx, 88, 85, 20, 6);
+    coinBg.lineStyle(1, 0xfbbf24, 0.5).strokeRoundedRect(cx, 88, 85, 20, 6);
+    const coinIcon = this.add.image(cx + 12, 98, "item_coin").setScale(0.32);
+    const coinText = text(this, cx + 26, 98, "0", 12, "#ffe45c", "900").setOrigin(0, 0.5);
+    root.add([coinBg, coinIcon, coinText]);
+
     const slots: Panel["slots"] = [];
     SLOTS.forEach((slot, i) => {
       const sx = right ? bx + BAR_W - 22 - (3 - i) * 56 : bx + 22 + i * 56;
@@ -152,7 +169,7 @@ export class UIScene extends Phaser.Scene {
       slots.push({ icon, shade, cd, frame, slot });
     });
 
-    return { hero, hp, hpTrail, hpText, energy, energyText, slots, portrait, trail: 1 };
+    return { hero, hp, hpTrail, hpText, energy, energyText, coinText, slots, portrait, trail: 1 };
   }
 
   update(_t: number, deltaMs: number) {
@@ -241,6 +258,7 @@ export class UIScene extends Phaser.Scene {
     p.energy.setFillStyle(full ? (Math.floor(this.time.now / 150) % 2 ? 0xffe45c : 0xffffff) : 0x3ad6ff);
     p.energyText.setText(full ? "TUYỆT KỸ SẴN SÀNG!" : `NĂNG LƯỢNG ${Math.floor(h.energy)}`).setColor(full ? "#ffe45c" : "#9fe8ff");
     p.portrait.setAlpha(h.dead ? 0.35 : 1);
+    if (p.coinText) p.coinText.setText(String(this.game_.pendingCoins));
 
     for (const s of p.slots) {
       s.shade.clear();

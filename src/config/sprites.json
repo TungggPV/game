@@ -267,6 +267,91 @@
   "w": 96,
   "h": 96
  },
+ "obsidian_warden_idle": {
+  "file": "obsidian_warden_idle.png",
+  "w": 88,
+  "h": 108,
+  "ax": 0.5113636363636364
+ },
+ "obsidian_warden_jump": {
+  "file": "obsidian_warden_jump.png",
+  "w": 107,
+  "h": 112,
+  "ax": 0.17289719626168223
+ },
+ "obsidian_warden_attack_slash": {
+  "file": "obsidian_warden_attack_slash.png",
+  "w": 154,
+  "h": 158,
+  "ax": 0.7045454545454546
+ },
+ "obsidian_warden_attack_blast": {
+  "file": "obsidian_warden_attack_blast.png",
+  "w": 217,
+  "h": 135,
+  "ax": 0.22119815668202766
+ },
+ "obsidian_warden_dash": {
+  "file": "obsidian_warden_dash.png",
+  "w": 196,
+  "h": 118,
+  "ax": 0.3673469387755102
+ },
+ "obsidian_warden_hit_reaction": {
+  "file": "obsidian_warden_hit_reaction.png",
+  "w": 116,
+  "h": 129,
+  "ax": 0.2543103448275862
+ },
+ "obsidian_warden_walk_1": {
+  "file": "obsidian_warden_walk_1.png",
+  "w": 99,
+  "h": 108,
+  "ax": 0.5
+ },
+ "obsidian_warden_walk_2": {
+  "file": "obsidian_warden_walk_2.png",
+  "w": 88,
+  "h": 108,
+  "ax": 0.4715909090909091
+ },
+ "obsidian_warden_walk_3": {
+  "file": "obsidian_warden_walk_3.png",
+  "w": 68,
+  "h": 108,
+  "ax": 0.4411764705882353
+ },
+ "obsidian_warden_walk_4": {
+  "file": "obsidian_warden_walk_4.png",
+  "w": 60,
+  "h": 108,
+  "ax": 0.48333333333333334
+ },
+ "obsidian_warden_art": {
+  "file": "obsidian_warden_art.png",
+  "w": 494,
+  "h": 420
+ },
+ "obsidian_warden_icon_basic": {
+  "file": "obsidian_warden_icon_basic.png",
+  "w": 96,
+  "h": 96
+ },
+ "obsidian_warden_icon_skill1": {
+  "file": "obsidian_warden_icon_skill1.png",
+  "w": 96,
+  "h": 96
+ },
+ "obsidian_warden_icon_skill2": {
+  "file": "obsidian_warden_icon_skill2.png",
+  "w": 96,
+  "h": 96
+ },
+ "obsidian_warden_icon_ultimate": {
+  "file": "obsidian_warden_icon_ultimate.png",
+  "w": 96,
+  "h": 96
+ },
  "crawler": {
   "file": "crawler.png",
   "w": 165,
@@ -333,6 +418,24 @@
   "h": 140,
   "ax": 0.47109826589595377
  },
+ "bomber": {
+  "file": "bomber.png",
+  "w": 165,
+  "h": 85,
+  "ax": 0.503030303030303
+ },
+ "sniper": {
+  "file": "sniper.png",
+  "w": 189,
+  "h": 96,
+  "ax": 0.1931216931216931
+ },
+ "drone": {
+  "file": "drone.png",
+  "w": 189,
+  "h": 96,
+  "ax": 0.1931216931216931
+ },
  "item_health": {
   "file": "item_health.png",
   "w": 51,
@@ -345,7 +448,7 @@
  },
  "item_coin": {
   "file": "item_coin.png",
-  "w": 54,
+  "w": 39,
   "h": 64
  },
  "item_chip": {
@@ -356,7 +459,7 @@
  "fx_slash1": {
   "file": "fx_slash1.png",
   "w": 160,
-  "h": 98
+  "h": 120
  },
  "fx_slash2": {
   "file": "fx_slash2.png",
@@ -386,14 +489,29 @@
   "w": 898,
   "h": 290
  },
+ "bg_city_neon_mirrored": {
+  "file": "bg_city_neon_mirrored.png",
+  "w": 1796,
+  "h": 290
+ },
  "bg_lab_sewer": {
   "file": "bg_lab_sewer.png",
   "w": 899,
   "h": 276
  },
+ "bg_lab_sewer_mirrored": {
+  "file": "bg_lab_sewer_mirrored.png",
+  "w": 1798,
+  "h": 276
+ },
  "bg_lava_fortress": {
   "file": "bg_lava_fortress.png",
   "w": 898,
+  "h": 236
+ },
+ "bg_lava_fortress_mirrored": {
+  "file": "bg_lava_fortress_mirrored.png",
+  "w": 1796,
   "h": 236
  }
 }

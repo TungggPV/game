@@ -51,6 +51,9 @@ export class Hero extends Actor {
   readonly afterimages: AfterimageRingBuffer;
   readonly smearArc: ProceduralSmearArc;
   private comboAura?: Phaser.GameObjects.Image;
+  private hexShield?: Phaser.GameObjects.Image;
+  private energyScarf: Phaser.GameObjects.Graphics;
+  private weaponGlow?: Phaser.GameObjects.Image;
   overdriveTimer = 0;
 
   constructor(
@@ -73,6 +76,18 @@ export class Hero extends Actor {
     this.afterimages = new AfterimageRingBuffer(scene, DEPTH.hero - 1);
     this.smearArc = new ProceduralSmearArc(scene);
     this.comboAura = scene.add.image(0, 0, "glow").setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.hero - 1).setVisible(false);
+    this.energyScarf = scene.add.graphics().setDepth(DEPTH.hero + index - 1);
+    this.energyScarf.setBlendMode(Phaser.BlendModes.ADD);
+    this.weaponGlow = scene.add.image(0, 0, "core").setScale(0.45).setTint(this.pal.main).setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.hero + index + 2).setVisible(false);
+
+    if (def.id === "obsidian_warden") {
+      this.hexShield = scene.add
+        .image(x, this.cy, "hex_shield")
+        .setScale(0.85)
+        .setTint(0xffb74d)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setDepth(DEPTH.hero + index + 1);
+    }
   }
 
   get speed() {
@@ -170,7 +185,7 @@ export class Hero extends Actor {
         this.sprite.scaleX,
         this.sprite.scaleY,
         this.sprite.rotation,
-        2,
+        3,
       );
     }
 
@@ -503,13 +518,13 @@ export class Hero extends Actor {
     let yOff = 0;
     let breathe = 0;
     if (running) {
-      leanTarget = (this.vx / (this.def.speed * 1.2)) * 0.1;
+      leanTarget = (this.vx / (this.def.speed * 1.2)) * 0.15;
       const cycle = a.stride * Math.PI * (this.hasWalk ? 0.5 : 1);
-      yOff = -Math.abs(Math.sin(cycle)) * (this.hasWalk ? 4 : 8);
+      yOff = -Math.abs(Math.sin(cycle)) * 6;
       breathe = Math.cos(cycle * 2) * 0.03;
       a.dust -= dt;
       if (a.dust <= 0) {
-        this.scene.fx.dust(this.x - this.facing * 20, this.facing, 0.45);
+        this.scene.fx.dust(this.x - this.facing * 24, this.facing, 0.45);
         a.dust = 0.16;
       }
     } else if (!grounded && !this.dead) {
@@ -517,9 +532,9 @@ export class Hero extends Actor {
     } else if (pose === "idle") {
       breathe = Math.sin(t * 3) * 0.018;
     } else if (this.state === "dash" || this.state === "sweep") {
-      leanTarget = this.facing * 0.12;
+      leanTarget = this.facing * 0.15;
     } else if (this.state === "hurt") {
-      leanTarget = -this.facing * 0.15;
+      leanTarget = -this.facing * 0.18;
     }
     if (this.dead) leanTarget = -this.facing * 0.3;
     a.lean = expDecay(a.lean, leanTarget, 16, dt);
@@ -532,6 +547,47 @@ export class Hero extends Actor {
     const sy = base * a.sy * stretchY * (1 + breathe) * (this.dead ? 0.9 : 1);
     this.sprite.setPosition(this.x, this.y + yOff).setScale(sx, sy).setRotation(a.lean);
     this.renderCommon();
+
+    // 1. Procedural Energy Scarf physics & trailing ribbon
+    if (!this.dead) {
+      this.energyScarf.clear();
+      const ox = this.x - this.facing * 16;
+      const oy = this.y - 105;
+      const pts: Array<{ x: number; y: number }> = [{ x: ox, y: oy }];
+      for (let i = 1; i <= 3; i++) {
+        const sway = Math.sin(t * 7.5 + i * 1.4) * (5 * i);
+        const trailX = ox - this.facing * (i * 18) - (this.vx * 0.02 * i);
+        const trailY = oy + (i * 9) + sway - (this.vy * 0.012 * i);
+        pts.push({ x: trailX, y: trailY });
+      }
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p1 = pts[i];
+        const p2 = pts[i + 1];
+        const w = (4 - i) * 1.8;
+        this.energyScarf.lineStyle(w, this.pal.main, 0.7 - i * 0.18);
+        this.energyScarf.beginPath();
+        this.energyScarf.moveTo(p1.x, p1.y);
+        this.energyScarf.lineTo(p2.x, p2.y);
+        this.energyScarf.strokePath();
+
+        this.energyScarf.lineStyle(w * 0.45, 0xffffff, 0.85 - i * 0.2);
+        this.energyScarf.beginPath();
+        this.energyScarf.moveTo(p1.x, p1.y);
+        this.energyScarf.lineTo(p2.x, p2.y);
+        this.energyScarf.strokePath();
+      }
+    } else {
+      this.energyScarf.clear();
+    }
+
+    // 2. Weapon Glow streak at hand during attack
+    if (this.state === "attack" && !this.dead) {
+      const wx = this.x + this.facing * 38;
+      const wy = this.y - 70;
+      this.weaponGlow?.setVisible(true).setPosition(wx, wy).setScale(0.5 + Math.sin(this.scene.time.now / 80) * 0.15);
+    } else {
+      this.weaponGlow?.setVisible(false);
+    }
 
     if (this.scene.combo >= 15 && !this.dead) {
       const pulse = 1.4 + Math.sin(this.scene.time.now / 110) * 0.2;
@@ -550,9 +606,18 @@ export class Hero extends Actor {
     } else {
       this.sprite.setAlpha(this.dead ? 0.55 : 1);
     }
+
+    if (this.hexShield) {
+      this.hexShield.setPosition(this.x + this.facing * 34, this.y - 75);
+      const pulse = 0.7 + 0.25 * Math.sin(this.scene.time.now / 240);
+      this.hexShield.setScale(0.85 * pulse, 0.85 * pulse).setAlpha(this.dead ? 0 : 0.65 + 0.3 * pulse);
+    }
   }
 
   override destroy() {
+    this.hexShield?.destroy();
+    this.energyScarf.destroy();
+    this.weaponGlow?.destroy();
     this.afterimages.destroy();
     this.smearArc.destroy();
     this.comboAura?.destroy();

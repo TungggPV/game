@@ -2,7 +2,7 @@
 
 Source PNGs under public/assets contain matte shadows, stray labels and slivers of
 neighbouring cells. This script keeps the main silhouette, strips the grey floor
-shadow, trims, scales to a common height and writes public/assets/game/ plus a
+shadow, defringes edge halos, trims, scales and writes public/assets/game/ plus a
 manifest with foot anchors used by the runtime.
 
 Run: python scripts/build_sprites.py   (needs pillow + numpy)
@@ -42,6 +42,10 @@ ENEMIES = {
     "boss_slam": "enemies/boss/slam.png",
     "boss_whip": "enemies/boss/tentacle_whip.png",
     "boss_rage": "enemies/boss/rage.png",
+    # New enemy archetypes
+    "bomber": "enemies/crawler/crawler_main.png",
+    "sniper": "enemies/sky_hunter/sky_hunter_main.png",
+    "drone": "enemies/sky_hunter/sky_hunter_main.png",
 }
 
 ITEMS = {
@@ -63,8 +67,7 @@ def load(rel: str) -> np.ndarray:
 
 def strip_floor_shadow(a: np.ndarray, band: float = 0.35) -> None:
     """Remove the flat grey floor matte: grey pixels in the lower band that touch
-    transparency, flood-filled through neighbouring grey. Pixel-art outlines keep
-    white armour from touching transparency, so it survives."""
+    transparency, flood-filled through neighbouring grey."""
     h, w = a.shape[:2]
     start = int(h * (1 - band))
     rgb = a[..., :3]
@@ -87,6 +90,16 @@ def strip_floor_shadow(a: np.ndarray, band: float = 0.35) -> None:
                 seen[ny, nx] = True
                 q.append((ny, nx))
     a[seen, 3] = 0
+
+
+def defringe(a: np.ndarray) -> None:
+    """Clean dirty semi-transparent white/grey edge halos from boundary pixels."""
+    alpha = a[..., 3]
+    rgb = a[..., :3]
+    light = rgb.mean(axis=2)
+    sat = rgb.max(axis=2) - rgb.min(axis=2)
+    fringe = (alpha > 0) & (alpha < 130) & (light > 150) & (sat < 40)
+    a[fringe, 3] = 0
 
 
 def components(alpha: np.ndarray) -> tuple[np.ndarray, list[int]]:
@@ -116,7 +129,7 @@ def components(alpha: np.ndarray) -> tuple[np.ndarray, list[int]]:
     return labels, sizes
 
 
-def keep_main(a: np.ndarray, ratio: float = 0.12) -> None:
+def keep_main(a: np.ndarray, ratio: float = 0.05) -> None:
     labels, sizes = components(a[..., 3])
     if len(sizes) <= 1:
         return
@@ -127,6 +140,8 @@ def keep_main(a: np.ndarray, ratio: float = 0.12) -> None:
 
 def trim(a: np.ndarray, pad: int = 2) -> np.ndarray:
     ys, xs = np.nonzero(a[..., 3] > 24)
+    if ys.size == 0 or xs.size == 0:
+        return a
     y0, y1 = max(ys.min() - pad, 0), min(ys.max() + pad + 1, a.shape[0])
     x0, x1 = max(xs.min() - pad, 0), min(xs.max() + pad + 1, a.shape[1])
     return a[y0:y1, x0:x1]
@@ -152,7 +167,7 @@ def save(a: np.ndarray, name: str, height: int | None = None) -> dict:
     return {"file": f"{name}.png", "w": img.width, "h": img.height}
 
 
-ICON_CIRCLE = {  # (cx, cy, r) as fractions of the source height, for icons whose circle is off-centre
+ICON_CIRCLE = {
     "emerald_phantom_icon_skill2": (0.34, 0.52, 0.3),
     "emerald_phantom_icon_ultimate": (0.34, 0.52, 0.3),
     "volt_sentinel_icon_skill2": (0.36, 0.5, 0.32),
@@ -172,31 +187,66 @@ def circle_icon(rel: str, name: str, size: int = 96) -> dict:
     return save(a, name, size)
 
 
-def save_background(name: str) -> dict:
-    """Crop the light/dark frame lines the source panels carry; they show as seams when tiled."""
+def save_mirrored_background(name: str) -> tuple[dict, dict]:
+    """Save both standard and horizontally mirrored background for seamless infinite horizontal scrolling."""
     a = load(f"backgrounds/{name}.png")
     rgb = a[..., :3].mean(axis=2)
     keep_rows = np.nonzero((rgb.mean(axis=1) < 150) & (rgb.mean(axis=1) > 12))[0]
     keep_cols = np.nonzero((rgb.mean(axis=0) < 150) & (rgb.mean(axis=0) > 12))[0]
-    a = a[keep_rows.min() : keep_rows.max() + 1, keep_cols.min() + 2 : keep_cols.max() - 1]
-    return save(a, f"bg_{name}")
+    cropped = a[keep_rows.min() : keep_rows.max() + 1, keep_cols.min() + 2 : keep_cols.max() - 1]
+    
+    entry_std = save(cropped, f"bg_{name}")
+    
+    # Create horizontally mirrored pair: [cropped | flipped] -> guarantees zero vertical seams at edges
+    flipped = np.ascontiguousarray(cropped[:, ::-1, :])
+    mirrored = np.concatenate([cropped, flipped], axis=1)
+    entry_mirrored = save(mirrored, f"bg_{name}_mirrored")
+    
+    return entry_std, entry_mirrored
+
+
+def recolor_to_obsidian(a: np.ndarray) -> np.ndarray:
+    """Recolor armor to dark volcanic slate / obsidian stone with warm amber-gold core energy."""
+    res = a.copy().astype(np.float32)
+    alpha = res[..., 3]
+    rgb = res[..., :3]
+    gray = rgb.mean(axis=2)
+    
+    # Detect core glow / eye / energy channels (originally bright cyan/blue)
+    is_core = (rgb[..., 0] < 120) & (rgb[..., 2] > 160) & (alpha > 40)
+    
+    # Dark obsidian rock slate
+    res[..., 0] = np.clip(gray * 0.72 + 22, 0, 255)
+    res[..., 1] = np.clip(gray * 0.62 + 16, 0, 255)
+    res[..., 2] = np.clip(gray * 0.58 + 14, 0, 255)
+    
+    # Core glows warm amber gold
+    res[is_core, 0] = 255
+    res[is_core, 1] = 185
+    res[is_core, 2] = 55
+    
+    return res.astype(np.int16)
 
 
 def main() -> None:
     manifest: dict[str, dict] = {}
 
+    # 1. Existing 4 heroes
     for hero, src in HERO_SRC.items():
         poses = HERO_POSES + ([f"walk_{i}" for i in range(1, 5)] if hero in WALK_HEROES else [])
         for pose in poses:
             a = load(f"{src}/sprites/{pose}.png")
             strip_floor_shadow(a)
-            keep_main(a, 0.08)
+            defringe(a)
+            keep_main(a, 0.05)
             a = trim(a)
             entry = save(a, f"{hero}_{pose}")
             entry["ax"] = foot_anchor(a)
             manifest[f"{hero}_{pose}"] = entry
+            
         art = load(f"processed/{hero}/dynamic/{'action_clean' if hero == 'nova_blade' else 'action'}.png")
         strip_floor_shadow(art, 0.2)
+        defringe(art)
         keep_main(art, 0.02)
         manifest[f"{hero}_art"] = save(trim(art), f"{hero}_art", 420)
 
@@ -204,24 +254,54 @@ def main() -> None:
         for slot, file in icon_names.items():
             manifest[f"{hero}_icon_{slot}"] = circle_icon(f"skills/{hero}/icons/{file}_icon.png", f"{hero}_icon_{slot}")
 
+    # 2. Hero 5: Obsidian Warden (Earth & Shield tank)
+    obsidian_poses = HERO_POSES + [f"walk_{i}" for i in range(1, 5)]
+    for pose in obsidian_poses:
+        a = load(f"hero/sprites/{pose}.png")
+        strip_floor_shadow(a)
+        defringe(a)
+        keep_main(a, 0.05)
+        a = recolor_to_obsidian(a)
+        a = trim(a)
+        entry = save(a, f"obsidian_warden_{pose}")
+        entry["ax"] = foot_anchor(a)
+        manifest[f"obsidian_warden_{pose}"] = entry
+
+    art_obsidian = recolor_to_obsidian(load("processed/nova_blade/dynamic/action_clean.png"))
+    strip_floor_shadow(art_obsidian, 0.2)
+    defringe(art_obsidian)
+    keep_main(art_obsidian, 0.02)
+    manifest["obsidian_warden_art"] = save(trim(art_obsidian), "obsidian_warden_art", 420)
+
+    for slot, file in {"basic": "j_basic_attack", "skill1": "k_skill1", "skill2": "l_skill2", "ultimate": "u_ultimate"}.items():
+        a = load(f"skills/nova_blade/icons/{file}_icon.png")
+        a = recolor_to_obsidian(a)
+        side = min(a.shape[0], a.shape[1])
+        a = a[:side, :side].copy()
+        yy, xx = np.mgrid[0:side, 0:side]
+        cx, cy, r = side * 0.5, side * 0.42, side * 0.34
+        a[((yy - cy) ** 2 + (xx - cx) ** 2) > r * r, 3] = 0
+        manifest[f"obsidian_warden_icon_{slot}"] = save(trim(a, 0), f"obsidian_warden_icon_{slot}", 96)
+
+    # 3. Enemies (including bomber, sniper, drone)
     for name, rel in ENEMIES.items():
         a = load(rel)
         strip_floor_shadow(a, 0.4)
-        keep_main(a, 0.15)
+        defringe(a)
+        keep_main(a, 0.05)
         a = trim(a)
         entry = save(a, name)
         entry["ax"] = foot_anchor(a)
         manifest[name] = entry
 
+    # 4. Items & FX
     for name, rel in {**ITEMS, **FX}.items():
         a = load(rel)
-        if name == "item_chip":
-            keep_main(a, 0.05)
-        else:
-            keep_main(a, 0.2)
+        defringe(a)
+        keep_main(a, 0.05)
         manifest[name] = save(trim(a), name, 64 if name.startswith("item") else None)
 
-    # City Props (Crate, Barrel, Supply Chest)
+    # 5. City Props (Crate, Barrel, Supply Chest)
     city_props = Image.open(ROOT / "props" / "city_props.png").convert("RGBA")
     crate = city_props.crop((0, 0, 72, 72))
     crate.save(OUT / "prop_crate.png", optimize=True)
@@ -235,11 +315,14 @@ def main() -> None:
     chest.save(OUT / "prop_chest.png", optimize=True)
     manifest["prop_chest"] = {"file": "prop_chest.png", "w": 118, "h": 65, "ax": 0.5}
 
+    # 6. Seamless Backgrounds
     for bg in ["city_neon", "lab_sewer", "lava_fortress"]:
-        manifest[f"bg_{bg}"] = save_background(bg)
+        std, mir = save_mirrored_background(bg)
+        manifest[f"bg_{bg}"] = std
+        manifest[f"bg_{bg}_mirrored"] = mir
 
     MANIFEST.write_text(json.dumps(manifest, indent=1))
-    print(f"wrote {len(manifest)} entries")
+    print(f"wrote {len(manifest)} entries into sprites.json")
 
 
 if __name__ == "__main__":

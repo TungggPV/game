@@ -206,6 +206,114 @@ const TEXTURES: Record<string, [number, number, Draw]> = {
     c.ellipse(cx, cy, w * 0.48, h * 0.44, 0, 0, Math.PI * 2);
     c.fill();
   }],
+  crate_metal: [72, 72, (c, w, h) => {
+    // Sci-fi chamfered crate body
+    c.fillStyle = "#1e293b";
+    c.strokeStyle = "#475569";
+    c.lineWidth = 3;
+    c.beginPath();
+    const r = 8;
+    c.moveTo(r, 0);
+    c.lineTo(w - r, 0);
+    c.lineTo(w, r);
+    c.lineTo(w, h - r);
+    c.lineTo(w - r, h);
+    c.lineTo(r, h);
+    c.lineTo(0, h - r);
+    c.lineTo(0, r);
+    c.closePath();
+    c.fill();
+    c.stroke();
+
+    // Inner plate
+    c.fillStyle = "#0f172a";
+    c.strokeStyle = "#334155";
+    c.lineWidth = 2;
+    c.beginPath();
+    c.rect(10, 10, w - 20, h - 20);
+    c.fill();
+    c.stroke();
+
+    // Corner reinforcement brackets
+    c.fillStyle = "#64748b";
+    for (const [bx, by] of [[4, 4], [w - 14, 4], [4, h - 14], [w - 14, h - 14]]) {
+      c.fillRect(bx, by, 10, 10);
+    }
+    // Rivets
+    c.fillStyle = "#94a3b8";
+    for (const [rx, ry] of [[8, 8], [w - 8, 8], [8, h - 8], [w - 8, h - 8]]) {
+      c.beginPath();
+      c.arc(rx, ry, 2, 0, Math.PI * 2);
+      c.fill();
+    }
+  }],
+  hex_shield: [64, 64, (c, w, h) => {
+    const cx = w / 2;
+    const cy = h / 2;
+    const r = w * 0.45;
+    c.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i * Math.PI) / 3;
+      const x = cx + r * Math.cos(a);
+      const y = cy + r * Math.sin(a);
+      if (i === 0) c.moveTo(x, y);
+      else c.lineTo(x, y);
+    }
+    c.closePath();
+    c.fillStyle = "rgba(255, 255, 255, 0.22)";
+    c.fill();
+    c.strokeStyle = "rgba(255, 255, 255, 0.95)";
+    c.lineWidth = 3;
+    c.stroke();
+    // Inner hex
+    c.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i * Math.PI) / 3;
+      const x = cx + r * 0.62 * Math.cos(a);
+      const y = cy + r * 0.62 * Math.sin(a);
+      if (i === 0) c.moveTo(x, y);
+      else c.lineTo(x, y);
+    }
+    c.closePath();
+    c.strokeStyle = "rgba(255, 255, 255, 0.65)";
+    c.lineWidth = 1.5;
+    c.stroke();
+  }],
+  laser_reticle: [32, 32, (c, w, h) => {
+    const cx = w / 2;
+    const cy = h / 2;
+    c.strokeStyle = "rgba(255, 255, 255, 0.95)";
+    c.lineWidth = 2;
+    c.beginPath();
+    c.arc(cx, cy, 10, 0, Math.PI * 2);
+    c.stroke();
+    c.fillStyle = "rgba(255, 255, 255, 1)";
+    c.beginPath();
+    c.arc(cx, cy, 3, 0, Math.PI * 2);
+    c.fill();
+    // 4 crosshair ticks
+    c.beginPath();
+    c.moveTo(cx - 14, cy); c.lineTo(cx - 8, cy);
+    c.moveTo(cx + 8, cy); c.lineTo(cx + 14, cy);
+    c.moveTo(cx, cy - 14); c.lineTo(cx, cy - 8);
+    c.moveTo(cx, cy + 8); c.lineTo(cx, cy + 14);
+    c.stroke();
+  }],
+  lamp_cone: [128, 256, (c, w, h) => {
+    const g = c.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, "rgba(255, 235, 180, 0.45)");
+    g.addColorStop(0.35, "rgba(255, 225, 150, 0.25)");
+    g.addColorStop(0.8, "rgba(255, 215, 120, 0.08)");
+    g.addColorStop(1, "rgba(255, 200, 100, 0)");
+    c.fillStyle = g;
+    c.beginPath();
+    c.moveTo(w * 0.45, 0);
+    c.lineTo(w * 0.55, 0);
+    c.lineTo(w, h);
+    c.lineTo(0, h);
+    c.closePath();
+    c.fill();
+  }],
 };
 
 export class BootScene extends Phaser.Scene {

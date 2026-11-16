@@ -44,6 +44,14 @@ export class Enemy extends Actor {
   moltenTimer = 0;
   dimensionSafeX?: number;
 
+  // Procedural Attachments (Step 2)
+  private thermalBomb?: Phaser.GameObjects.Image;
+  private laserScope?: Phaser.GameObjects.Image;
+  private targetingLaser?: Phaser.GameObjects.Line;
+  private laserReticle?: Phaser.GameObjects.Image;
+  private droneRing?: Phaser.GameObjects.Image;
+  private buffBeam?: Phaser.GameObjects.Line;
+
   constructor(scene: GameScene, type: EnemyType, x: number, hpScale: number) {
     const def = ENEMIES[type];
     const diff = getDifficultyModifiers();
@@ -71,6 +79,46 @@ export class Enemy extends Actor {
     // Spawn in from the edge with a short fade so waves read clearly.
     this.sprite.setAlpha(0);
     scene.tweens.add({ targets: this.sprite, alpha: 1, duration: 300 });
+
+    // Initialize Procedural Attachments
+    if (type === "bomber") {
+      this.thermalBomb = scene.add
+        .image(x, this.cy, "core")
+        .setScale(0.7)
+        .setTint(0xff5511)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setDepth(this.sprite.depth + 1);
+    } else if (type === "sniper") {
+      this.laserScope = scene.add
+        .image(x, this.cy, "dot")
+        .setScale(0.7)
+        .setTint(0x33ff66)
+        .setDepth(this.sprite.depth + 1);
+      this.targetingLaser = scene.add
+        .line(0, 0, 0, 0, 0, 0, 0xff0044, 0.6)
+        .setLineWidth(1.5)
+        .setDepth(DEPTH.projectile - 1)
+        .setVisible(false);
+      this.laserReticle = scene.add
+        .image(0, 0, "laser_reticle")
+        .setScale(0.7)
+        .setTint(0xff2255)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setDepth(DEPTH.fx)
+        .setVisible(false);
+    } else if (type === "drone") {
+      this.droneRing = scene.add
+        .image(x, this.cy, "softring")
+        .setScale(0.35, 0.12)
+        .setTint(0x33ffaa)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setDepth(this.sprite.depth + 1);
+      this.buffBeam = scene.add
+        .line(0, 0, 0, 0, 0, 0, 0x33ffaa, 0.5)
+        .setLineWidth(2)
+        .setDepth(DEPTH.fx - 1)
+        .setVisible(false);
+    }
   }
 
   get isBoss() {
@@ -796,9 +844,50 @@ export class Enemy extends Actor {
       const pulse = 0.5 + Math.sin(t * 30) * 0.5;
       this.sprite.setTint(Phaser.Display.Color.GetColor(255, 196 + pulse * 59, 204 + pulse * 51));
     }
+
+    // Update Procedural Attachments
+    if (this.thermalBomb) {
+      this.thermalBomb.setPosition(this.x - this.facing * 14, this.y - 42);
+      if (this.state === "windup") {
+        const pulse = 0.7 + 0.3 * Math.sin(t * 35);
+        this.thermalBomb.setScale(0.7 * pulse).setAlpha(pulse);
+        if (Math.random() < 0.2) this.scene.fx.sparks(this.x - this.facing * 14, this.y - 42, 0xff4400, 0.6, 2, 200);
+      } else {
+        this.thermalBomb.setScale(0.7).setAlpha(0.85);
+      }
+    }
+    if (this.laserScope) {
+      const scopeX = this.x + this.facing * 18;
+      const scopeY = this.y - 42;
+      this.laserScope.setPosition(scopeX, scopeY);
+      const target = this.scene.heroes.find((h) => !h.dead);
+      if (target && this.state === "windup" && this.move === "snipe") {
+        this.targetingLaser?.setVisible(true).setTo(scopeX, scopeY, target.x, target.cy);
+        this.laserReticle?.setVisible(true).setPosition(target.x, target.cy).setRotation(t * 4);
+      } else {
+        this.targetingLaser?.setVisible(false);
+        this.laserReticle?.setVisible(false);
+      }
+    }
+    if (this.droneRing) {
+      this.droneRing.setPosition(this.x, this.y - 35).setRotation(t * 3.5);
+      // Support beam to wounded ally
+      const ally = this.scene.enemies.find((e) => e !== this && !e.dead && e.hp < e.maxHp && Math.abs(e.x - this.x) < 450);
+      if (ally) {
+        this.buffBeam?.setVisible(true).setTo(this.x, this.y - 35, ally.x, ally.cy);
+      } else {
+        this.buffBeam?.setVisible(false);
+      }
+    }
   }
 
   override destroy() {
+    this.thermalBomb?.destroy();
+    this.laserScope?.destroy();
+    this.targetingLaser?.destroy();
+    this.laserReticle?.destroy();
+    this.droneRing?.destroy();
+    this.buffBeam?.destroy();
     this.eliteAura?.destroy();
     this.orbitSpheres.forEach((s) => s.destroy());
     this.orbitSpheres = [];
