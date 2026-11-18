@@ -71,6 +71,14 @@ export class Enemy extends Actor {
       this.maxPosture = this.posture = 1500;
     }
     this.afterimages = new AfterimageRingBuffer(scene, DEPTH.enemy - 1);
+
+    // Use unique procedural textures when available (Phase 5)
+    const uniqueTexKey = type + "_body";
+    if (scene.textures.exists(uniqueTexKey)) {
+      this.sprite.setTexture(uniqueTexKey);
+      this.baseScale = (def.height / (scene.textures.get(uniqueTexKey).getSourceImage() as HTMLImageElement).height) * (def.scale ?? 1) * 1.18;
+    }
+
     if (def.tint) {
       this.sprite.setTint(def.tint);
     }
@@ -770,6 +778,9 @@ export class Enemy extends Actor {
     const moving = this.state === "move" && Math.abs(this.vx) > 20;
 
     let tex = this.def.sprite;
+    // Use unique procedural body texture if available
+    const uniqueKey = this.def.type + "_body";
+    if (this.scene.textures.exists(uniqueKey)) tex = uniqueKey;
     if (this.isBoss) {
       if (this.enraged && this.state !== "active") tex = "boss_rage";
       if (this.state === "windup" && this.move === "slam") tex = "boss_slam";
@@ -781,7 +792,8 @@ export class Enemy extends Actor {
     }
     if (tex !== a.lastTex) {
       this.sprite.setTexture(tex);
-      this.baseScale = (tex === this.def.sprite ? this.def.height : this.def.height * 0.95) / textureHeight(tex);
+      const texH = this.scene.textures.exists(tex) ? (this.scene.textures.get(tex).getSourceImage() as HTMLImageElement).height || textureHeight(tex) : textureHeight(tex);
+      this.baseScale = (this.def.height / texH) * (this.def.scale ?? 1) * 1.18;
       a.lastTex = tex;
     }
 

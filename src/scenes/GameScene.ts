@@ -205,7 +205,11 @@ export class GameScene extends Phaser.Scene {
 
     // 1. Far background layer (bgFar): Far cyberpunk city skyline, scrolling slow at 0.15x
     // Has a cool cyan-purple atmospheric fog tint
-    const farTexKey = this.stageIndex === 3 ? "bg_city_neon" : this.stageIndex === 4 ? "bg_orbit" : bgKey;
+    const farTexKey = this.stageIndex === 3
+      ? (this.textures.exists("bg_orbit_mirrored") ? "bg_orbit_mirrored" : "bg_orbit")
+      : this.stageIndex === 4
+      ? (this.textures.exists("bg_void_singularity_mirrored") ? "bg_void_singularity_mirrored" : "bg_void_singularity")
+      : bgKey;
     this.bgFar = this.add
       .tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, farTexKey)
       .setOrigin(0)
@@ -232,40 +236,25 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, this.worldWidth, GAME_HEIGHT);
     this.cameras.main.setBackgroundColor(stage.floor);
 
-    // 3. Volumetric street lamp light cones & Neon signage pulse in Stage 1 / City
-    if (this.stageIndex === 0) {
-      for (let lx = 320; lx < this.worldWidth; lx += 480) {
-        const cone = this.add
-          .image(lx, 470, "lamp_cone")
-          .setDisplaySize(160, 200)
-          .setBlendMode(Phaser.BlendModes.ADD)
-          .setAlpha(0.2)
-          .setDepth(DEPTH.bg + 1);
-        this.lampCones.push(cone);
-      }
+    // 3. Per-stage atmospheric VFX & lighting
+    this.buildStageVFX(stage);
 
-      for (let nx = 200; nx < this.worldWidth; nx += 420) {
-        // Cyan pulse around the NOVA.CO. curb / sign area
-        const signGlow = this.add
-          .image(nx, 605, "glow")
-          .setScale(1.2, 0.4)
-          .setTint(0x18e6ff)
-          .setBlendMode(Phaser.BlendModes.ADD)
-          .setDepth(DEPTH.bg + 1);
-        this.neonGlows.push({ img: signGlow, baseAlpha: 0.35, speed: 3.2, seed: nx });
-
-        // Amber / magenta neon accents higher up on shopfronts
-        const lampGlow = this.add
-          .image(nx + 180, 410, "core")
-          .setScale(0.8, 0.8)
-          .setTint(0xf43f5e)
-          .setBlendMode(Phaser.BlendModes.ADD)
-          .setDepth(DEPTH.bg + 1);
-        this.neonGlows.push({ img: lampGlow, baseAlpha: 0.4, speed: 4.5, seed: nx + 77 });
-      }
-    }
-
-    // 4. Dual-layer Cyberpunk dust motes: Background (0.3x) & Foreground (1.2x)
+    // 4. Dual-layer atmospheric particles — colors & behavior tuned per stage
+    const dustColors = [
+      [0x18e6ff, 0xa855f7],     // Stage 1: Neon city cyan/purple
+      [0x37ffb0, 0x22dd88],     // Stage 2: Lab sewer green/teal
+      [0xff6a2a, 0xffaa44],     // Stage 3: Lava fortress orange/amber
+      [0xa855f7, 0x6366f1],     // Stage 4: Orbit purple/indigo
+      [0xd946ef, 0x818cf8],     // Stage 5: Void magenta/lavender
+    ];
+    const fgDustColors = [
+      [0x67e8f9, 0xf472b6, 0xffd07a],  // Stage 1
+      [0x4ade80, 0xfbbf24, 0x34d399],  // Stage 2
+      [0xff4500, 0xffa040, 0xffdd55],  // Stage 3
+      [0x818cf8, 0xc084fc, 0xffffff],  // Stage 4
+      [0xd946ef, 0xf0abfc, 0x67e8f9],  // Stage 5
+    ];
+    const si = Math.min(this.stageIndex, 4);
     this.dustEmitter = this.add
       .particles(0, 0, "dot", {
         x: { min: 0, max: this.worldWidth },
@@ -275,7 +264,7 @@ export class GameScene extends Phaser.Scene {
         speedY: { min: -8, max: -22 },
         scale: { start: 0.4, end: 0.1 },
         alpha: { start: 0, end: 0.22 },
-        tint: [0x18e6ff, 0xa855f7],
+        tint: dustColors[si],
         blendMode: Phaser.BlendModes.ADD,
         frequency: 220,
         quantity: 1,
@@ -291,7 +280,7 @@ export class GameScene extends Phaser.Scene {
         speedY: { min: -16, max: -38 },
         scale: { start: 0.65, end: 0.18 },
         alpha: { start: 0, end: 0.32 },
-        tint: [0x67e8f9, 0xf472b6, 0xffd07a],
+        tint: fgDustColors[si],
         blendMode: Phaser.BlendModes.ADD,
         frequency: 240,
         quantity: 1,
@@ -314,6 +303,142 @@ export class GameScene extends Phaser.Scene {
     for (const p of propPatterns) {
       if (p.offset < this.worldWidth - 100) {
         this.props.push(new EnvironmentProp(this, p.offset, p.type));
+      }
+    }
+  }
+
+  /** Per-stage atmospheric VFX & lighting */
+  private buildStageVFX(stage: StageDef) {
+    const ww = this.worldWidth;
+
+    if (this.stageIndex === 0) {
+      // === STAGE 1: Neon City — Street lamps, neon sign glow, rain streaks ===
+      for (let lx = 320; lx < ww; lx += 480) {
+        const cone = this.add
+          .image(lx, 470, "lamp_cone")
+          .setDisplaySize(160, 200)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setAlpha(0.2)
+          .setDepth(DEPTH.bg + 1);
+        this.lampCones.push(cone);
+      }
+      for (let nx = 200; nx < ww; nx += 420) {
+        const signGlow = this.add
+          .image(nx, 605, "glow")
+          .setScale(1.2, 0.4)
+          .setTint(0x18e6ff)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setDepth(DEPTH.bg + 1);
+        this.neonGlows.push({ img: signGlow, baseAlpha: 0.35, speed: 3.2, seed: nx });
+        const lampGlow = this.add
+          .image(nx + 180, 410, "core")
+          .setScale(0.8, 0.8)
+          .setTint(0xf43f5e)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setDepth(DEPTH.bg + 1);
+        this.neonGlows.push({ img: lampGlow, baseAlpha: 0.4, speed: 4.5, seed: nx + 77 });
+      }
+
+    } else if (this.stageIndex === 1) {
+      // === STAGE 2: Lab Sewer — Green toxic fog, dripping pipe lights, warning lights ===
+      for (let gx = 180; gx < ww; gx += 360) {
+        // Toxic green fog pools on floor
+        const fogGlow = this.add
+          .image(gx, GROUND_Y - 20, "glow")
+          .setScale(2.0, 0.35)
+          .setTint(0x22cc66)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setDepth(DEPTH.bg + 1);
+        this.neonGlows.push({ img: fogGlow, baseAlpha: 0.25, speed: 1.5, seed: gx * 1.7 });
+      }
+      for (let wx = 300; wx < ww; wx += 550) {
+        // Red warning lights blinking on walls
+        const warn = this.add
+          .image(wx, 280, "core")
+          .setScale(0.5, 0.5)
+          .setTint(0xff2222)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setDepth(DEPTH.bg + 1);
+        this.neonGlows.push({ img: warn, baseAlpha: 0.5, speed: 6.0, seed: wx * 2.3 });
+      }
+      for (let px = 420; px < ww; px += 400) {
+        // Dim overhead lab lights
+        const labLight = this.add
+          .image(px, 320, "lamp_cone")
+          .setDisplaySize(100, 160)
+          .setTint(0x44ff88)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setAlpha(0.12)
+          .setDepth(DEPTH.bg + 1);
+        this.lampCones.push(labLight);
+      }
+
+    } else if (this.stageIndex === 2) {
+      // === STAGE 3: Lava Fortress — Lava glow, ember particles, heat shimmer ===
+      for (let lx = 150; lx < ww; lx += 300) {
+        // Orange lava underlight glow on floor
+        const lavaGlow = this.add
+          .image(lx, GROUND_Y - 10, "glow")
+          .setScale(1.8, 0.4)
+          .setTint(0xff4400)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setDepth(DEPTH.bg + 1);
+        this.neonGlows.push({ img: lavaGlow, baseAlpha: 0.3, speed: 2.2, seed: lx * 1.1 });
+      }
+      for (let fx = 240; fx < ww; fx += 480) {
+        // Forge fire wall sconces
+        const forge = this.add
+          .image(fx, 350, "flame")
+          .setScale(1.2)
+          .setTint(0xff6622)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setDepth(DEPTH.bg + 1);
+        this.neonGlows.push({ img: forge, baseAlpha: 0.6, speed: 8.0, seed: fx * 3.3 });
+      }
+
+    } else if (this.stageIndex === 3) {
+      // === STAGE 4: Orbit — Sunbeam flare, micro-debris streaks, star shimmer ===
+      // Solar flare on the right edge
+      const solarFlare = this.add
+        .image(ww - 200, 180, "glow")
+        .setScale(5.0, 3.5)
+        .setTint(0xffeedd)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setAlpha(0.15)
+        .setDepth(DEPTH.bg + 1);
+      this.neonGlows.push({ img: solarFlare, baseAlpha: 0.15, speed: 0.8, seed: 42 });
+      // Star twinkle accents
+      for (let sx = 100; sx < ww; sx += 240) {
+        const star = this.add
+          .image(sx, 80 + (sx * 97) % 300, "star")
+          .setScale(0.3 + (sx % 5) * 0.08)
+          .setTint(0xffffff)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setDepth(DEPTH.bg + 1);
+        this.neonGlows.push({ img: star, baseAlpha: 0.4 + (sx % 3) * 0.15, speed: 2.0 + (sx % 7) * 0.5, seed: sx });
+      }
+
+    } else if (this.stageIndex === 4) {
+      // === STAGE 5: Void Singularity — Void lightning, gravitational lensing glow, dark energy wisps ===
+      // Central accretion disk glow
+      const diskGlow = this.add
+        .image(ww / 2, 300, "glow")
+        .setScale(6.0, 2.0)
+        .setTint(0xd946ef)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setAlpha(0.2)
+        .setDepth(DEPTH.bg + 1);
+      this.neonGlows.push({ img: diskGlow, baseAlpha: 0.2, speed: 1.2, seed: 999 });
+      // Void lightning crackling
+      for (let vx = 200; vx < ww; vx += 350) {
+        const voidCrackle = this.add
+          .image(vx, 200 + (vx * 71) % 250, "streak")
+          .setScale(1.5, 0.6)
+          .setTint(0xd946ef)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setRotation((vx % 6) * 0.5)
+          .setDepth(DEPTH.bg + 1);
+        this.neonGlows.push({ img: voidCrackle, baseAlpha: 0.35, speed: 12.0, seed: vx * 7.7 });
       }
     }
   }
