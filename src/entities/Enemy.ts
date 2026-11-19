@@ -10,6 +10,8 @@ import type { GameScene } from "../scenes/GameScene";
 import { Actor, type Hit } from "./Actor";
 import type { Hero } from "./Hero";
 
+const LEFT_FACING_TEX = new Set(["crawler", "boss_slam", "boss_whip", "boss_beam"]);
+
 export type EliteAffix = "vampiric" | "orbit_shield" | "teleporter" | "molten_trail";
 
 type State = "idle" | "move" | "windup" | "active" | "recover" | "hurt" | "dying" | "selfDestruct";
@@ -51,6 +53,7 @@ export class Enemy extends Actor {
   private laserReticle?: Phaser.GameObjects.Image;
   private droneRing?: Phaser.GameObjects.Image;
   private buffBeam?: Phaser.GameObjects.Line;
+  private enemyFxGfx: Phaser.GameObjects.Graphics;
 
   constructor(scene: GameScene, type: EnemyType, x: number, hpScale: number) {
     const def = ENEMIES[type];
@@ -71,6 +74,7 @@ export class Enemy extends Actor {
       this.maxPosture = this.posture = 1500;
     }
     this.afterimages = new AfterimageRingBuffer(scene, DEPTH.enemy - 1);
+    this.enemyFxGfx = scene.add.graphics().setDepth(this.sprite.depth + 1).setBlendMode(Phaser.BlendModes.ADD);
 
     if (def.tint) {
       this.sprite.setTint(def.tint);
@@ -770,20 +774,43 @@ export class Enemy extends Actor {
     const a = this.anim;
     const moving = this.state === "move" && Math.abs(this.vx) > 20;
 
+    const t = this.scene.time.now / 1000;
     let tex = this.def.sprite;
     if (this.isBoss) {
-      if (this.enraged && this.state !== "active") tex = "boss_rage";
-      if (this.state === "windup" && this.move === "slam") tex = "boss_slam";
-      if (this.state === "active" && this.move === "whip") tex = "boss_whip";
-      if (this.state === "active" && this.move === "beam") tex = "boss_idle";
+      if (this.state === "windup" || this.state === "active") {
+        if (this.move === "slam") tex = "boss_slam";
+        else if (this.move === "whip" || this.move === "dimension_slash") tex = "boss_whip";
+        else if (this.move === "beam" || this.move === "clone_cross") tex = "boss_beam";
+        else if (this.move === "summon") tex = "boss_summon";
+        else tex = this.enraged ? "boss_rage" : "boss_idle";
+      } else if (this.enraged) {
+        tex = "boss_rage";
+      } else if (moving) {
+        tex = Math.floor(a.stride) % 2 ? "boss_idle" : "boss";
+      }
+    } else if (this.def.type === "crawler" || this.def.type === "bomber") {
+      if (this.state === "selfDestruct" || (this.state === "active" && this.move === "explode")) tex = "crawler_explode";
+      else if (this.state === "windup" || (this.state === "active" && this.move === "leap")) tex = "crawler_leap";
+      else if (moving) tex = Math.floor(a.stride * 1.8) % 2 ? "crawler_walk" : "crawler";
     } else if (this.def.type === "mutant") {
       if (this.state === "windup" || this.state === "active") tex = "mutant_punch";
-      else if (moving) tex = Math.floor(a.stride) % 2 ? "mutant_walk1" : "mutant";
+      else if (moving) tex = (["mutant_idle", "mutant_walk1", "mutant_walk2"] as const)[Math.floor(a.stride * 1.5) % 3];
+    } else if (this.def.type === "hunter" || this.def.type === "sniper" || this.def.type === "drone") {
+      if (this.state === "active" && (this.move === "shoot" || this.move === "snipe")) tex = "hunter_fire";
+      else if (this.state === "windup") tex = "hunter_dive";
+      else if (Math.abs(this.vx) > 120) tex = Math.floor(t * 8) % 2 ? "hunter_dive" : "hunter";
+    } else if (this.def.type === "aegis" || this.def.type === "aegis_prime") {
+      if (this.isBroken() || this.state === "hurt") tex = "aegis_break";
+      else if ((this.state === "windup" || this.state === "active") && this.move === "bash") tex = "aegis_bash";
+      else if ((this.state === "windup" || this.state === "active") && this.move === "shoot") tex = "aegis_shot";
+      else if (moving) tex = Math.floor(a.stride * 1.5) % 2 ? "aegis_walk" : "aegis";
     }
     if (tex !== a.lastTex) {
-      this.sprite.setTexture(tex);
-      const texH = this.scene.textures.exists(tex) ? (this.scene.textures.get(tex).getSourceImage() as HTMLImageElement).height || textureHeight(tex) : textureHeight(tex);
-      this.baseScale = (this.def.height / texH) * (this.def.scale ?? 1) * 1.18;
+      if (this.scene.textures.exists(tex)) {
+        this.sprite.setTexture(tex);
+        const texH = (this.scene.textures.get(tex).getSourceImage() as HTMLImageElement).height || textureHeight(tex);
+        this.baseScale = (this.def.height / texH) * (this.def.scale ?? 1) * 1.18;
+      }
       a.lastTex = tex;
     }
 
@@ -804,11 +831,11 @@ export class Enemy extends Actor {
 
     a.turn += (this.facing - a.turn) * Math.min(1, dt * (this.isBoss ? 10 : 18));
     const sign = a.turn >= 0 ? 1 : -1;
-    const flip = sign !== this.def.artFacing;
+    const poseFacing = LEFT_FACING_TEX.has(tex) ? -1 : this.def.artFacing;
+    const flip = sign !== poseFacing;
     const ax = anchorX(tex);
     this.sprite.setFlipX(flip).setOrigin(flip ? 1 - ax : ax, 1);
 
-    const t = this.scene.time.now / 1000;
     let lean = 0;
     let yOff = 0;
     let sx = 1;
@@ -847,7 +874,8 @@ export class Enemy extends Actor {
       this.sprite.setTint(Phaser.Display.Color.GetColor(255, 196 + pulse * 59, 204 + pulse * 51));
     }
 
-    // Update Procedural Attachments
+    // Update Procedural Attachments & 60FPS Enemy Overlays
+    this.drawProceduralEnemyFX(t, yOff);
     if (this.thermalBomb) {
       this.thermalBomb.setPosition(this.x - this.facing * 14, this.y - 42);
       if (this.state === "windup") {
@@ -883,7 +911,86 @@ export class Enemy extends Actor {
     }
   }
 
+  private drawProceduralEnemyFX(t: number, yOff: number) {
+    const g = this.enemyFxGfx;
+    g.clear();
+    if (this.dead) return;
+
+    const tintCol = this.def.tint ?? (this.isBoss ? 0x33e6ff : 0xff3355);
+    const cy = this.cy + yOff;
+
+    if (this.flying) {
+      // Twin thruster flame cones behind wings + pulsing anti-gravity ring below
+      const dir = this.facing;
+      const flicker = 0.78 + Math.sin(t * 42 + this.hoverSeed) * 0.22;
+      const thrustLen = (18 + Math.min(16, Math.abs(this.vx) * 0.05)) * flicker;
+      const tx = this.x - dir * 32;
+      for (const tyOff of [-10, 8]) {
+        g.fillStyle(tintCol, 0.55);
+        g.fillTriangle(tx, cy + tyOff - 4, tx, cy + tyOff + 4, tx - dir * thrustLen, cy + tyOff);
+        g.fillStyle(0xffffff, 0.75);
+        g.fillTriangle(tx, cy + tyOff - 2, tx, cy + tyOff + 2, tx - dir * thrustLen * 0.55, cy + tyOff);
+      }
+      g.lineStyle(1.5, tintCol, 0.4 + 0.2 * Math.sin(t * 7 + this.hoverSeed));
+      g.strokeEllipse(this.x, this.y + yOff + 6, 48 + Math.sin(t * 6) * 6, 12);
+    } else if (this.isBoss) {
+      // Counter-rotating Boss Runic Mandala / Void Singularity Halo + radial spokes
+      const bossCol = this.def.type === "archon_zero" ? 0xd946ef : this.enraged ? 0xff3355 : 0x33e6ff;
+      const outerR = 112 + Math.sin(t * 3.5) * 6;
+      const innerR = 78;
+      g.lineStyle(2.2, bossCol, 0.35 + (this.enraged ? 0.2 : 0));
+      g.strokeCircle(this.x, cy, outerR);
+      g.lineStyle(1.6, 0xffffff, 0.28);
+      g.strokeCircle(this.x, cy, innerR);
+
+      const octRot = t * (this.enraged ? 1.8 : 0.9);
+      g.lineStyle(1.8, bossCol, 0.48);
+      g.beginPath();
+      for (let i = 0; i <= 8; i += 1) {
+        const a = octRot + (i * Math.PI) / 4;
+        const px = this.x + Math.cos(a) * (innerR + 12);
+        const py = cy + Math.sin(a) * (innerR + 12);
+        if (i === 0) g.moveTo(px, py);
+        else g.lineTo(px, py);
+      }
+      g.strokePath();
+
+      const spokeRot = -t * 1.4;
+      for (let i = 0; i < 6; i += 1) {
+        const a = spokeRot + (i * Math.PI) / 3;
+        g.lineStyle(1.5, bossCol, 0.42);
+        g.beginPath();
+        g.moveTo(this.x + Math.cos(a) * innerR, cy + Math.sin(a) * innerR);
+        g.lineTo(this.x + Math.cos(a) * (outerR + 14), cy + Math.sin(a) * (outerR + 14));
+        g.strokePath();
+      }
+    } else {
+      // Ground enemy: pulsing cyber-eye/core glow
+      const pulse = 0.5 + 0.5 * Math.sin(t * 6.5 + this.hoverSeed);
+      const ex = this.x + this.facing * (this.bodyW * 0.14);
+      const ey = this.y + yOff - this.bodyH * 0.62;
+      g.fillStyle(tintCol, 0.22 + pulse * 0.14);
+      g.fillCircle(ex, ey, 8 + pulse * 4);
+      g.fillStyle(0xffffff, 0.4 + pulse * 0.3);
+      g.fillCircle(ex, ey, 2.8);
+    }
+
+    // Converging windup telegraph energy arcs for any enemy winding up an attack
+    if (this.state === "windup") {
+      const p = Math.min(1, 1 - Math.max(0, this.timer) / 0.6);
+      const warnR = Math.max(12, 56 * (1 - p * 0.72));
+      g.lineStyle(2.4, 0xff3355, 0.45 + p * 0.45);
+      for (let i = 0; i < 3; i += 1) {
+        const a0 = t * 8 + (i * Math.PI * 2) / 3;
+        g.beginPath();
+        g.arc(this.x, cy, warnR, a0, a0 + Math.PI * 0.42);
+        g.strokePath();
+      }
+    }
+  }
+
   override destroy() {
+    this.enemyFxGfx.destroy();
     this.thermalBomb?.destroy();
     this.laserScope?.destroy();
     this.targetingLaser?.destroy();

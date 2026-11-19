@@ -23,7 +23,7 @@ type Panel = {
   energy: Phaser.GameObjects.Rectangle;
   energyText: Phaser.GameObjects.Text;
   coinText?: Phaser.GameObjects.Text;
-  slots: { icon: Phaser.GameObjects.Image; shade: Phaser.GameObjects.Graphics; cd: Phaser.GameObjects.Text; frame: Phaser.GameObjects.Arc; slot: SkillSlot }[];
+  slots: { icon: Phaser.GameObjects.Image; shade: Phaser.GameObjects.Graphics; cd: Phaser.GameObjects.Text; frame: Phaser.GameObjects.Arc; slot: SkillSlot; hadCd?: boolean; lastReady?: boolean }[];
   portrait: Phaser.GameObjects.Image;
   trail: number;
 };
@@ -37,6 +37,8 @@ export class UIScene extends Phaser.Scene {
   private scoreText!: Phaser.GameObjects.Text;
   private stageText!: Phaser.GameObjects.Text;
   private comboText!: Phaser.GameObjects.Text;
+  private fpsText!: Phaser.GameObjects.Text;
+  private fpsAccum = 0;
   private comboShown = 0;
   private bossBar?: {
     root: Phaser.GameObjects.Container;
@@ -81,6 +83,11 @@ export class UIScene extends Phaser.Scene {
     this.scoreText = text(this, GAME_WIDTH / 2, 18, "", 30, "#ffffff", "900").setOrigin(0.5, 0);
     this.stageText = text(this, GAME_WIDTH / 2, 54, "", 15, "#9fb8cc", "700").setOrigin(0.5, 0);
     this.comboText = text(this, GAME_WIDTH - 40, 250, "", 44, "#ffe45c", "900").setOrigin(1, 0.5).setAlpha(0);
+    const fpsX = this.game_.mode === "training" ? 868 : this.game_.heroes.length > 1 ? 474 : GAME_WIDTH - 132;
+    const fpsY = this.game_.mode === "training" ? 26 : 36;
+    const fpsOriginX = this.game_.mode === "training" ? 0.5 : this.game_.heroes.length > 1 ? 0 : 1;
+    this.fpsText = text(this, fpsX, fpsY, "⚡ 60 FPS", 13, "#7dffb0", "900").setOrigin(fpsOriginX, 0.5);
+    this.fpsAccum = 0;
 
     this.goArrow = this.add.container(GAME_WIDTH - 90, GAME_HEIGHT / 2 - 40).setVisible(false);
     this.goArrow.add([
@@ -180,34 +187,56 @@ export class UIScene extends Phaser.Scene {
     return { hero, hp, hpTrail, hpText, energy, energyText, coinText, slots, portrait, trail: 1 };
   }
 
+  private setTextFast(target: Phaser.GameObjects.Text, value: string, color?: string) {
+    if (target.text !== value) target.setText(value);
+    if (color && target.style.color !== color) target.setColor(color);
+  }
+
   update(_t: number, deltaMs: number) {
     const dt = deltaMs / 1000;
     const game = this.game_;
     if (!game.heroes.length) return;
 
+    this.fpsAccum += dt;
+    if (this.fpsAccum >= 0.25) {
+      this.fpsAccum = 0;
+      const fps = Math.min(60, Math.round(this.game.loop.actualFps || 60));
+      const fpsCol = fps >= 55 ? "#7dffb0" : fps >= 40 ? "#ffe45c" : "#ff5a6a";
+      this.setTextFast(this.fpsText, `⚡ ${fps} FPS`, fpsCol);
+    }
+
     for (const p of this.panels) this.updatePanel(p, dt);
 
     if (game.mode === "training") {
-      this.scoreText.setText("");
-      this.stageText.setText("");
+      this.setTextFast(this.scoreText, "");
+      this.setTextFast(this.stageText, "");
     } else if (game.mode === "pk") {
-      this.scoreText.setText(String(Math.max(0, Math.ceil(game.pkTimer))));
-      this.scoreText.setColor(game.pkTimer < 10 ? "#ff5a6a" : "#ffffff");
-      this.stageText.setText(`HIỆP ${game.pkRound}  ·  ${"●".repeat(game.pkWins[0])}${"○".repeat(2 - game.pkWins[0])}  vs  ${"●".repeat(game.pkWins[1])}${"○".repeat(2 - game.pkWins[1])}`);
+      this.setTextFast(
+        this.scoreText,
+        String(Math.max(0, Math.ceil(game.pkTimer))),
+        game.pkTimer < 10 ? "#ff5a6a" : "#ffffff",
+      );
+      this.setTextFast(
+        this.stageText,
+        `HIỆP ${game.pkRound}  ·  ${"●".repeat(game.pkWins[0])}${"○".repeat(2 - game.pkWins[0])}  vs  ${"●".repeat(game.pkWins[1])}${"○".repeat(2 - game.pkWins[1])}`,
+      );
     } else if (game.mode === "endless") {
-      this.scoreText.setText(String(game.score).padStart(6, "0"));
+      this.setTextFast(this.scoreText, String(game.score).padStart(6, "0"));
       const modTag = game.activeModifier !== "none" ? ` · [${game.activeModifier.toUpperCase()}]` : "";
-      this.stageText.setText(`VÔ TẬN · ĐỢT ${game.waveIndex + 1}${modTag}`);
+      this.setTextFast(this.stageText, `VÔ TẬN · ĐỢT ${game.waveIndex + 1}${modTag}`);
     } else if (game.mode === "bossrush") {
-      this.scoreText.setText(String(game.score).padStart(6, "0"));
-      this.stageText.setText(`BOSS RUSH · TRÙM ${game.waveIndex + 1} / 3`);
+      this.setTextFast(this.scoreText, String(game.score).padStart(6, "0"));
+      this.setTextFast(this.stageText, `BOSS RUSH · TRÙM ${game.waveIndex + 1} / 3`);
     } else if (game.mode === "daily") {
-      this.scoreText.setText(String(game.score).padStart(6, "0"));
-      this.stageText.setText(`THỬ THÁCH NGÀY · MÀN ${game.stageIndex + 1} · ĐỢT ${game.waveIndex + 1} / 3`);
+      this.setTextFast(this.scoreText, String(game.score).padStart(6, "0"));
+      this.setTextFast(this.stageText, `THỬ THÁCH NGÀY · MÀN ${game.stageIndex + 1} · ĐỢT ${game.waveIndex + 1} / 3`);
     } else {
-      this.scoreText.setText(String(game.score).padStart(6, "0"));
+      this.setTextFast(this.scoreText, String(game.score).padStart(6, "0"));
       const stage = STAGES[game.stageIndex];
-      this.stageText.setText(`${stage.subtitle.toUpperCase()} · ${stage.name.toUpperCase()} · ĐỢT ${game.waveIndex + 1}/${stage.waves.length}`);
+      this.setTextFast(
+        this.stageText,
+        `${stage.subtitle.toUpperCase()} · ${stage.name.toUpperCase()} · ĐỢT ${game.waveIndex + 1}/${stage.waves.length}`,
+      );
     }
 
     if (game.combo >= 3 && game.mode !== "pk") {
@@ -263,30 +292,43 @@ export class UIScene extends Phaser.Scene {
     p.trail += (ratio - p.trail) * Math.min(1, dt * 3);
     if (p.trail < ratio) p.trail = ratio;
     p.hpTrail.width = BAR_W * p.trail;
-    p.hpText.setText(h.dead ? (this.game_.mode === "coop" && this.game_.anyHeroAlive() ? `HỒI SINH ${Math.ceil(h.reviveTimer)}s` : "GỤC NGÃ") : `${Math.ceil(h.hp)} / ${h.maxHp}`);
+    this.setTextFast(
+      p.hpText,
+      h.dead ? (this.game_.mode === "coop" && this.game_.anyHeroAlive() ? `HỒI SINH ${Math.ceil(h.reviveTimer)}s` : "GỤC NGÃ") : `${Math.ceil(h.hp)} / ${h.maxHp}`,
+    );
     const full = h.energy >= 100;
     p.energy.width = BAR_W * (h.energy / 100);
     p.energy.setFillStyle(full ? (Math.floor(this.time.now / 150) % 2 ? 0xffe45c : 0xffffff) : 0x3ad6ff);
-    p.energyText.setText(full ? "TUYỆT KỸ SẴN SÀNG!" : `NĂNG LƯỢNG ${Math.floor(h.energy)}`).setColor(full ? "#ffe45c" : "#9fe8ff");
+    this.setTextFast(
+      p.energyText,
+      full ? "TUYỆT KỸ SẴN SÀNG!" : `NĂNG LƯỢNG ${Math.floor(h.energy)}`,
+      full ? "#ffe45c" : "#9fe8ff",
+    );
     p.portrait.setAlpha(h.dead ? 0.35 : 1);
-    if (p.coinText) p.coinText.setText(String(this.game_.pendingCoins));
+    if (p.coinText) this.setTextFast(p.coinText, String(this.game_.pendingCoins));
 
     for (const s of p.slots) {
-      s.shade.clear();
       if (s.slot === "basic") continue;
       const skill = h.def.skills[s.slot];
       const cd = h.cooldowns[s.slot];
       const max = skill.cooldown * (s.slot === "ultimate" ? 1 : h.mods.cooldown);
       const lacking = h.energy < skill.cost;
       if (cd > 0) {
+        s.shade.clear();
         s.shade.fillStyle(0x000000, 0.65).slice(s.icon.x, s.icon.y, 20, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (cd / max), false).fillPath();
-        s.cd.setText(cd >= 1 ? String(Math.ceil(cd)) : cd.toFixed(1));
-      } else {
-        s.cd.setText("");
+        this.setTextFast(s.cd, cd >= 1 ? String(Math.ceil(cd)) : cd.toFixed(1));
+        s.hadCd = true;
+      } else if (s.hadCd) {
+        s.shade.clear();
+        this.setTextFast(s.cd, "");
+        s.hadCd = false;
       }
       s.icon.setAlpha(lacking ? 0.35 : 1);
       const ready = s.slot === "ultimate" && !lacking && cd <= 0;
-      s.frame.setStrokeStyle(ready ? 3 : 2, ready ? 0xffe45c : h.def.color, ready ? 1 : 0.6);
+      if (s.lastReady !== ready) {
+        s.frame.setStrokeStyle(ready ? 3 : 2, ready ? 0xffe45c : h.def.color, ready ? 1 : 0.6);
+        s.lastReady = ready;
+      }
     }
   }
 

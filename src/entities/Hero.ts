@@ -53,6 +53,7 @@ export class Hero extends Actor {
   private comboAura?: Phaser.GameObjects.Image;
   private hexShield?: Phaser.GameObjects.Image;
   private energyScarf: Phaser.GameObjects.Graphics;
+  private armorOverlayGfx: Phaser.GameObjects.Graphics;
   private weaponGlow?: Phaser.GameObjects.Image;
   overdriveTimer = 0;
 
@@ -78,6 +79,8 @@ export class Hero extends Actor {
     this.comboAura = scene.add.image(0, 0, "glow").setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.hero - 1).setVisible(false);
     this.energyScarf = scene.add.graphics().setDepth(DEPTH.hero + index - 1);
     this.energyScarf.setBlendMode(Phaser.BlendModes.ADD);
+    this.armorOverlayGfx = scene.add.graphics().setDepth(DEPTH.hero + index + 1);
+    this.armorOverlayGfx.setBlendMode(Phaser.BlendModes.ADD);
     this.weaponGlow = scene.add.image(0, 0, "core").setScale(0.45).setTint(this.pal.main).setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.hero + index + 2).setVisible(false);
 
     if (def.id === "obsidian_warden") {
@@ -548,37 +551,8 @@ export class Hero extends Actor {
     this.sprite.setPosition(this.x, this.y + yOff).setScale(sx, sy).setRotation(a.lean);
     this.renderCommon();
 
-    // 1. Procedural Energy Scarf physics & trailing ribbon
-    if (!this.dead) {
-      this.energyScarf.clear();
-      const ox = this.x - this.facing * 16;
-      const oy = this.y - 105;
-      const pts: Array<{ x: number; y: number }> = [{ x: ox, y: oy }];
-      for (let i = 1; i <= 3; i++) {
-        const sway = Math.sin(t * 7.5 + i * 1.4) * (5 * i);
-        const trailX = ox - this.facing * (i * 18) - (this.vx * 0.02 * i);
-        const trailY = oy + (i * 9) + sway - (this.vy * 0.012 * i);
-        pts.push({ x: trailX, y: trailY });
-      }
-      for (let i = 0; i < pts.length - 1; i++) {
-        const p1 = pts[i];
-        const p2 = pts[i + 1];
-        const w = (4 - i) * 1.8;
-        this.energyScarf.lineStyle(w, this.pal.main, 0.7 - i * 0.18);
-        this.energyScarf.beginPath();
-        this.energyScarf.moveTo(p1.x, p1.y);
-        this.energyScarf.lineTo(p2.x, p2.y);
-        this.energyScarf.strokePath();
-
-        this.energyScarf.lineStyle(w * 0.45, 0xffffff, 0.85 - i * 0.2);
-        this.energyScarf.beginPath();
-        this.energyScarf.moveTo(p1.x, p1.y);
-        this.energyScarf.lineTo(p2.x, p2.y);
-        this.energyScarf.strokePath();
-      }
-    } else {
-      this.energyScarf.clear();
-    }
+    // 60FPS Procedural Energy Cape + Front/Back Armor Sub-Rig (Reactor, Visor Glint, Thrusters, Orbiting Shards, Weapon Aura)
+    this.drawProceduralRig(t, yOff, running, grounded);
 
     // 2. Weapon Glow streak at hand during attack
     if (this.state === "attack" && !this.dead) {
@@ -614,9 +588,191 @@ export class Hero extends Actor {
     }
   }
 
+  /** Draws continuous 60FPS procedural sub-rig layers behind and in front of the sprite. */
+  private drawProceduralRig(t: number, yOff: number, running: boolean, grounded: boolean) {
+    const back = this.energyScarf;
+    const front = this.armorOverlayGfx;
+    back.clear();
+    front.clear();
+    if (this.dead) return;
+
+    const dir = this.facing;
+    const main = this.pal.main;
+    const light = this.pal.light;
+
+    // 1. Ground Bounce Rim-Light on the floor deck
+    const hRatio = Math.max(0.2, 1 - Math.max(0, GROUND_Y - this.y) / 380);
+    const rimPulse = (0.14 + 0.06 * Math.sin(t * 5.2)) * hRatio;
+    back.fillStyle(main, rimPulse);
+    back.fillEllipse(this.x, GROUND_Y + 2, 74 * hRatio, 10 * hRatio);
+
+    // 2. 6-point Tapered Polygon Energy Scarf + Trailing Motes
+    const ox = this.x - dir * 14;
+    const oy = this.y - 110 + yOff;
+    const speedMag = Math.hypot(this.vx, this.vy);
+    const windBoost = Math.min(1.6, 1 + speedMag / 700);
+    const pts: Array<{ x: number; y: number }> = [{ x: ox, y: oy }];
+    for (let i = 1; i <= 5; i += 1) {
+      const sway = Math.sin(t * 8.5 - i * 1.1) * (4.2 * i);
+      const tx = ox - dir * (i * 15 * windBoost) - this.vx * 0.015 * i;
+      const ty = oy + i * 7.5 + sway - this.vy * 0.01 * i;
+      pts.push({ x: tx, y: ty });
+    }
+    for (let i = 0; i < pts.length - 1; i += 1) {
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const len = Math.max(1, Math.hypot(dx, dy));
+      const nx = -dy / len;
+      const ny = dx / len;
+      const w1 = (1 - i / pts.length) * 10;
+      const w2 = (1 - (i + 1) / pts.length) * 10;
+      const poly = [
+        { x: p1.x + nx * w1, y: p1.y + ny * w1 },
+        { x: p2.x + nx * w2, y: p2.y + ny * w2 },
+        { x: p2.x - nx * w2, y: p2.y - ny * w2 },
+        { x: p1.x - nx * w1, y: p1.y - ny * w1 },
+      ];
+      back.fillStyle(main, 0.42 - i * 0.068);
+      back.fillPoints(poly, true);
+      back.lineStyle(Math.max(1.2, 3.2 - i * 0.45), light, 0.8 - i * 0.14);
+      back.beginPath();
+      back.moveTo(p1.x, p1.y);
+      back.lineTo(p2.x, p2.y);
+      back.strokePath();
+    }
+    for (const m of [1, 3, 5]) {
+      const mp = pts[m];
+      const pulseR = 2.2 + Math.sin(t * 10 + m) * 0.8;
+      back.fillStyle(light, 0.72);
+      back.fillCircle(mp.x, mp.y + Math.sin(t * 9 + m * 2) * 3, Math.max(1, pulseR));
+    }
+
+    // 3. Thruster Jet Cones during sprint, airbone, dash, or Overdrive
+    if (running || !grounded || this.state === "dash" || this.state === "sweep" || this.overdriveTimer > 0) {
+      const flicker = 0.75 + Math.sin(t * 48) * 0.25;
+      const jetLen = (this.state === "dash" || this.overdriveTimer > 0 ? 34 : 20) * flicker;
+      const jx = this.x - dir * 18;
+      const jy = this.y - 82 + yOff;
+      back.fillStyle(main, 0.55);
+      back.fillTriangle(jx, jy - 6, jx, jy + 6, jx - dir * jetLen, jy + (this.vy * 0.015));
+      back.fillStyle(0xffffff, 0.7);
+      back.fillTriangle(jx, jy - 3, jx, jy + 3, jx - dir * jetLen * 0.58, jy + (this.vy * 0.008));
+      if (!grounded) {
+        for (const bxOff of [-12, 10]) {
+          const bx = this.x + bxOff;
+          const by = this.y - 6 + yOff;
+          front.fillStyle(main, 0.5);
+          front.fillTriangle(bx - 5, by, bx + 5, by, bx, by + 18 * flicker);
+        }
+      }
+    }
+
+    // 4. Breathing Chest Reactor & Periodic Visor Glint Streak
+    const rx = this.x + dir * 6;
+    const ry = this.y - 92 + yOff;
+    const beat = 0.5 + 0.5 * Math.sin(t * 5.5);
+    front.fillStyle(main, 0.26 + beat * 0.16);
+    front.fillCircle(rx, ry, 10 + beat * 4);
+    front.fillStyle(0xffffff, 0.45 + beat * 0.25);
+    front.fillCircle(rx, ry, 3.2 + beat * 1.4);
+    const hexAng = t * 2.2;
+    const hr = 12 + beat * 2;
+    front.lineStyle(1.3, light, 0.45);
+    front.beginPath();
+    for (let i = 0; i <= 4; i += 1) {
+      const ha = hexAng + (i * Math.PI) / 2;
+      const hx = rx + Math.cos(ha) * hr;
+      const hy = ry + Math.sin(ha) * hr;
+      if (i === 0) front.moveTo(hx, hy);
+      else front.lineTo(hx, hy);
+    }
+    front.strokePath();
+
+    // Diagonal visor glint sweep once every ~2.4s
+    const glintPhase = (t * 0.42) % 1;
+    if (glintPhase < 0.22) {
+      const p = glintPhase / 0.22;
+      const vx = this.x + dir * 10 + (p - 0.5) * 22 * dir;
+      const vy = this.y - 132 + yOff;
+      front.lineStyle(2.4, 0xffffff, (1 - Math.abs(p - 0.5) * 2) * 0.85);
+      front.beginPath();
+      front.moveTo(vx - 6, vy - 5);
+      front.lineTo(vx + 6, vy + 5);
+      front.strokePath();
+    }
+
+    // 5. 3D Orbiting Elemental Shards (split back/front by depth sin(angle))
+    const orbitCy = this.y - 84 + yOff;
+    for (let i = 0; i < 3; i += 1) {
+      const ang = t * 2.8 + (i * Math.PI * 2) / 3;
+      const sx = this.x + Math.cos(ang) * 46;
+      const sy = orbitCy + Math.sin(ang) * 16;
+      const target = Math.sin(ang) < 0 ? back : front;
+      const sz = Math.sin(ang) < 0 ? 4.2 : 6.2;
+      const alphaScale = Math.sin(ang) < 0 ? 0.45 : 0.82;
+      target.fillStyle(main, alphaScale * 0.45);
+      target.fillCircle(sx, sy, sz * 1.45);
+      target.fillStyle(light, alphaScale);
+      target.fillPoints([
+        { x: sx, y: sy - sz },
+        { x: sx + sz * 0.65, y: sy },
+        { x: sx, y: sy + sz },
+        { x: sx - sz * 0.65, y: sy },
+      ], true);
+    }
+
+    // 6. Element-Specific Weapon Aura at Hand
+    const wx = this.x + dir * 32;
+    const wy = this.y - 78 + yOff;
+    const el = this.def.element;
+    if (el === "volt") {
+      front.lineStyle(1.8, 0xfff6a0, 0.8);
+      front.beginPath();
+      front.moveTo(wx - 8, wy - 4);
+      front.lineTo(wx + Math.sin(t * 37) * 6, wy + Math.cos(t * 29) * 7);
+      front.lineTo(wx + dir * 12, wy - 6 + Math.sin(t * 43) * 6);
+      front.strokePath();
+    } else if (el === "fire") {
+      for (let f = 0; f < 2; f += 1) {
+        const lift = ((t * 42 + f * 9) % 18);
+        const fx = wx + Math.sin(t * 11 + f * 3) * 5;
+        const fy = wy - lift;
+        const r = Math.max(1, 5.5 * (1 - lift / 18));
+        front.fillStyle(f === 0 ? main : 0xfff0a0, 0.72 * (1 - lift / 18));
+        front.fillCircle(fx, fy, r);
+      }
+    } else if (el === "wind") {
+      front.lineStyle(1.8, light, 0.65);
+      front.beginPath();
+      front.arc(wx, wy, 13, t * 5, t * 5 + Math.PI * 1.15);
+      front.strokePath();
+    } else if (el === "earth") {
+      const rot = t * 2.4;
+      front.lineStyle(1.8, 0xffe6a8, 0.75);
+      front.beginPath();
+      for (let i = 0; i <= 4; i += 1) {
+        const a = rot + (i * Math.PI) / 2;
+        const px = wx + Math.cos(a) * 11;
+        const py = wy + Math.sin(a) * 11;
+        if (i === 0) front.moveTo(px, py);
+        else front.lineTo(px, py);
+      }
+      front.strokePath();
+    } else {
+      const pr = 7 + Math.sin(t * 9) * 2.5;
+      front.lineStyle(1.6, main, 0.65);
+      front.strokeCircle(wx, wy, pr);
+      front.fillStyle(0xffffff, 0.55);
+      front.fillCircle(wx, wy, 3.2);
+    }
+  }
+
   override destroy() {
     this.hexShield?.destroy();
     this.energyScarf.destroy();
+    this.armorOverlayGfx.destroy();
     this.weaponGlow?.destroy();
     this.afterimages.destroy();
     this.smearArc.destroy();

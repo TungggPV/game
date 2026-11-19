@@ -341,12 +341,14 @@ export class TrainingScene extends GameScene {
     }
     this.lastCombo = this.combo;
 
-    // 4. Update HUD
-    if (this.dpsText) {
-      this.dpsText.setText(`DPS: ${this.rollingDPS}`);
+    // 4. Update HUD only when text changes (avoids 60Hz Canvas re-rasterization)
+    const dpsStr = `DPS: ${this.rollingDPS}`;
+    if (this.dpsText && this.dpsText.text !== dpsStr) {
+      this.dpsText.setText(dpsStr);
     }
-    if (this.statusText) {
-      this.statusText.setText(`Combo Dmg: ${Math.round(this.currentComboDamage)}\nMax: ${Math.round(this.maxComboDamage)}`);
+    const statusStr = `Combo Dmg: ${Math.round(this.currentComboDamage)}\nMax: ${Math.round(this.maxComboDamage)}`;
+    if (this.statusText && this.statusText.text !== statusStr) {
+      this.statusText.setText(statusStr);
     }
   }
 

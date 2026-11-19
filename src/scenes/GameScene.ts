@@ -93,6 +93,7 @@ export class GameScene extends Phaser.Scene {
   private lampCones: Phaser.GameObjects.Image[] = [];
   private neonGlows: { img: Phaser.GameObjects.Image; baseAlpha: number; speed: number; seed: number }[] = [];
   private groundVignette?: Phaser.GameObjects.Rectangle;
+  private stageFxGfx?: Phaser.GameObjects.Graphics;
   private pauseKeys: Phaser.Input.Keyboard.Key[] = [];
 
   constructor(key = "game") {
@@ -191,6 +192,7 @@ export class GameScene extends Phaser.Scene {
       this.neonGlows.forEach((n) => n.img.destroy());
       this.neonGlows = [];
       this.groundVignette?.destroy();
+      this.stageFxGfx?.destroy();
     });
     if (this.mode === "pk") this.startPkRound();
     else if (this.mode !== "training") this.startStage();
@@ -212,6 +214,7 @@ export class GameScene extends Phaser.Scene {
     this.lampCones.forEach((c) => c.destroy());
     this.lampCones = [];
     this.groundVignette?.destroy();
+    this.stageFxGfx?.destroy();
     this.neonGlows.forEach((n) => n.img.destroy());
     this.neonGlows = [];
 
@@ -245,6 +248,11 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0)
       .setScrollFactor(0)
       .setDepth(DEPTH.floor);
+
+    this.stageFxGfx = this.add
+      .graphics()
+      .setDepth(DEPTH.floor + 1)
+      .setBlendMode(Phaser.BlendModes.ADD);
 
     this.cameras.main.setBounds(0, 0, this.worldWidth, GAME_HEIGHT);
     this.cameras.main.setBackgroundColor(stage.floor);
@@ -758,8 +766,9 @@ export class GameScene extends Phaser.Scene {
       this.bgFar.tilePositionX = (this.cameras.main.scrollX * 0.15) / this.bgFarScale;
     }
 
-    // Dynamic neon signage glow flicker & pulse
+    // Dynamic neon signage glow flicker & pulse + 60FPS procedural weather & floor reflections
     const nowSec = this.time.now / 1000;
+    this.updateStageProceduralFX(nowSec);
     for (const ng of this.neonGlows) {
       const flicker = Math.sin(nowSec * ng.speed + ng.seed) * 0.15;
       const jitter = Math.random() < 0.04 ? -0.15 : 0;
@@ -961,6 +970,154 @@ export class GameScene extends Phaser.Scene {
     this.fx.charge(hero.cx, hero.cy, pal, 320, 220, 30);
     this.fx.ring(hero.x, GROUND_Y - 4, pal.main, 220, 600, 0.25, "glyph");
     this.events.emit("cutin", hero, skill);
+  }
+
+  private updateStageProceduralFX(nowSec: number) {
+    const g = this.stageFxGfx;
+    if (!g) return;
+    g.clear();
+
+    const camLeft = this.cameras.main.scrollX;
+    const camRight = camLeft + GAME_WIDTH;
+
+    // 1. Real-Time Metallic Floor Specular Reflections under all alive Heroes & Enemies
+    for (const h of this.heroes) {
+      if (h.dead || h.x < camLeft - 80 || h.x > camRight + 80) continue;
+      const dist = Math.max(0, GROUND_Y - h.y);
+      const fade = Math.max(0.1, 1 - dist / 340);
+      const col = PALETTE[h.def.element].main;
+      const rw = (58 + Math.sin(nowSec * 4) * 5) * fade;
+      g.fillStyle(col, 0.2 * fade);
+      g.fillRect(h.x - rw * 0.5, GROUND_Y + 4, rw, 3);
+      g.fillStyle(col, 0.12 * fade);
+      g.fillRect(h.x - rw * 0.38, GROUND_Y + 10, rw * 0.76, 3);
+      g.fillStyle(0xffffff, 0.1 * fade);
+      g.fillRect(h.x - rw * 0.22, GROUND_Y + 16, rw * 0.44, 2);
+    }
+    for (const e of this.enemies) {
+      if (e.dead || e.x < camLeft - 120 || e.x > camRight + 120) continue;
+      const dist = Math.max(0, GROUND_Y - e.y);
+      const fade = Math.max(0.08, 1 - dist / 360);
+      const col = e.def.tint ?? (e.isBoss ? 0x33e6ff : 0xff3355);
+      const rw = Math.min(180, e.bodyW * 0.65) * fade;
+      g.fillStyle(col, 0.16 * fade);
+      g.fillRect(e.x - rw * 0.5, GROUND_Y + 4, rw, 3);
+      g.fillStyle(col, 0.09 * fade);
+      g.fillRect(e.x - rw * 0.35, GROUND_Y + 10, rw * 0.7, 3);
+    }
+
+    // 2. Per-Stage 60FPS Procedural Weather & Atmosphere
+    const si = Math.min(this.stageIndex, 4);
+    if (si === 0) {
+      // Stage 1: Slanted Cyberpunk Neon Rain + Ground Splashes
+      for (let i = 0; i < 36; i += 1) {
+        const seed = i * 97.31;
+        const cycle = (nowSec * (1.35 + (i % 5) * 0.18) + (seed % 1)) % 1;
+        const rx = camLeft + ((seed * 37 + cycle * 95) % GAME_WIDTH);
+        const ry = cycle * (GROUND_Y + 8);
+        const col = i % 3 === 0 ? 0xd946ef : 0x18e6ff;
+        g.lineStyle(1.4, col, 0.24 + (i % 3) * 0.08);
+        g.beginPath();
+        g.moveTo(rx, ry);
+        g.lineTo(rx - 9, ry + 26);
+        g.strokePath();
+        if (cycle > 0.91) {
+          const sp = (cycle - 0.91) / 0.09;
+          g.lineStyle(1.1, col, (1 - sp) * 0.42);
+          g.strokeEllipse(rx, GROUND_Y + 1, 6 + sp * 18, 2 + sp * 5);
+        }
+      }
+    } else if (si === 1) {
+      // Stage 2: Rising Bioluminescent Bubbles + Lower Corridor Laser Scanline
+      for (let i = 0; i < 24; i += 1) {
+        const seed = i * 71.13;
+        const cyc = (nowSec * (0.28 + (i % 4) * 0.08) + (seed % 1)) % 1;
+        const bx = camLeft + ((seed * 53) % GAME_WIDTH) + Math.sin(nowSec * 3 + i) * 10;
+        const by = GROUND_Y - cyc * 460;
+        const r = 3 + (i % 4) * 1.6;
+        g.lineStyle(1.2, 0x37ffb0, Math.sin(cyc * Math.PI) * 0.42);
+        g.strokeCircle(bx, by, r);
+      }
+      const scanY = GROUND_Y - 16 - ((nowSec * 45) % 90);
+      g.lineStyle(1.6, 0x37ffb0, 0.22);
+      g.beginPath();
+      g.moveTo(camLeft, scanY);
+      g.lineTo(camRight, scanY);
+      g.strokePath();
+    } else if (si === 2) {
+      // Stage 3: Rising Spiral Magma Embers + Glowing Lava Fissures
+      for (let i = 0; i < 28; i += 1) {
+        const seed = i * 83.7;
+        const cyc = (nowSec * (0.42 + (i % 5) * 0.1) + (seed % 1)) % 1;
+        const ex = camLeft + ((seed * 47) % GAME_WIDTH) + Math.sin(nowSec * 4.5 + i * 2) * 18;
+        const ey = GROUND_Y - cyc * 520;
+        const fade = Math.sin(cyc * Math.PI);
+        g.fillStyle(i % 2 === 0 ? 0xff6a2a : 0xffe45c, fade * 0.6);
+        g.fillCircle(ex, ey, 2.2 + (i % 3));
+      }
+      for (let fx = 140; fx < GAME_WIDTH; fx += 260) {
+        const pulse = 0.25 + 0.18 * Math.sin(nowSec * 4 + fx);
+        g.lineStyle(2.5, 0xff5511, pulse);
+        g.beginPath();
+        g.moveTo(camLeft + fx - 35, GROUND_Y + 8);
+        g.lineTo(camLeft + fx + 35, GROUND_Y + 8);
+        g.strokePath();
+      }
+    } else if (si === 3) {
+      // Stage 4: High-Speed Orbital Plasma Meteors + Rotating Telemetry Dual-Ring Reticle
+      for (let i = 0; i < 16; i += 1) {
+        const seed = i * 113.9;
+        const cyc = (nowSec * (0.85 + (i % 4) * 0.22) + (seed % 1)) % 1;
+        const mx = camLeft + GAME_WIDTH - cyc * (GAME_WIDTH + 180);
+        const my = 70 + ((seed * 19) % 320) + cyc * 110;
+        g.lineStyle(1.8, i % 2 === 0 ? 0x18e6ff : 0xa855f7, Math.sin(cyc * Math.PI) * 0.55);
+        g.beginPath();
+        g.moveTo(mx, my);
+        g.lineTo(mx + 42, my - 11);
+        g.strokePath();
+      }
+      const rx = camLeft + GAME_WIDTH * 0.72;
+      const ry = 210;
+      g.lineStyle(1.4, 0x818cf8, 0.22);
+      g.strokeCircle(rx, ry, 76);
+      for (let k = 0; k < 3; k += 1) {
+        const a = nowSec * 0.7 + (k * Math.PI * 2) / 3;
+        g.lineStyle(2.2, 0x18e6ff, 0.35);
+        g.beginPath();
+        g.arc(rx, ry, 58, a, a + Math.PI * 0.35);
+        g.strokePath();
+      }
+    } else {
+      // Stage 5: Rotating Void Singularity Mandala + Crackling Dimensional Lightning Arcs
+      const cx = camLeft + GAME_WIDTH * 0.5;
+      const cy = 260;
+      for (let ring = 0; ring < 3; ring += 1) {
+        const r = 88 + ring * 44;
+        const rot = nowSec * (ring % 2 === 0 ? 0.55 : -0.45);
+        g.lineStyle(1.8, ring === 1 ? 0x18e6ff : 0xd946ef, 0.24 - ring * 0.04);
+        for (let seg = 0; seg < 4; seg += 1) {
+          const a = rot + (seg * Math.PI) / 2;
+          g.beginPath();
+          g.arc(cx, cy, r, a, a + Math.PI * 0.28);
+          g.strokePath();
+        }
+      }
+      for (let i = 0; i < 4; i += 1) {
+        const ang = nowSec * 1.3 + i * 1.57;
+        const x1 = cx + Math.cos(ang) * 90;
+        const y1 = cy + Math.sin(ang) * 90;
+        const midX = (x1 + cx + Math.cos(ang + 0.3) * 185) * 0.5 + Math.sin(nowSec * 31 + i) * 18;
+        const midY = (y1 + cy + Math.sin(ang + 0.3) * 185) * 0.5 + Math.cos(nowSec * 29 + i) * 18;
+        const x2 = cx + Math.cos(ang + 0.35) * 210;
+        const y2 = cy + Math.sin(ang + 0.35) * 210;
+        g.lineStyle(1.6, i % 2 === 0 ? 0xd946ef : 0x67e8f9, 0.4);
+        g.beginPath();
+        g.moveTo(x1, y1);
+        g.lineTo(midX, midY);
+        g.lineTo(x2, y2);
+        g.strokePath();
+      }
+    }
   }
 
   anyHeroAlive() { return this.heroes.some((h) => !h.dead); }
