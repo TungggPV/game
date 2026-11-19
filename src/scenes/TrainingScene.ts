@@ -55,9 +55,7 @@ export class TrainingScene extends GameScene {
   }
 
   override create() {
-    setSceneFlag("game");
     super.create();
-    this.scene.launch("ui");
 
     // Replace default stage setup with Dojo
     this.spawnDirector.clear();
@@ -68,9 +66,14 @@ export class TrainingScene extends GameScene {
     this.spawnTrainingDummy();
     this.setupTrainingUI();
     this.bindShortcuts();
+    this.setPhase("fight", 0);
+    this.lockHeroes(false);
 
     music.start("menu");
-    this.events.once("shutdown", () => music.stop());
+    this.events.once("shutdown", () => {
+      if (this.scene.isActive("ui")) this.scene.setVisible(true, "ui");
+      music.stop();
+    });
   }
 
   private setupDojoArena() {
@@ -105,30 +108,38 @@ export class TrainingScene extends GameScene {
   }
 
   private setupTrainingUI() {
-    // Top Left: Back Button
-    new Button(this, 90, 36, 120, 36, "← Menu", () => this.toMenu());
+    // Bottom Left: Back Button (clear of Hero HUD and fighting area)
+    new Button(this, 88, 684, 128, 34, "← Menu", () => this.toMenu()).setDepth(150);
 
-    // Top Header: Training Dojo
-    text(this, GAME_WIDTH / 2, 24, "VÕ ĐƯỜNG HUẤN LUYỆN (DOJO TRAINING)", 22, "#18e6ff", "900").setOrigin(0.5);
+    // Top Center Header: clear of Hero HUD (24..394) and DPS Box (955..1175)
+    text(this, 670, 22, "VÕ ĐƯỜNG HUẤN LUYỆN", 20, "#18e6ff", "900").setOrigin(0.5);
 
-    // Shortcuts Banner
-    this.shortcutBar = this.add.container(GAME_WIDTH / 2, 54);
-    const guide = text(
+    this.shortcutBar = this.add.container(670, 48);
+    const guide1 = text(
       this,
       0,
       0,
-      "[F1] Tấn công: TẮT   ·   [F2] Vô hạn năng lượng: TẮT   ·   [F3] Trang bị Lõi   ·   [F4] Đổi Quái   ·   [Esc] Menu",
-      14,
+      "[F1] Quái đánh: TẮT  ·  [F2] Vô hạn NL: TẮT",
+      13,
       "#9fb8cc",
       "700",
     ).setOrigin(0.5);
-    this.shortcutBar.add(guide);
+    const guide2 = text(
+      this,
+      0,
+      20,
+      "[F3] Lắp Lõi  ·  [F4] Đổi Quái  ·  [Esc] Menu",
+      13,
+      "#9fb8cc",
+      "700",
+    ).setOrigin(0.5);
+    this.shortcutBar.add([guide1, guide2]);
 
-    // DPS & Combo metrics box at top right
-    const box = this.add.container(GAME_WIDTH - 240, 40);
-    const bg = this.add.rectangle(0, 0, 220, 70, 0x061424, 0.85).setStrokeStyle(1.5, 0x18e6ff, 0.6);
-    this.dpsText = text(this, -95, -20, "DPS: 0", 18, "#ffe45c", "900");
-    this.statusText = text(this, -95, 8, "Combo Dmg: 0\nMax: 0", 12, "#7dffb0", "700");
+    // DPS & Combo metrics box at top right (clear of DOM fullscreen button at x=1220..1268)
+    const box = this.add.container(1065, 52);
+    const bg = this.add.rectangle(0, 0, 220, 84, 0x061424, 0.85).setStrokeStyle(1.5, 0x18e6ff, 0.6);
+    this.dpsText = text(this, -96, -30, "DPS: 0", 18, "#ffe45c", "900");
+    this.statusText = text(this, -96, 0, "Combo Dmg: 0\nMax: 0", 13, "#7dffb0", "700");
     box.add([bg, this.dpsText, this.statusText]);
   }
 
@@ -179,7 +190,7 @@ export class TrainingScene extends GameScene {
     const guide = this.shortcutBar.getAt(0) as Phaser.GameObjects.Text;
     if (guide) {
       guide.setText(
-        `[F1] Tấn công: ${this.dummyAttack ? "BẬT" : "TẮT"}   ·   [F2] Vô hạn năng lượng: ${this.infiniteEnergy ? "BẬT" : "TẮT"}   ·   [F3] Trang bị Lõi   ·   [F4] Đổi Quái   ·   [Esc] Menu`,
+        `[F1] Quái đánh: ${this.dummyAttack ? "BẬT" : "TẮT"}  ·  [F2] Vô hạn NL: ${this.infiniteEnergy ? "BẬT" : "TẮT"}`,
       );
     }
   }
@@ -190,28 +201,29 @@ export class TrainingScene extends GameScene {
       return;
     }
     this.coreSelectorOpen = true;
+    this.scene.setVisible(false, "ui");
     sfx.confirm();
 
     const root = this.add.container(0, 0).setDepth(200);
-    root.add(this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.85).setInteractive());
-    root.add(text(this, GAME_WIDTH / 2, 45, "CHỌN LÕI GIÁP THỬ NGHIỆM", 32, "#ffe45c", "900").setOrigin(0.5));
-    root.add(text(this, GAME_WIDTH / 2, 80, "Nhấp vào lõi để lắp cho nhân vật ngay lập tức", 15, "#9fb8cc", "700").setOrigin(0.5));
+    root.add(this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.88).setInteractive());
+    root.add(text(this, GAME_WIDTH / 2, 30, "CHỌN LÕI GIÁP THỬ NGHIỆM", 28, "#ffe45c", "900").setOrigin(0.5));
+    root.add(text(this, GAME_WIDTH / 2, 58, "Nhấp vào lõi để lắp cho nhân vật ngay lập tức", 14, "#9fb8cc", "700").setOrigin(0.5));
 
     const hero = this.heroes[0];
     const equippedIds = new Set((hero?.equippedCores || []).map((c) => c.id));
 
-    // Render 18 cores in 3 rows of 6 cards
+    // Render 18 cores in 3 rows of 6 cards (row 0 top = 80, clear of subtitle at y=58)
     ARMOR_CORES.forEach((core, i) => {
       const col = i % 6;
       const row = Math.floor(i / 6);
-      const x = 110 + col * 205;
-      const y = 160 + row * 165;
+      const x = 127 + col * 205;
+      const y = 152 + row * 158;
       const rColor = RARITY_COLORS[core.rarity];
       const isEquipped = equippedIds.has(core.id);
 
       const card = this.add.container(x, y);
       const bg = this.add
-        .rectangle(0, 0, 195, 150, isEquipped ? 0x14324c : 0x0a1a2c, 0.95)
+        .rectangle(0, 0, 195, 144, isEquipped ? 0x14324c : 0x0a1a2c, 0.95)
         .setStrokeStyle(isEquipped ? 3 : 1.5, rColor.main, isEquipped ? 1 : 0.6)
         .setInteractive({ useHandCursor: true });
 
@@ -249,7 +261,7 @@ export class TrainingScene extends GameScene {
     });
 
     // Close button
-    const closeBtn = new Button(this, GAME_WIDTH / 2, 665, 180, 44, "Đóng (Esc)", () => this.closeCoreSelector());
+    const closeBtn = new Button(this, GAME_WIDTH / 2, 668, 180, 44, "Đóng (Esc)", () => this.closeCoreSelector());
     root.add(closeBtn);
 
     this.coreModal = root;
@@ -259,6 +271,7 @@ export class TrainingScene extends GameScene {
     this.coreModal?.destroy();
     this.coreModal = undefined;
     this.coreSelectorOpen = false;
+    this.scene.setVisible(true, "ui");
   }
 
   override dealDamage(attacker: import("../entities/Actor").Actor | undefined, target: import("../entities/Actor").Actor, hit: import("../entities/Actor").Hit): number {
@@ -339,7 +352,6 @@ export class TrainingScene extends GameScene {
 
   private toMenu() {
     this.scene.stop("ui");
-    this.scene.stop("training");
     setSceneFlag("menu");
     this.scene.start("menu");
   }

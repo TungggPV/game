@@ -22,6 +22,7 @@ export class SpawnDirector {
   constructor(private scene: GameScene) {}
 
   update(dt: number) {
+    if (this.scene.mode === "training") return;
     if (this.scene.phase === "fight") {
       this.spawnTimer -= dt;
       const maxAlive = this.scene.mode === "coop" ? 6 : 4;

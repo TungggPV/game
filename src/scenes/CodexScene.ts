@@ -14,12 +14,21 @@ export class CodexScene extends Phaser.Scene {
   private listContainer!: Phaser.GameObjects.Container;
   private group!: ButtonGroup;
   private tabButtons: Button[] = [];
+  private scrollY = 0;
+  private maxScroll = 0;
+  private scrollTrack!: Phaser.GameObjects.Rectangle;
+  private scrollThumb!: Phaser.GameObjects.Rectangle;
+  private scrollKeys!: { up: Phaser.Input.Keyboard.Key; down: Phaser.Input.Keyboard.Key; w: Phaser.Input.Keyboard.Key; s: Phaser.Input.Keyboard.Key; esc: Phaser.Input.Keyboard.Key };
+  private readonly viewTop = 140;
+  private readonly viewHeight = 540;
 
   constructor() {
     super("codex");
   }
 
   create() {
+    this.scrollY = 0;
+    this.maxScroll = 0;
     const src = this.textures.get("bg_city_neon").getSourceImage();
     this.add.tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, "bg_city_neon").setOrigin(0).setTileScale(GAME_HEIGHT / src.height);
     this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.85).setOrigin(0);
@@ -36,21 +45,59 @@ export class CodexScene extends Phaser.Scene {
     this.tabButtons = [b1, b2, b3, b4];
     buttons.push(b1, b2, b3, b4, backBtn);
 
-    this.listContainer = this.add.container(60, 140);
+    const maskShape = this.make.graphics({ x: 0, y: 0 }, false);
+    maskShape.fillStyle(0xffffff).fillRect(40, this.viewTop - 4, GAME_WIDTH - 80, this.viewHeight + 8);
+    this.listContainer = this.add.container(60, this.viewTop);
+    this.listContainer.setMask(maskShape.createGeometryMask());
+
+    this.scrollTrack = this.add.rectangle(GAME_WIDTH - 24, this.viewTop + this.viewHeight / 2, 6, this.viewHeight, 0x1d2b3a, 0.7).setVisible(false);
+    this.scrollThumb = this.add.rectangle(GAME_WIDTH - 24, this.viewTop, 6, 80, 0x18e6ff, 0.9).setOrigin(0.5, 0).setVisible(false);
+    text(this, GAME_WIDTH / 2, GAME_HEIGHT - 18, "Cuộn chuột hoặc ↑/↓ để xem thêm · Esc quay lại Menu", 13, "#7f95a8", "700").setOrigin(0.5);
+
     this.renderContent();
 
     this.group = new ButtonGroup(this, buttons, true);
     this.group.reset();
+
+    const K = Phaser.Input.Keyboard.KeyCodes;
+    this.scrollKeys = this.input.keyboard!.addKeys({
+      up: K.UP, down: K.DOWN, w: K.W, s: K.S, esc: K.ESC,
+    }) as typeof this.scrollKeys;
+    this.scrollKeys.esc.on("down", () => this.backToMenu());
+
+    const onWheel = (_ptr: Phaser.Input.Pointer, _objs: unknown[], _dx: number, dy: number) => {
+      this.scrollBy(dy * 0.6);
+    };
+    this.input.on("wheel", onWheel);
+    this.events.once("shutdown", () => {
+      this.input.off("wheel", onWheel);
+      this.scrollKeys.esc.removeAllListeners();
+      maskShape.destroy();
+    });
+  }
+
+  private scrollBy(delta: number) {
+    if (this.maxScroll <= 0) return;
+    this.scrollY = Phaser.Math.Clamp(this.scrollY + delta, 0, this.maxScroll);
+    this.listContainer.y = this.viewTop - this.scrollY;
+    const ratio = this.scrollY / this.maxScroll;
+    const travel = this.viewHeight - this.scrollThumb.height;
+    this.scrollThumb.y = this.viewTop + travel * ratio;
   }
 
   private switchTab(tab: TabType) {
     this.tab = tab;
+    const idx = (["codex", "cores", "reactions", "achievements"] as const).indexOf(tab);
+    if (idx >= 0) this.group?.select(idx);
     sfx.select();
     this.renderContent();
   }
 
   private renderContent() {
     this.listContainer.removeAll(true);
+    this.scrollY = 0;
+    this.listContainer.y = this.viewTop;
+    let contentHeight = 0;
     const p = loadProgress();
 
     if (this.tab === "codex") {
@@ -77,6 +124,7 @@ export class CodexScene extends Phaser.Scene {
         }
         this.listContainer.add(card);
       });
+      contentHeight = Math.max(0, Math.ceil(entries.length / 2) - 1) * 105 + 95;
     } else if (this.tab === "cores") {
       ARMOR_CORES.forEach((c, i) => {
         const col = i % 3;
@@ -101,6 +149,7 @@ export class CodexScene extends Phaser.Scene {
         card.add([bg, icon, name, rarity, tags, desc]);
         this.listContainer.add(card);
       });
+      contentHeight = Math.max(0, Math.ceil(ARMOR_CORES.length / 3) - 1) * 88 + 78;
     } else if (this.tab === "reactions") {
       const reactions = [
         {
@@ -146,6 +195,7 @@ export class CodexScene extends Phaser.Scene {
         card.add([bg, icon, title, formula, desc]);
         this.listContainer.add(card);
       });
+      contentHeight = Math.max(0, reactions.length - 1) * 125 + 110;
     } else {
       ACHIEVEMENTS.forEach((a, i) => {
         const col = i % 2;
@@ -165,6 +215,16 @@ export class CodexScene extends Phaser.Scene {
         card.add([bg, icon, title, desc, status]);
         this.listContainer.add(card);
       });
+      contentHeight = Math.max(0, Math.ceil(ACHIEVEMENTS.length / 2) - 1) * 82 + 72;
+    }
+
+    this.maxScroll = Math.max(0, contentHeight - this.viewHeight);
+    const showBar = this.maxScroll > 0;
+    this.scrollTrack.setVisible(showBar);
+    this.scrollThumb.setVisible(showBar);
+    if (showBar) {
+      this.scrollThumb.height = Math.max(40, Math.round((this.viewHeight / contentHeight) * this.viewHeight));
+      this.scrollThumb.y = this.viewTop;
     }
   }
 
@@ -173,7 +233,9 @@ export class CodexScene extends Phaser.Scene {
     this.scene.start("menu");
   }
 
-  update() {
+  update(_t: number, dms: number) {
     this.group.update();
+    if (this.scrollKeys.up.isDown || this.scrollKeys.w.isDown) this.scrollBy(-dms * 0.45);
+    if (this.scrollKeys.down.isDown || this.scrollKeys.s.isDown) this.scrollBy(dms * 0.45);
   }
 }

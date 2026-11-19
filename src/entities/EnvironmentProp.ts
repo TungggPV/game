@@ -50,7 +50,7 @@ const PROP_CONFIGS: Record<PropType, PropDef> = {
     shardsColor: { main: 0xfbbf24, light: 0xfef3c7, dark: 0x78350f },
   },
   crate: {
-    texture: "prop_crate",
+    texture: "crate_metal",
     w: 72,
     h: 72,
     hp: 2,
@@ -70,11 +70,11 @@ const PROP_CONFIGS: Record<PropType, PropDef> = {
     shardsColor: { main: 0x718096, light: 0xcbd5e1, dark: 0x1e293b },
   },
   chest: {
-    texture: "prop_chest",
-    w: 118,
-    h: 65,
+    texture: "chest_scifi",
+    w: 96,
+    h: 64,
     hp: 3,
-    shadowW: 136,
+    shadowW: 112,
     shadowH: 26,
     coreColor: 0xa855f7,
     shardsColor: { main: 0xa855f7, light: 0xf3e8ff, dark: 0x581c87 },
@@ -91,6 +91,7 @@ export class EnvironmentProp {
   readonly maxHp: number;
   hp: number;
   dead = false;
+  private lastHitAt = 0;
 
   constructor(
     private scene: GameScene,
@@ -154,8 +155,11 @@ export class EnvironmentProp {
     );
   }
 
-  takeHit(hero: Hero): boolean {
+  takeHit(_hero: Hero): boolean {
     if (this.dead) return false;
+    const now = this.scene.time.now;
+    if (now - this.lastHitAt < 220) return false;
+    this.lastHitAt = now;
     this.hp -= 1;
 
     // Flash hit reaction

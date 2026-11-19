@@ -59,7 +59,7 @@ export class WorkshopScene extends Phaser.Scene {
     text(this, 64, 84, "Nâng cấp chỉ số vĩnh viễn và chế tạo Giáp Hộ Vệ mới", 16, "#9fb8cc", "700");
 
     const p = loadProgress();
-    this.coinText = text(this, GAME_WIDTH - 60, 48, `🪙 ${p.coins} XU`, 28, "#ffe45c", "900").setOrigin(1, 0);
+    this.coinText = text(this, GAME_WIDTH - 105, 48, `🪙 ${p.coins} XU`, 28, "#ffe45c", "900").setOrigin(1, 0);
 
     const buttons: Button[] = [];
 
@@ -104,7 +104,8 @@ export class WorkshopScene extends Phaser.Scene {
     const wy = 300;
     const wRoot = this.add.container(wx, wy);
     const wBg = this.add.rectangle(0, 0, 260, 320, 0x0a1a2c, 0.95).setStrokeStyle(2, 0xcca052, 0.6);
-    const wIcon = this.add.image(0, -90, "obsidian_warden_art").setDisplaySize(70, 70);
+    const wIcon = this.add.image(0, -90, "obsidian_warden_art");
+    wIcon.setScale(86 / Math.max(wIcon.width, wIcon.height));
     const wName = text(this, 0, -45, "Obsidian Warden", 20, "#cca052", "900").setOrigin(0.5);
     const wDesc = this.add.text(0, -5, "Hộ Vệ Đất & Khiên\nTạo tường chắn & phản đòn siêu hạng", {
       fontFamily: FONT,
@@ -124,11 +125,15 @@ export class WorkshopScene extends Phaser.Scene {
     this.cards.push(wRoot);
     buttons.push(wBtn);
 
-    const backBtn = new Button(this, 120, 640, 160, 46, "← Quay lại", () => this.backToMenu());
+    const backBtn = new Button(this, 130, 640, 180, 46, "← Quay lại (Esc)", () => this.backToMenu());
     buttons.push(backBtn);
 
     this.group = new ButtonGroup(this, buttons, true);
     this.group.reset();
+
+    const esc = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+    esc?.on("down", () => this.backToMenu());
+    this.events.once("shutdown", () => esc?.removeAllListeners());
   }
 
   private buyUpgrade(id: "hp" | "energy" | "cooldown") {

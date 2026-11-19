@@ -88,7 +88,7 @@ export class CombatSystem {
     // 2. Siêu Dẫn (Cryo + Electro)
     if ((prev === "cryo" && element === "electro") || (prev === "electro" && element === "cryo")) {
       target.applyStatus({ kind: "slow", time: 6 });
-      this.dealDamage(attacker, target, { damage: 50, dir: 1, color: 0x9fe8ff });
+      this.scene.dealDamage(attacker, target, { damage: 50, dir: 1, color: 0x9fe8ff });
       this.scene.fx.shockRing(target.cx, target.cy, 140, 0x9fe8ff);
       this.scene.fx.label(target.cx, target.y - target.bodyH - 45, "SIÊU DẪN!", "#9fe8ff");
       sfx.reaction();
@@ -98,7 +98,7 @@ export class CombatSystem {
     // 3. Tan Chảy (Pyro + Cryo)
     if ((prev === "pyro" && element === "cryo") || (prev === "cryo" && element === "pyro")) {
       this.scene.fx.flashCore(target.cx, target.cy, 1.8, 220);
-      this.dealDamage(attacker, target, { damage: 95, dir: 1, color: 0xffe45c });
+      this.scene.dealDamage(attacker, target, { damage: 95, dir: 1, color: 0xffe45c });
       this.scene.fx.label(target.cx, target.y - target.bodyH - 45, "TAN CHẢY!", "#ffe45c");
       sfx.reaction();
       return;
@@ -211,7 +211,7 @@ export class CombatSystem {
     let count = 0;
     for (const t of this.targetsFor(attacker)) {
       if (t.dead) continue;
-      if (Phaser.Geom.Intersects.RectangleToRectangle(rect, t.bounds()) && this.dealDamage(attacker, t, hit) > 0) count += 1;
+      if (Phaser.Geom.Intersects.RectangleToRectangle(rect, t.bounds()) && this.scene.dealDamage(attacker, t, hit) > 0) count += 1;
     }
     return count;
   }
@@ -223,7 +223,7 @@ export class CombatSystem {
       if (t.dead) continue;
       if (everywhere || Phaser.Geom.Intersects.CircleToRectangle(circle, t.bounds())) {
         const dir = Math.sign(t.x - attacker.x) || attacker.facing;
-        if (this.dealDamage(attacker, t, { ...hit, dir }) > 0) count += 1;
+        if (this.scene.dealDamage(attacker, t, { ...hit, dir }) > 0) count += 1;
       }
     }
     return count;

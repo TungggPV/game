@@ -104,7 +104,12 @@ export class GameScene extends Phaser.Scene {
   get hitstop() { return this.combatSys?.hitstop ?? 0; }
   set hitstop(v: number) { if (this.combatSys) this.combatSys.hitstop = v; }
   get stage(): StageDef { return STAGES[this.mode === "pk" ? 0 : this.stageIndex]; }
-  get worldWidth() { return this.mode === "pk" ? ARENA_WIDTH : ARENA_WIDTH * this.stage.waves.length; }
+  get worldWidth() {
+    if (this.mode === "endless") return Math.max(ARENA_WIDTH * 4, this.arenaMin + ARENA_WIDTH * 3);
+    if (this.mode === "bossrush") return ARENA_WIDTH * 3;
+    if (this.mode === "pk" || this.mode === "training") return ARENA_WIDTH;
+    return ARENA_WIDTH * this.stage.waves.length;
+  }
 
   init(data?: Partial<GameData> & { heroId?: string }) {
     this.mode = data?.mode ?? "solo";
@@ -142,7 +147,14 @@ export class GameScene extends Phaser.Scene {
     if (this.mode === "coop") this.cameras.main.setZoom(0.9);
     this.buildWorld();
 
-    const count = this.mode === "solo" || this.mode === "endless" || this.mode === "bossrush" || this.mode === "daily" ? 1 : 2;
+    const count =
+      this.mode === "solo" ||
+      this.mode === "endless" ||
+      this.mode === "bossrush" ||
+      this.mode === "daily" ||
+      this.mode === "training"
+        ? 1
+        : 2;
     for (let i = 0; i < count; i += 1) {
       const def = heroById(this.heroIds[i] ?? this.heroIds[0]);
       const x = this.mode === "pk" ? (i === 0 ? 300 : GAME_WIDTH - 300) : 220 + i * 110;
@@ -164,7 +176,7 @@ export class GameScene extends Phaser.Scene {
     music.start(this.stageIndex === 4 || this.mode === "bossrush" ? "boss" : "stage");
 
     // Launch Cyberpunk HUD (Step 4)
-    this.scene.launch("ui");
+    this.scene.launch("ui", { targetScene: this.scene.key });
     this.scene.bringToTop("ui");
 
     this.events.once("shutdown", () => {
@@ -181,7 +193,7 @@ export class GameScene extends Phaser.Scene {
       this.groundVignette?.destroy();
     });
     if (this.mode === "pk") this.startPkRound();
-    else this.startStage();
+    else if (this.mode !== "training") this.startStage();
   }
 
   private phaseTimer = 0;
@@ -229,8 +241,9 @@ export class GameScene extends Phaser.Scene {
 
     // Soft foreground vignette at the very bottom edge (y=660 to 720) so the curb details stay visible while HUD is clean
     this.groundVignette = this.add
-      .rectangle(0, 660, ARENA_WIDTH * 3 + GAME_WIDTH, 60, 0x01050a, 0.4)
+      .rectangle(0, 660, GAME_WIDTH, 60, 0x01050a, 0.4)
       .setOrigin(0)
+      .setScrollFactor(0)
       .setDepth(DEPTH.floor);
 
     this.cameras.main.setBounds(0, 0, this.worldWidth, GAME_HEIGHT);
@@ -290,19 +303,21 @@ export class GameScene extends Phaser.Scene {
     // 5. Spawn environment props (Crate, Barrel, Supply Chest)
     this.props.forEach((p) => p.destroy());
     this.props = [];
-    const propPatterns: Array<{ offset: number; type: PropType }> = [
-      { offset: 420, type: "crate_energy" },
-      { offset: 780, type: "barrel" },
-      { offset: 1140, type: "crate_gold" },
-      { offset: 1680, type: "crate_health" },
-      { offset: 2040, type: "chest" },
-      { offset: 2420, type: "crate_energy" },
-      { offset: 2920, type: "barrel" },
-      { offset: 3260, type: "chest" },
-    ];
-    for (const p of propPatterns) {
-      if (p.offset < this.worldWidth - 100) {
-        this.props.push(new EnvironmentProp(this, p.offset, p.type));
+    if (this.mode !== "training") {
+      const propPatterns: Array<{ offset: number; type: PropType }> = [
+        { offset: 420, type: "crate_energy" },
+        { offset: 780, type: "barrel" },
+        { offset: 1140, type: "crate_gold" },
+        { offset: 1680, type: "crate_health" },
+        { offset: 2040, type: "chest" },
+        { offset: 2420, type: "crate_energy" },
+        { offset: 2920, type: "barrel" },
+        { offset: 3260, type: "chest" },
+      ];
+      for (const p of propPatterns) {
+        if (p.offset < this.worldWidth - 100) {
+          this.props.push(new EnvironmentProp(this, p.offset, p.type));
+        }
       }
     }
   }
@@ -443,7 +458,13 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  arenaBounds(): [number, number] { return [this.arenaMin, this.arenaMax]; }
+  arenaBounds(): [number, number] {
+    if (this.phase === "advance") {
+      const nextEnd = this.arenaMin + ARENA_WIDTH * 2;
+      return [this.arenaMin, this.mode === "endless" ? nextEnd : Math.min(this.worldWidth, nextEnd)];
+    }
+    return [this.arenaMin, this.arenaMax];
+  }
   resumeFromPause() { this.pauseKeys.forEach((k) => k.reset()); this.input.keyboard?.resetKeys(); }
   setTimeScaleTimer(t: number) { this.timeScaleTimer = t; }
 
@@ -533,9 +554,10 @@ export class GameScene extends Phaser.Scene {
 
   onWaveCleared() {
     if (this.mode === "endless") {
-      this.waveIndex += 1;
-      this.score += 500 + this.waveIndex * 150;
-      if (this.waveIndex % 3 === 0) {
+      const nextWave = this.waveIndex + 1;
+      this.score += 500 + nextWave * 150;
+      if (nextWave % 3 === 0) {
+        this.waveIndex = nextWave;
         this.setPhase("upgrade", 0);
         const pool = [...ARMOR_CORES];
         Phaser.Utils.Array.Shuffle(pool);
@@ -555,7 +577,6 @@ export class GameScene extends Phaser.Scene {
       if (this.waveIndex >= 2) {
         this.finish(true);
       } else {
-        this.waveIndex += 1;
         this.setPhase("advance", 0);
         this.events.emit("go", true);
         sfx.confirm();
@@ -590,6 +611,7 @@ export class GameScene extends Phaser.Scene {
       core.apply(h);
       h.applyMods();
     });
+    if (this.phase !== "upgrade") return;
     if (this.mode === "endless") {
       this.startWave();
     } else {
@@ -707,7 +729,7 @@ export class GameScene extends Phaser.Scene {
       real *= this.timeScale;
       if (this.timeScaleTimer <= 0) this.timeScale = 1;
     }
-    if (this.pauseKeys.some((k) => Phaser.Input.Keyboard.JustDown(k)) || consumeTouch("pause")) {
+    if (this.mode !== "training" && (this.pauseKeys.some((k) => Phaser.Input.Keyboard.JustDown(k)) || consumeTouch("pause"))) {
       if (this.phase !== "over" && this.phase !== "upgrade") this.events.emit("pause");
       return;
     }
@@ -878,6 +900,9 @@ export class GameScene extends Phaser.Scene {
         if (alive.length && alive.every((h) => h.x > nextMin + 260)) {
           this.arenaMin = nextMin;
           this.arenaMax = nextMin + ARENA_WIDTH;
+          if (this.mode === "endless") {
+            this.cameras.main.setBounds(0, 0, this.worldWidth, GAME_HEIGHT);
+          }
           this.waveIndex += 1;
           this.events.emit("go", false);
           this.startWave();

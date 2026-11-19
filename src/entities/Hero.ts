@@ -69,12 +69,6 @@ export class Hero extends Actor {
     this.jumpsLeft = def.jumps;
     this.pal = PALETTE[def.element];
     this.hasWalk = scene.textures.exists(heroKey(def.id, "walk_1"));
-
-    // For Obsidian Warden: check for unique OW canvas textures (Phase 6)
-    if (def.id === "obsidian_warden" && scene.textures.exists("ow_idle")) {
-      this.sprite.setTexture("ow_idle");
-      this.scaleFactor = HERO_HEIGHT / (scene.textures.get("ow_idle").getSourceImage() as HTMLImageElement).height;
-    }
     this.facing = index === 0 ? 1 : -1;
     this.applyMods();
     const upEnergy = (this.mods.energyGain - 1) * 100;
@@ -467,20 +461,6 @@ export class Hero extends Actor {
     return "idle";
   }
 
-  /** Map pose to texture key, using OW unique textures when available */
-  private poseKey(pose: HeroPose): string {
-    if (this.def.id === "obsidian_warden" && this.scene.textures.exists("ow_idle")) {
-      const owMap: Record<string, string> = {
-        idle: "ow_idle", jump: "ow_jump", attack_slash: "ow_attack_slash",
-        attack_blast: "ow_attack_blast", dash: "ow_dash", hit_reaction: "ow_hit_reaction",
-        walk_1: "ow_walk_1", walk_2: "ow_walk_2", walk_3: "ow_walk_3", walk_4: "ow_walk_4",
-      };
-      const owKey = owMap[pose];
-      if (owKey && this.scene.textures.exists(owKey)) return owKey;
-    }
-    return heroKey(this.def.id, pose);
-  }
-
   /** Kick the squash/stretch spring; it settles back to 1 on its own. */
   impulse(sx: number, sy: number) {
     this.anim.sx = sx;
@@ -517,7 +497,7 @@ export class Hero extends Actor {
     else a.stride = 0;
 
     const pose = this.pose();
-    const key = this.poseKey(pose);
+    const key = heroKey(this.def.id, pose);
     if (key !== a.lastKey) {
       this.sprite.setTexture(key);
       if (!pose.startsWith("walk") && !a.lastKey.includes("walk")) this.impulse(a.sx * 1.04, a.sy * 0.97);

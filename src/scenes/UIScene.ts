@@ -31,6 +31,7 @@ type Panel = {
 const BAR_W = 250;
 
 export class UIScene extends Phaser.Scene {
+  private targetScene = "game";
   private game_!: GameScene;
   private panels: Panel[] = [];
   private scoreText!: Phaser.GameObjects.Text;
@@ -54,8 +55,12 @@ export class UIScene extends Phaser.Scene {
     super("ui");
   }
 
+  init(data?: { targetScene?: string }) {
+    this.targetScene = data?.targetScene ?? "game";
+  }
+
   create() {
-    this.game_ = this.scene.get("game") as GameScene;
+    this.game_ = this.scene.get(this.targetScene) as GameScene;
     this.panels = [];
     this.overlay = undefined;
     this.bossBar = undefined;
@@ -102,66 +107,69 @@ export class UIScene extends Phaser.Scene {
     const K = Phaser.Input.Keyboard.KeyCodes;
     this.pauseKeys = [K.P, K.ESC].map((k) => this.input.keyboard!.addKey(k));
 
-    // Top-right Cyberpunk Pause button
-    const pauseBtn = this.add.container(GAME_WIDTH - 45, 36);
-    const pBg = this.add.circle(0, 0, 18, 0x02070d, 0.8).setStrokeStyle(1.5, 0x18e6ff, 0.7);
-    const pText = text(this, 0, 0, "⏸", 14, "#18e6ff", "900").setOrigin(0.5);
-    pauseBtn.add([pBg, pText]);
-    pauseBtn.setSize(36, 36).setInteractive({ useHandCursor: true }).on("pointerdown", () => this.openPause());
+    // Top-right Cyberpunk Pause button (skipped in Training Dojo; offset away from DOM fullscreen button)
+    if (this.game_.mode !== "training") {
+      const pauseX = this.game_.heroes.length > 1 ? 424 : GAME_WIDTH - 96;
+      const pauseBtn = this.add.container(pauseX, 36);
+      const pBg = this.add.circle(0, 0, 18, 0x02070d, 0.8).setStrokeStyle(1.5, 0x18e6ff, 0.7);
+      const pText = text(this, 0, 0, "⏸", 14, "#18e6ff", "900").setOrigin(0.5);
+      pauseBtn.add([pBg, pText]);
+      pauseBtn.setSize(36, 36).setInteractive({ useHandCursor: true }).on("pointerdown", () => this.openPause());
+    }
   }
 
   // ---------- HUD ----------
 
   private buildPanel(hero: Hero, index: number): Panel {
     const right = index === 1;
-    const x = right ? GAME_WIDTH - 24 : 24;
+    const x = right ? GAME_WIDTH - 76 : 24;
     const dir = right ? -1 : 1;
     const color = hero.def.color;
     const root = this.add.container(0, 0);
 
     const plate = this.add.graphics();
-    plate.fillStyle(0x02070d, 0.72).fillRoundedRect(right ? x - 370 : x, 14, 370, 132, 14);
-    plate.lineStyle(2, color, 0.5).strokeRoundedRect(right ? x - 370 : x, 14, 370, 132, 14);
+    plate.fillStyle(0x02070d, 0.72).fillRoundedRect(right ? x - 370 : x, 12, 370, 144, 14);
+    plate.lineStyle(2, color, 0.5).strokeRoundedRect(right ? x - 370 : x, 12, 370, 144, 14);
     root.add(plate);
 
     const px = x + dir * 52;
-    const ring = this.add.circle(px, 62, 38, 0x0a1a2c).setStrokeStyle(3, color);
+    const ring = this.add.circle(px, 60, 38, 0x0a1a2c).setStrokeStyle(3, color);
     const key = heroKey(hero.def.id, "idle");
-    const portrait = this.add.image(px, 62, key);
+    const portrait = this.add.image(px, 60, key);
     const src = portrait.frame;
     // Crop to the helmet so the portrait reads at small size.
     portrait.setCrop(0, 0, src.width, src.height * 0.42).setOrigin(0.5, 0.2).setScale(120 / src.width).setFlipX(right);
     root.add([ring, portrait]);
-    const tag = text(this, px, 108, `P${index + 1}`, 15, hex(color), "900").setOrigin(0.5);
+    const tag = text(this, px, 106, `P${index + 1}`, 15, hex(color), "900").setOrigin(0.5);
     root.add(tag);
 
     const bx = right ? x - 112 - BAR_W : x + 112;
-    root.add(text(this, right ? bx + BAR_W : bx, 22, hero.def.name.toUpperCase(), 17, "#ffffff", "900").setOrigin(right ? 1 : 0, 0));
-    root.add(this.add.rectangle(bx, 50, BAR_W, 16, 0x1b0a10).setOrigin(0, 0).setStrokeStyle(1, 0xffffff, 0.25));
-    const hpTrail = this.add.rectangle(bx, 50, BAR_W, 16, 0xff5a6a).setOrigin(0, 0);
-    const hp = this.add.rectangle(bx, 50, BAR_W, 16, 0x52f08a).setOrigin(0, 0);
-    const hpText = text(this, bx + BAR_W / 2, 58, "", 12, "#ffffff", "800").setOrigin(0.5);
+    root.add(text(this, right ? bx + BAR_W : bx, 18, hero.def.name.toUpperCase(), 16, "#ffffff", "900").setOrigin(right ? 1 : 0, 0));
+    root.add(this.add.rectangle(bx, 42, BAR_W, 16, 0x1b0a10).setOrigin(0, 0).setStrokeStyle(1, 0xffffff, 0.25));
+    const hpTrail = this.add.rectangle(bx, 42, BAR_W, 16, 0xff5a6a).setOrigin(0, 0);
+    const hp = this.add.rectangle(bx, 42, BAR_W, 16, 0x52f08a).setOrigin(0, 0);
+    const hpText = text(this, bx + BAR_W / 2, 50, "", 12, "#ffffff", "800").setOrigin(0.5);
     root.add([hpTrail, hp, hpText]);
-    root.add(this.add.rectangle(bx, 72, BAR_W, 9, 0x0a1622).setOrigin(0, 0).setStrokeStyle(1, 0xffffff, 0.2));
-    const energy = this.add.rectangle(bx, 72, BAR_W, 9, 0x3ad6ff).setOrigin(0, 0);
-    const energyText = text(this, right ? bx : bx + BAR_W, 84, "", 11, "#9fe8ff", "800").setOrigin(right ? 0 : 1, 0);
+    root.add(this.add.rectangle(bx, 63, BAR_W, 8, 0x0a1622).setOrigin(0, 0).setStrokeStyle(1, 0xffffff, 0.2));
+    const energy = this.add.rectangle(bx, 63, BAR_W, 8, 0x3ad6ff).setOrigin(0, 0);
+    const energyText = text(this, right ? bx : bx + BAR_W, 79, "", 11, "#9fe8ff", "800").setOrigin(right ? 0 : 1, 0);
     root.add([energy, energyText]);
 
-    // Cyberpunk Coin Counter
+    // Cyberpunk Coin Counter (y=76..96, clearly separated above skill slots at sy=124)
     const coinBg = this.add.graphics();
     const cx = right ? bx + BAR_W - 85 : bx;
-    coinBg.fillStyle(0x02070d, 0.75).fillRoundedRect(cx, 88, 85, 20, 6);
-    coinBg.lineStyle(1, 0xfbbf24, 0.5).strokeRoundedRect(cx, 88, 85, 20, 6);
-    const coinIcon = this.add.image(cx + 12, 98, "item_coin").setScale(0.32);
-    const coinText = text(this, cx + 26, 98, "0", 12, "#ffe45c", "900").setOrigin(0, 0.5);
+    coinBg.fillStyle(0x02070d, 0.75).fillRoundedRect(cx, 76, 85, 20, 6);
+    coinBg.lineStyle(1, 0xfbbf24, 0.5).strokeRoundedRect(cx, 76, 85, 20, 6);
+    const coinIcon = this.add.image(cx + 12, 86, "item_coin").setDisplaySize(16, 16);
+    const coinText = text(this, cx + 26, 86, "0", 12, "#ffe45c", "900").setOrigin(0, 0.5);
     root.add([coinBg, coinIcon, coinText]);
 
     const slots: Panel["slots"] = [];
     SLOTS.forEach((slot, i) => {
       const sx = right ? bx + BAR_W - 22 - (3 - i) * 56 : bx + 22 + i * 56;
-      const sy = 120;
-      const frame = this.add.circle(sx, sy, 22, 0x02070d).setStrokeStyle(2, color, 0.6);
-      const icon = this.add.image(sx, sy, `${hero.def.id}_icon_${slot}`).setDisplaySize(40, 40);
+      const sy = 124;
+      const frame = this.add.circle(sx, sy, 21, 0x02070d).setStrokeStyle(2, color, 0.6);
+      const icon = this.add.image(sx, sy, `${hero.def.id}_icon_${slot}`).setDisplaySize(38, 38);
       const shade = this.add.graphics();
       const cd = text(this, sx, sy, "", 15, "#ffffff", "900").setOrigin(0.5);
       const keyLabel = text(this, sx + 16, sy + 14, SLOT_KEYS[index as 0 | 1][i], 11, "#ffe45c", "900").setOrigin(0.5);
@@ -179,7 +187,10 @@ export class UIScene extends Phaser.Scene {
 
     for (const p of this.panels) this.updatePanel(p, dt);
 
-    if (game.mode === "pk") {
+    if (game.mode === "training") {
+      this.scoreText.setText("");
+      this.stageText.setText("");
+    } else if (game.mode === "pk") {
       this.scoreText.setText(String(Math.max(0, Math.ceil(game.pkTimer))));
       this.scoreText.setColor(game.pkTimer < 10 ? "#ff5a6a" : "#ffffff");
       this.stageText.setText(`HIỆP ${game.pkRound}  ·  ${"●".repeat(game.pkWins[0])}${"○".repeat(2 - game.pkWins[0])}  vs  ${"●".repeat(game.pkWins[1])}${"○".repeat(2 - game.pkWins[1])}`);
@@ -268,7 +279,7 @@ export class UIScene extends Phaser.Scene {
       const max = skill.cooldown * (s.slot === "ultimate" ? 1 : h.mods.cooldown);
       const lacking = h.energy < skill.cost;
       if (cd > 0) {
-        s.shade.fillStyle(0x000000, 0.65).slice(s.icon.x, s.icon.y, 21, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (cd / max), false).fillPath();
+        s.shade.fillStyle(0x000000, 0.65).slice(s.icon.x, s.icon.y, 20, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (cd / max), false).fillPath();
         s.cd.setText(cd >= 1 ? String(Math.ceil(cd)) : cd.toFixed(1));
       } else {
         s.cd.setText("");
@@ -347,7 +358,7 @@ export class UIScene extends Phaser.Scene {
 
   private openPause() {
     if (this.overlay) return;
-    this.scene.pause("game");
+    this.scene.pause(this.targetScene);
     const root = this.add.container(0, 0).setDepth(100);
     root.add(this.dim());
     root.add(text(this, GAME_WIDTH / 2, 130, "TẠM DỪNG", 56, "#9ff8ff", "900").setOrigin(0.5));
@@ -355,7 +366,7 @@ export class UIScene extends Phaser.Scene {
     const resume = () => {
       this.closeOverlay();
       this.game_.resumeFromPause();
-      this.scene.resume("game");
+      this.scene.resume(this.targetScene);
     };
 
     // Left column: Actions
@@ -422,7 +433,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   private openCoreUpgrade(choices: ArmorCore[]) {
-    this.scene.pause("game");
+    this.scene.pause(this.targetScene);
     const root = this.add.container(0, 0).setDepth(100);
     root.add(this.dim());
     root.add(text(this, GAME_WIDTH / 2, 110, "CHỌN LÕI GIÁP CHIẾN THUẬT", 46, "#ffe45c", "900").setOrigin(0.5));
@@ -436,7 +447,7 @@ export class UIScene extends Phaser.Scene {
       const rColor = RARITY_COLORS[c.rarity];
       const card = new Button(this, x, 390, 320, 360, "", () => {
         this.closeOverlay();
-        this.scene.resume("game");
+        this.scene.resume(this.targetScene);
         this.game_.chooseArmorCore(c);
       }, rColor.main, true);
 
@@ -481,7 +492,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   private openUpgrade(choices: Upgrade[]) {
-    this.scene.pause("game");
+    this.scene.pause(this.targetScene);
     const root = this.add.container(0, 0).setDepth(100);
     root.add(this.dim());
     root.add(text(this, GAME_WIDTH / 2, 120, "CHỌN NÂNG CẤP GIÁP", 48, "#ffe45c", "900").setOrigin(0.5));
@@ -490,7 +501,7 @@ export class UIScene extends Phaser.Scene {
       const x = GAME_WIDTH / 2 + (i - 1) * 330;
       const card = new Button(this, x, 390, 300, 320, "", () => {
         this.closeOverlay();
-        this.scene.resume("game");
+        this.scene.resume(this.targetScene);
         this.game_.chooseUpgrade(u);
       }, 0xffe45c, true);
       card.add([
@@ -542,13 +553,13 @@ export class UIScene extends Phaser.Scene {
       handicaps: this.game_.handicaps,
     };
     this.closeOverlay();
-    this.scene.stop("game");
-    this.scene.start("game", data);
+    this.scene.stop(this.targetScene);
+    this.scene.start(this.targetScene, data);
   }
 
   private toMenu() {
     this.closeOverlay();
-    this.scene.stop("game");
+    this.scene.stop(this.targetScene);
     setSceneFlag("menu");
     this.scene.start("menu");
   }

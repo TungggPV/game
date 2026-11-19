@@ -297,8 +297,10 @@ def main() -> None:
     # 4. Items & FX
     for name, rel in {**ITEMS, **FX}.items():
         a = load(rel)
+        if name == "item_coin":
+            a[: int(a.shape[0] * 0.25), :, 3] = 0
         defringe(a)
-        keep_main(a, 0.05)
+        keep_main(a, 0.4 if name == "item_coin" else 0.05)
         manifest[name] = save(trim(a), name, 64 if name.startswith("item") else None)
 
     # 5. City Props (Crate, Barrel, Supply Chest)

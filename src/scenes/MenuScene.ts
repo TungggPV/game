@@ -11,7 +11,7 @@ import { music } from "../systems/music";
 import { Button, text } from "../ui/widgets";
 
 const MODES: { id: GameMode; label: string; hint: string }[] = [
-  { id: "solo", label: "CHIẾN DỊCH", hint: "Vượt 4 màn phiêu lưu, hạ trùm Abyssal Colossus" },
+  { id: "solo", label: "CHIẾN DỊCH", hint: "Vượt 5 màn phiêu lưu, hạ Cổ Thần Archon Zero" },
   { id: "coop", label: "CO-OP 2P", hint: "Hai người cùng chiến đấu, tương trợ lẫn nhau" },
   { id: "pk", label: "ĐỐI KHÁNG", hint: "Đấu tay đôi 1v1 · Người vs Người hoặc Đấu Bot AI" },
   { id: "endless", label: "VÔ TẬN", hint: "Sóng quái vô hạn, điều kiện môi trường ngẫu nhiên mỗi 5 đợt" },
@@ -34,6 +34,7 @@ export class MenuScene extends Phaser.Scene {
   private cards: { root: Phaser.GameObjects.Container; frame: Phaser.GameObjects.Rectangle; p1: Phaser.GameObjects.Text; p2: Phaser.GameObjects.Text }[] = [];
   private detail!: Phaser.GameObjects.Container;
   private extraOptions!: Phaser.GameObjects.Container;
+  private p2Label!: Phaser.GameObjects.Text;
   private art!: Phaser.GameObjects.Image;
   private artGlow!: Phaser.GameObjects.Image;
   private modeHint!: Phaser.GameObjects.Text;
@@ -62,31 +63,35 @@ export class MenuScene extends Phaser.Scene {
     this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.55).setOrigin(0);
     this.add.rectangle(0, 0, 640, GAME_HEIGHT, 0x02070d, 0.6).setOrigin(0);
 
-    text(this, 60, 32, "ELEMENT ARMOR", 18, "#18e6ff", "900").setLetterSpacing(6);
-    text(this, 56, 50, "HÀO QUANG GIÁP", 48, "#ffffff", "900");
+    text(this, 40, 20, "ELEMENT ARMOR", 16, "#18e6ff", "900").setLetterSpacing(6);
+    text(this, 38, 38, "HÀO QUANG GIÁP", 44, "#ffffff", "900");
     const prog = loadProgress();
-    text(this, GAME_WIDTH - 40, 32, `KỶ LỤC ${prog.bestScore || loadBest()}`, 16, "#ffe45c", "900").setOrigin(1, 0);
-    text(this, GAME_WIDTH - 40, 54, `🪙 ${prog.coins} XU`, 16, "#7dffb0", "900").setOrigin(1, 0);
-    text(this, GAME_WIDTH - 40, 76, `🏆 ${prog.achievements.length} THÀNH TỰU`, 14, "#9fe8ff", "700").setOrigin(1, 0);
+    // Keep clear of the DOM fullscreen button in the top-right corner.
+    text(this, GAME_WIDTH - 100, 32, `KỶ LỤC ${prog.bestScore || loadBest()}`, 16, "#ffe45c", "900").setOrigin(1, 0).setDepth(5);
+    text(this, GAME_WIDTH - 100, 54, `🪙 ${prog.coins} XU`, 16, "#7dffb0", "900").setOrigin(1, 0).setDepth(5);
+    text(this, GAME_WIDTH - 100, 76, `🏆 ${prog.achievements.length} THÀNH TỰU`, 14, "#9fe8ff", "700").setOrigin(1, 0).setDepth(5);
 
-    // Mode Buttons: 2 rows of 3 buttons
+    // Mode Buttons: 2 rows of 3 buttons (y = 93..167)
     MODES.forEach((m, i) => {
       const col = i % 3;
       const row = Math.floor(i / 3);
-      const bx = 115 + col * 165;
-      const by = 138 + row * 44;
-      const b = new Button(this, bx, by, 155, 38, m.label, () => this.setMode(i));
+      const bx = 117 + col * 165;
+      const by = 110 + row * 40;
+      const b = new Button(this, bx, by, 155, 34, m.label, () => this.setMode(i));
       this.modeButtons.push(b);
     });
-    this.modeHint = text(this, 40, 230, "", 14, "#9fb8cc", "700");
+    // Left pane vertical layout (exact bounds, zero overlaps):
+    //   title 20..88 · mode buttons 93..167 · hint 174..191 · difficulty 199..225
+    //   extraOptions 232..288 · hero detail 242/264/298..580 · action buttons 597..685
+    this.modeHint = text(this, 40, 174, "", 13, "#9fb8cc", "700");
 
     // Difficulty Selector
     const curDiff = getDifficulty();
-    text(this, 40, 258, "ĐỘ KHÓ:", 14, "#7dffb0", "800");
+    text(this, 40, 204, "ĐỘ KHÓ:", 14, "#7dffb0", "800");
     const diffLevels: DifficultyLevel[] = ["easy", "normal", "hard"];
     const diffNames = ["DỄ", "THƯỜNG", "KHÓ"];
     diffLevels.forEach((lvl, idx) => {
-      const b = new Button(this, 160 + idx * 100, 258, 90, 32, diffNames[idx], () => {
+      const b = new Button(this, 164 + idx * 96, 212, 88, 26, diffNames[idx], () => {
         setDifficulty(lvl);
         sfx.select();
         this.diffButtons.forEach((btn, j) => btn.setSelected(j === idx));
@@ -95,13 +100,14 @@ export class MenuScene extends Phaser.Scene {
       this.diffButtons.push(b);
     });
 
-    this.extraOptions = this.add.container(40, 286);
+    this.extraOptions = this.add.container(40, 232);
 
     this.artGlow = this.add.image(950, 280, "glow").setBlendMode(Phaser.BlendModes.ADD).setScale(4.5).setAlpha(0.35);
     this.art = this.add.image(950, 270, `${HEROES[0].id}_art`).setScale(0.85);
     this.tweens.add({ targets: this.art, y: 252, yoyo: true, repeat: -1, duration: 1600, ease: "Sine.easeInOut" });
 
-    this.detail = this.add.container(60, 335);
+    this.detail = this.add.container(40, 242);
+    this.p2Label = text(this, 690, 514, "", 16, "#ff6a8a", "900").setVisible(false);
 
     const unlockedHeroes = HEROES.filter((h) => prog.unlocks.includes(h.id));
     const cardSpacing = unlockedHeroes.length > 4 ? 112 : 132;
@@ -119,21 +125,21 @@ export class MenuScene extends Phaser.Scene {
     });
     text(this, 690, 684, "P1: A/D  ·  P2: ←/→  ·  Tab: đổi chế độ  ·  H: hướng dẫn", 14, "#7f95a8", "700");
 
-    // Row 1: Primary action & gameplay modes (left pane, x < 600, no overlap with cards)
-    new Button(this, 135, 622, 170, 44, "BẮT ĐẦU", () => this.start(), 0xffe45c).setSelected(true);
-    new Button(this, 285, 622, 110, 44, "Võ Đường", () => {
+    // Row 1: Primary action & gameplay modes (left pane, x <= 580, no overlap with cards)
+    new Button(this, 125, 618, 170, 42, "BẮT ĐẦU", () => this.start(), 0xffe45c).setSelected(true);
+    new Button(this, 275, 618, 110, 42, "Võ Đường", () => {
       sfx.confirm();
       const prog = loadProgress();
       const unlocked = HEROES.filter((h) => prog.unlocks.includes(h.id));
       const heroId = (unlocked[this.picks[0]] ?? unlocked[0]).id;
       this.scene.start("training", { mode: "training", heroes: [heroId] });
     }, 0xd946ef);
-    new Button(this, 410, 622, 120, 44, "Xưởng Giáp", () => this.scene.start("workshop"), 0x18e6ff);
-    new Button(this, 535, 622, 110, 44, "Sổ Tay", () => this.scene.start("codex"), 0x7dffb0);
+    new Button(this, 400, 618, 120, 42, "Xưởng Giáp", () => this.scene.start("workshop"), 0x18e6ff);
+    new Button(this, 525, 618, 110, 42, "Sổ Tay", () => this.scene.start("codex"), 0x7dffb0);
 
-    // Row 2: Secondary utilities (neatly placed below Row 1)
-    new Button(this, 135, 674, 170, 36, "BXH Vô Tận", () => this.openEndlessLeaderboard(), 0xffa500);
-    new Button(this, 285, 674, 110, 36, "Giúp (H)", () => this.toggleHelp());
+    // Row 2: Secondary utilities (y = 651..685)
+    new Button(this, 125, 668, 170, 34, "BXH Vô Tận", () => this.openEndlessLeaderboard(), 0xffa500);
+    new Button(this, 275, 668, 110, 34, "Giúp (H)", () => this.toggleHelp());
 
     const K = Phaser.Input.Keyboard.KeyCodes;
     this.keys = this.input.keyboard!.addKeys({
@@ -188,24 +194,25 @@ export class MenuScene extends Phaser.Scene {
     const mode = MODES[this.mode].id;
 
     if (mode === "pk") {
-      this.extraOptions.add(text(this, 0, 0, "P2 Đối thủ:", 13, "#ff6a8a", "800"));
+      this.extraOptions.add(text(this, 0, 6, "P2 Đối thủ:", 13, "#ff6a8a", "800"));
       const botLevels: ("none" | "easy" | "normal" | "hard")[] = ["none", "easy", "normal", "hard"];
       const botLabels = ["Người", "Bot Dễ", "Bot Thường", "Bot Khó"];
       botLevels.forEach((lvl, idx) => {
-        const btn = new Button(this, 110 + idx * 95, 0, 88, 28, botLabels[idx], () => {
+        const btn = new Button(this, 135 + idx * 92, 14, 86, 24, botLabels[idx], () => {
           this.pkBotLevel = lvl;
           sfx.select();
           this.refreshExtraOptions();
+          this.refresh();
         });
         if (lvl === this.pkBotLevel) btn.setSelected(true);
         this.extraOptions.add(btn);
       });
 
-      this.extraOptions.add(text(this, 0, 32, "Máu P2:", 13, "#ff6a8a", "800"));
+      this.extraOptions.add(text(this, 0, 36, "Máu P2:", 13, "#ff6a8a", "800"));
       const handicaps = [1.0, 0.85, 0.7];
       const hcLabels = ["100%", "85%", "70%"];
       handicaps.forEach((h, idx) => {
-        const btn = new Button(this, 110 + idx * 80, 32, 74, 28, hcLabels[idx], () => {
+        const btn = new Button(this, 124 + idx * 70, 44, 64, 24, hcLabels[idx], () => {
           this.pkHandicap = h;
           sfx.select();
           this.refreshExtraOptions();
@@ -215,7 +222,7 @@ export class MenuScene extends Phaser.Scene {
       });
 
       const lockLabel = this.pkAllowSameHero ? "Trùng Hero: BẬT" : "Trùng Hero: KHÓA";
-      const lockBtn = new Button(this, 395, 32, 140, 28, lockLabel, () => {
+      const lockBtn = new Button(this, 374, 44, 138, 24, lockLabel, () => {
         this.pkAllowSameHero = !this.pkAllowSameHero;
         sfx.select();
         this.refreshExtraOptions();
@@ -226,11 +233,11 @@ export class MenuScene extends Phaser.Scene {
     } else if (mode === "daily") {
       const dateStr = getDailyDateString();
       const dailyBest = getDailyRecord(dateStr);
-      this.extraOptions.add(text(this, 0, 6, `Hạt giống hôm nay: ${dateStr}  ·  Kỷ lục ngày: ${dailyBest} điểm`, 13, "#ffe45c", "800"));
+      this.extraOptions.add(text(this, 0, 4, `Hạt giống hôm nay: ${dateStr}  ·  Kỷ lục ngày: ${dailyBest} điểm`, 13, "#ffe45c", "800"));
     } else if (mode === "endless") {
       const top = getEndlessLeaderboard()[0];
       const bestText = top ? `Kỷ lục Vô Tận: Đợt ${top.wave} · ${top.score} điểm (${top.hero})` : "Chưa có kỷ lục Vô Tận. Hãy là người đầu tiên!";
-      this.extraOptions.add(text(this, 0, 6, bestText, 13, "#18e6ff", "800"));
+      this.extraOptions.add(text(this, 0, 4, bestText, 13, "#18e6ff", "800"));
     }
   }
 
@@ -272,12 +279,14 @@ export class MenuScene extends Phaser.Scene {
     this.art.setAlpha(0).setX(990);
     this.tweens.add({ targets: this.art, alpha: 1, x: 950, duration: 220, ease: "Cubic.easeOut" });
 
+    const modeId = MODES[this.mode].id;
+    this.detail.setY(modeId === "pk" ? 298 : modeId === "daily" || modeId === "endless" ? 264 : 242);
     this.detail.removeAll(true);
     const d = this.detail;
-    d.add(text(this, 0, -50, hero.name.toUpperCase(), 32, hex(hero.color), "900"));
-    d.add(text(this, 0, -14, hero.role, 15, "#c8dcea", "700"));
+    d.add(text(this, 0, 0, hero.name.toUpperCase(), 28, hex(hero.color), "900"));
+    d.add(text(this, 0, 32, hero.role, 13, "#c8dcea", "700"));
     STAT_LABELS.forEach(([k, label], i) => {
-      const y = 14 + i * 20;
+      const y = 54 + i * 17;
       d.add(text(this, 0, y, label, 13, "#9fb8cc", "700"));
       for (let s = 0; s < 5; s += 1) d.add(this.add.rectangle(75 + s * 28, y + 3, 24, 9, s < hero.stats[k] ? hero.color : 0x1d2b3a).setOrigin(0));
     });
@@ -286,15 +295,17 @@ export class MenuScene extends Phaser.Scene {
       ...(["skill1", "skill2", "ultimate"] as const).map((s, i) => ({ key: ["K", "L", "U"][i], slot: s, name: hero.skills[s].name, desc: hero.skills[s].desc })),
     ];
     skills.forEach((s, i) => {
-      const y = 100 + i * 44;
-      d.add(this.add.image(18, y + 16, `${hero.id}_icon_${s.slot}`).setDisplaySize(34, 34));
-      d.add(text(this, 44, y, `${s.key} · ${s.name}`, 15, "#ffffff", "800"));
-      d.add(text(this, 44, y + 20, s.desc, 13, "#9fb8cc", "600"));
+      const y = 128 + i * 40;
+      d.add(this.add.image(16, y + 15, `${hero.id}_icon_${s.slot}`).setDisplaySize(30, 30));
+      d.add(text(this, 40, y, `${s.key} · ${s.name}`, 14, "#ffffff", "800"));
+      d.add(text(this, 40, y + 17, s.desc, 12, "#9fb8cc", "600"));
     });
     if (twoPlayer) {
       const p2 = unlocked[this.picks[1]] ?? unlocked[0];
-      const botLabel = this.pkBotLevel !== "none" ? ` (Bot ${this.pkBotLevel.toUpperCase()})` : "";
-      d.add(text(this, 630, 210, `P2: ${p2.name}${botLabel}`, 16, "#ff6a8a", "900"));
+      const botLabel = modeId === "pk" && this.pkBotLevel !== "none" ? ` (Bot ${this.pkBotLevel.toUpperCase()})` : "";
+      this.p2Label.setText(`P2: ${p2.name}${botLabel}`).setVisible(true);
+    } else {
+      this.p2Label.setVisible(false);
     }
   }
 
@@ -336,7 +347,8 @@ export class MenuScene extends Phaser.Scene {
       });
     }
 
-    new Button(this, GAME_WIDTH / 2, 630, 200, 48, "Đóng (Esc)", () => this.closeModal(), 0x18e6ff);
+    const closeBtn = new Button(this, GAME_WIDTH / 2, 630, 200, 48, "Đóng (Esc)", () => this.closeModal(), 0x18e6ff);
+    root.add(closeBtn);
     this.modal = root;
   }
 

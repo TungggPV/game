@@ -314,1438 +314,104 @@ const TEXTURES: Record<string, [number, number, Draw]> = {
     c.closePath();
     c.fill();
   }],
-
-  /* ================================================================
-   *  A) CRIMSON FLARE WALK FRAMES (walk_1 – walk_4)
-   * ================================================================ */
-  crimson_flare_walk_1: [100, 115, (c, w, h) => {
-    // Standing / neutral stride – feet together
-    const cx = w / 2;
-    // Leg shadows
-    c.fillStyle = "#4a0a0a";
-    c.fillRect(cx - 14, h * 0.65, 10, h * 0.28);
-    c.fillRect(cx + 4, h * 0.65, 10, h * 0.28);
-    // Boots
-    c.fillStyle = "#8b1a1a";
-    c.fillRect(cx - 16, h * 0.88, 14, 10);
-    c.fillRect(cx + 2, h * 0.88, 14, 10);
-    // Torso armor
-    const tg = c.createLinearGradient(cx - 20, h * 0.25, cx + 20, h * 0.65);
-    tg.addColorStop(0, "#e63946");
-    tg.addColorStop(0.5, "#b91c1c");
-    tg.addColorStop(1, "#7f1d1d");
-    c.fillStyle = tg;
-    c.beginPath();
-    c.moveTo(cx - 22, h * 0.35);
-    c.lineTo(cx + 22, h * 0.35);
-    c.lineTo(cx + 18, h * 0.65);
-    c.lineTo(cx - 18, h * 0.65);
-    c.closePath();
-    c.fill();
-    // Shoulder pads
-    c.fillStyle = "#dc2626";
-    c.beginPath(); c.ellipse(cx - 24, h * 0.34, 12, 8, -0.3, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(cx + 24, h * 0.34, 12, 8, 0.3, 0, Math.PI * 2); c.fill();
-    // Helmet
-    c.fillStyle = "#991b1b";
-    c.beginPath();
-    c.arc(cx, h * 0.2, 16, 0, Math.PI * 2);
-    c.fill();
-    // Visor
-    c.fillStyle = "#fbbf24";
-    c.fillRect(cx - 10, h * 0.17, 20, 5);
-    // Glowing accent lines on torso
-    c.strokeStyle = "#fb923c";
-    c.lineWidth = 1.5;
-    c.beginPath(); c.moveTo(cx - 8, h * 0.4); c.lineTo(cx - 8, h * 0.58); c.stroke();
-    c.beginPath(); c.moveTo(cx + 8, h * 0.4); c.lineTo(cx + 8, h * 0.58); c.stroke();
-    // Arms
-    c.fillStyle = "#b91c1c";
-    c.fillRect(cx - 34, h * 0.37, 12, 24);
-    c.fillRect(cx + 22, h * 0.37, 12, 24);
-    // Glow
-    c.globalAlpha = 0.25;
-    const gg = c.createRadialGradient(cx, h * 0.5, 5, cx, h * 0.5, 40);
-    gg.addColorStop(0, "#ff6b35");
-    gg.addColorStop(1, "transparent");
-    c.fillStyle = gg;
-    c.fillRect(0, 0, w, h);
-    c.globalAlpha = 1;
-  }],
-  crimson_flare_walk_2: [100, 115, (c, w, h) => {
-    // Mid stride – left leg forward, right leg back
-    const cx = w / 2;
-    // Right leg (back)
-    c.fillStyle = "#4a0a0a";
-    c.save(); c.translate(cx + 6, h * 0.65); c.rotate(0.25);
-    c.fillRect(-5, 0, 10, h * 0.26); c.restore();
-    // Left leg (forward)
-    c.fillStyle = "#6b0f0f";
-    c.save(); c.translate(cx - 6, h * 0.65); c.rotate(-0.25);
-    c.fillRect(-5, 0, 10, h * 0.26); c.restore();
-    // Boots
-    c.fillStyle = "#8b1a1a";
-    c.fillRect(cx - 20, h * 0.88, 14, 10);
-    c.fillRect(cx + 10, h * 0.88, 14, 10);
-    // Torso
-    const tg = c.createLinearGradient(cx - 20, h * 0.25, cx + 20, h * 0.65);
-    tg.addColorStop(0, "#e63946");
-    tg.addColorStop(0.5, "#b91c1c");
-    tg.addColorStop(1, "#7f1d1d");
-    c.fillStyle = tg;
-    c.beginPath();
-    c.moveTo(cx - 22, h * 0.35);
-    c.lineTo(cx + 22, h * 0.35);
-    c.lineTo(cx + 18, h * 0.65);
-    c.lineTo(cx - 18, h * 0.65);
-    c.closePath();
-    c.fill();
-    // Shoulders
-    c.fillStyle = "#dc2626";
-    c.beginPath(); c.ellipse(cx - 24, h * 0.34, 12, 8, -0.3, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(cx + 24, h * 0.34, 12, 8, 0.3, 0, Math.PI * 2); c.fill();
-    // Helmet
-    c.fillStyle = "#991b1b";
-    c.beginPath(); c.arc(cx, h * 0.2, 16, 0, Math.PI * 2); c.fill();
-    c.fillStyle = "#fbbf24";
-    c.fillRect(cx - 10, h * 0.17, 20, 5);
-    // Arms swinging
-    c.fillStyle = "#b91c1c";
-    c.save(); c.translate(cx - 30, h * 0.38); c.rotate(0.3);
-    c.fillRect(-6, 0, 12, 22); c.restore();
-    c.save(); c.translate(cx + 30, h * 0.38); c.rotate(-0.3);
-    c.fillRect(-6, 0, 12, 22); c.restore();
-    // Accent lines
-    c.strokeStyle = "#fb923c"; c.lineWidth = 1.5;
-    c.beginPath(); c.moveTo(cx - 8, h * 0.4); c.lineTo(cx - 8, h * 0.58); c.stroke();
-    c.beginPath(); c.moveTo(cx + 8, h * 0.4); c.lineTo(cx + 8, h * 0.58); c.stroke();
-    // Glow
-    c.globalAlpha = 0.25;
-    const gg = c.createRadialGradient(cx, h * 0.5, 5, cx, h * 0.5, 40);
-    gg.addColorStop(0, "#ff6b35"); gg.addColorStop(1, "transparent");
-    c.fillStyle = gg; c.fillRect(0, 0, w, h);
-    c.globalAlpha = 1;
-  }],
-  crimson_flare_walk_3: [100, 115, (c, w, h) => {
-    // Full stride – legs wide apart
-    const cx = w / 2;
-    // Left leg (far forward)
-    c.fillStyle = "#6b0f0f";
-    c.save(); c.translate(cx - 8, h * 0.65); c.rotate(-0.4);
-    c.fillRect(-5, 0, 10, h * 0.26); c.restore();
-    // Right leg (far back)
-    c.fillStyle = "#4a0a0a";
-    c.save(); c.translate(cx + 8, h * 0.65); c.rotate(0.4);
-    c.fillRect(-5, 0, 10, h * 0.26); c.restore();
-    // Boots
-    c.fillStyle = "#8b1a1a";
-    c.fillRect(cx - 24, h * 0.86, 14, 10);
-    c.fillRect(cx + 14, h * 0.86, 14, 10);
-    // Torso slight lean
-    const tg = c.createLinearGradient(cx - 20, h * 0.25, cx + 20, h * 0.65);
-    tg.addColorStop(0, "#e63946");
-    tg.addColorStop(0.5, "#b91c1c");
-    tg.addColorStop(1, "#7f1d1d");
-    c.fillStyle = tg;
-    c.beginPath();
-    c.moveTo(cx - 21, h * 0.34);
-    c.lineTo(cx + 23, h * 0.36);
-    c.lineTo(cx + 19, h * 0.65);
-    c.lineTo(cx - 17, h * 0.65);
-    c.closePath();
-    c.fill();
-    // Shoulders
-    c.fillStyle = "#dc2626";
-    c.beginPath(); c.ellipse(cx - 23, h * 0.33, 12, 8, -0.3, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(cx + 25, h * 0.35, 12, 8, 0.3, 0, Math.PI * 2); c.fill();
-    // Helmet
-    c.fillStyle = "#991b1b";
-    c.beginPath(); c.arc(cx + 1, h * 0.2, 16, 0, Math.PI * 2); c.fill();
-    c.fillStyle = "#fbbf24";
-    c.fillRect(cx - 9, h * 0.17, 20, 5);
-    // Arms wide swing
-    c.fillStyle = "#b91c1c";
-    c.save(); c.translate(cx - 28, h * 0.38); c.rotate(0.5);
-    c.fillRect(-6, 0, 12, 22); c.restore();
-    c.save(); c.translate(cx + 28, h * 0.38); c.rotate(-0.5);
-    c.fillRect(-6, 0, 12, 22); c.restore();
-    // Accent lines
-    c.strokeStyle = "#fb923c"; c.lineWidth = 1.5;
-    c.beginPath(); c.moveTo(cx - 7, h * 0.4); c.lineTo(cx - 7, h * 0.57); c.stroke();
-    c.beginPath(); c.moveTo(cx + 9, h * 0.4); c.lineTo(cx + 9, h * 0.57); c.stroke();
-    // Glow
-    c.globalAlpha = 0.3;
-    const gg = c.createRadialGradient(cx, h * 0.5, 5, cx, h * 0.5, 45);
-    gg.addColorStop(0, "#ff6b35"); gg.addColorStop(1, "transparent");
-    c.fillStyle = gg; c.fillRect(0, 0, w, h);
-    c.globalAlpha = 1;
-  }],
-  crimson_flare_walk_4: [100, 115, (c, w, h) => {
-    // Returning stride – right leg forward, mirror of walk_2
-    const cx = w / 2;
-    // Left leg (back)
-    c.fillStyle = "#4a0a0a";
-    c.save(); c.translate(cx - 6, h * 0.65); c.rotate(0.25);
-    c.fillRect(-5, 0, 10, h * 0.26); c.restore();
-    // Right leg (forward)
-    c.fillStyle = "#6b0f0f";
-    c.save(); c.translate(cx + 6, h * 0.65); c.rotate(-0.25);
-    c.fillRect(-5, 0, 10, h * 0.26); c.restore();
-    // Boots
-    c.fillStyle = "#8b1a1a";
-    c.fillRect(cx - 10, h * 0.88, 14, 10);
-    c.fillRect(cx + 4, h * 0.88, 14, 10);
-    // Torso
-    const tg = c.createLinearGradient(cx - 20, h * 0.25, cx + 20, h * 0.65);
-    tg.addColorStop(0, "#e63946");
-    tg.addColorStop(0.5, "#b91c1c");
-    tg.addColorStop(1, "#7f1d1d");
-    c.fillStyle = tg;
-    c.beginPath();
-    c.moveTo(cx - 22, h * 0.35);
-    c.lineTo(cx + 22, h * 0.35);
-    c.lineTo(cx + 18, h * 0.65);
-    c.lineTo(cx - 18, h * 0.65);
-    c.closePath();
-    c.fill();
-    // Shoulders
-    c.fillStyle = "#dc2626";
-    c.beginPath(); c.ellipse(cx - 24, h * 0.34, 12, 8, -0.3, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(cx + 24, h * 0.34, 12, 8, 0.3, 0, Math.PI * 2); c.fill();
-    // Helmet
-    c.fillStyle = "#991b1b";
-    c.beginPath(); c.arc(cx, h * 0.2, 16, 0, Math.PI * 2); c.fill();
-    c.fillStyle = "#fbbf24";
-    c.fillRect(cx - 10, h * 0.17, 20, 5);
-    // Arms swinging opposite
-    c.fillStyle = "#b91c1c";
-    c.save(); c.translate(cx - 30, h * 0.38); c.rotate(-0.3);
-    c.fillRect(-6, 0, 12, 22); c.restore();
-    c.save(); c.translate(cx + 30, h * 0.38); c.rotate(0.3);
-    c.fillRect(-6, 0, 12, 22); c.restore();
-    // Accent lines
-    c.strokeStyle = "#fb923c"; c.lineWidth = 1.5;
-    c.beginPath(); c.moveTo(cx - 8, h * 0.4); c.lineTo(cx - 8, h * 0.58); c.stroke();
-    c.beginPath(); c.moveTo(cx + 8, h * 0.4); c.lineTo(cx + 8, h * 0.58); c.stroke();
-    // Glow
-    c.globalAlpha = 0.25;
-    const gg = c.createRadialGradient(cx, h * 0.5, 5, cx, h * 0.5, 40);
-    gg.addColorStop(0, "#ff6b35"); gg.addColorStop(1, "transparent");
-    c.fillStyle = gg; c.fillRect(0, 0, w, h);
-    c.globalAlpha = 1;
-  }],
-
-  /* ================================================================
-   *  A) VOLT SENTINEL WALK FRAMES (walk_1 – walk_4)
-   * ================================================================ */
-  volt_sentinel_walk_1: [100, 115, (c, w, h) => {
-    const cx = w / 2;
-    // Legs – neutral
-    c.fillStyle = "#4a3800";
-    c.fillRect(cx - 14, h * 0.65, 10, h * 0.28);
-    c.fillRect(cx + 4, h * 0.65, 10, h * 0.28);
-    // Boots
-    c.fillStyle = "#a16207";
-    c.fillRect(cx - 16, h * 0.88, 14, 10);
-    c.fillRect(cx + 2, h * 0.88, 14, 10);
-    // Torso
-    const tg = c.createLinearGradient(cx - 20, h * 0.25, cx + 20, h * 0.65);
-    tg.addColorStop(0, "#fbbf24");
-    tg.addColorStop(0.5, "#d97706");
-    tg.addColorStop(1, "#92400e");
-    c.fillStyle = tg;
-    c.beginPath();
-    c.moveTo(cx - 22, h * 0.35);
-    c.lineTo(cx + 22, h * 0.35);
-    c.lineTo(cx + 18, h * 0.65);
-    c.lineTo(cx - 18, h * 0.65);
-    c.closePath();
-    c.fill();
-    // Shoulder pads
-    c.fillStyle = "#f59e0b";
-    c.beginPath(); c.ellipse(cx - 24, h * 0.34, 13, 9, -0.3, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(cx + 24, h * 0.34, 13, 9, 0.3, 0, Math.PI * 2); c.fill();
-    // Helmet
-    c.fillStyle = "#b45309";
-    c.beginPath(); c.arc(cx, h * 0.2, 16, 0, Math.PI * 2); c.fill();
-    // Visor – electric blue
-    c.fillStyle = "#38bdf8";
-    c.fillRect(cx - 10, h * 0.17, 20, 5);
-    // Lightning bolt accent on chest
-    c.strokeStyle = "#fef08a";
+  chest_scifi: [96, 64, (c, w, h) => {
+    // Ground base shadow & beveled armored chest body
+    const bodyGrad = c.createLinearGradient(0, 10, 0, h);
+    bodyGrad.addColorStop(0, "#3b4760");
+    bodyGrad.addColorStop(0.35, "#232c40");
+    bodyGrad.addColorStop(1, "#0f172a");
+    c.fillStyle = bodyGrad;
+    c.strokeStyle = "#94a3b8";
     c.lineWidth = 2;
     c.beginPath();
-    c.moveTo(cx - 2, h * 0.4);
-    c.lineTo(cx + 4, h * 0.48);
-    c.lineTo(cx - 1, h * 0.5);
-    c.lineTo(cx + 5, h * 0.58);
+    const cut = 10;
+    c.moveTo(cut, 10);
+    c.lineTo(w - cut, 10);
+    c.lineTo(w - 2, 22);
+    c.lineTo(w - 2, h - 4);
+    c.lineTo(w - 6, h);
+    c.lineTo(6, h);
+    c.lineTo(2, h - 4);
+    c.lineTo(2, 22);
+    c.closePath();
+    c.fill();
     c.stroke();
-    // Arms
-    c.fillStyle = "#d97706";
-    c.fillRect(cx - 34, h * 0.37, 12, 24);
-    c.fillRect(cx + 22, h * 0.37, 12, 24);
-    // Glow
-    c.globalAlpha = 0.25;
-    const gg = c.createRadialGradient(cx, h * 0.5, 5, cx, h * 0.5, 40);
-    gg.addColorStop(0, "#facc15"); gg.addColorStop(1, "transparent");
-    c.fillStyle = gg; c.fillRect(0, 0, w, h);
-    c.globalAlpha = 1;
-  }],
-  volt_sentinel_walk_2: [100, 115, (c, w, h) => {
-    const cx = w / 2;
-    // Right leg (back)
-    c.fillStyle = "#4a3800";
-    c.save(); c.translate(cx + 6, h * 0.65); c.rotate(0.25);
-    c.fillRect(-5, 0, 10, h * 0.26); c.restore();
-    // Left leg (forward)
-    c.fillStyle = "#6b4f00";
-    c.save(); c.translate(cx - 6, h * 0.65); c.rotate(-0.25);
-    c.fillRect(-5, 0, 10, h * 0.26); c.restore();
-    c.fillStyle = "#a16207";
-    c.fillRect(cx - 20, h * 0.88, 14, 10);
-    c.fillRect(cx + 10, h * 0.88, 14, 10);
-    // Torso
-    const tg = c.createLinearGradient(cx - 20, h * 0.25, cx + 20, h * 0.65);
-    tg.addColorStop(0, "#fbbf24"); tg.addColorStop(0.5, "#d97706"); tg.addColorStop(1, "#92400e");
-    c.fillStyle = tg;
-    c.beginPath();
-    c.moveTo(cx - 22, h * 0.35); c.lineTo(cx + 22, h * 0.35);
-    c.lineTo(cx + 18, h * 0.65); c.lineTo(cx - 18, h * 0.65);
-    c.closePath(); c.fill();
-    c.fillStyle = "#f59e0b";
-    c.beginPath(); c.ellipse(cx - 24, h * 0.34, 13, 9, -0.3, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(cx + 24, h * 0.34, 13, 9, 0.3, 0, Math.PI * 2); c.fill();
-    c.fillStyle = "#b45309";
-    c.beginPath(); c.arc(cx, h * 0.2, 16, 0, Math.PI * 2); c.fill();
-    c.fillStyle = "#38bdf8";
-    c.fillRect(cx - 10, h * 0.17, 20, 5);
-    c.strokeStyle = "#fef08a"; c.lineWidth = 2;
-    c.beginPath(); c.moveTo(cx - 2, h * 0.4); c.lineTo(cx + 4, h * 0.48);
-    c.lineTo(cx - 1, h * 0.5); c.lineTo(cx + 5, h * 0.58); c.stroke();
-    c.fillStyle = "#d97706";
-    c.save(); c.translate(cx - 30, h * 0.38); c.rotate(0.3);
-    c.fillRect(-6, 0, 12, 22); c.restore();
-    c.save(); c.translate(cx + 30, h * 0.38); c.rotate(-0.3);
-    c.fillRect(-6, 0, 12, 22); c.restore();
-    c.globalAlpha = 0.25;
-    const gg = c.createRadialGradient(cx, h * 0.5, 5, cx, h * 0.5, 40);
-    gg.addColorStop(0, "#facc15"); gg.addColorStop(1, "transparent");
-    c.fillStyle = gg; c.fillRect(0, 0, w, h);
-    c.globalAlpha = 1;
-  }],
-  volt_sentinel_walk_3: [100, 115, (c, w, h) => {
-    const cx = w / 2;
-    // Left leg (far forward)
-    c.fillStyle = "#6b4f00";
-    c.save(); c.translate(cx - 8, h * 0.65); c.rotate(-0.4);
-    c.fillRect(-5, 0, 10, h * 0.26); c.restore();
-    // Right leg (far back)
-    c.fillStyle = "#4a3800";
-    c.save(); c.translate(cx + 8, h * 0.65); c.rotate(0.4);
-    c.fillRect(-5, 0, 10, h * 0.26); c.restore();
-    c.fillStyle = "#a16207";
-    c.fillRect(cx - 24, h * 0.86, 14, 10);
-    c.fillRect(cx + 14, h * 0.86, 14, 10);
-    const tg = c.createLinearGradient(cx - 20, h * 0.25, cx + 20, h * 0.65);
-    tg.addColorStop(0, "#fbbf24"); tg.addColorStop(0.5, "#d97706"); tg.addColorStop(1, "#92400e");
-    c.fillStyle = tg;
-    c.beginPath();
-    c.moveTo(cx - 21, h * 0.34); c.lineTo(cx + 23, h * 0.36);
-    c.lineTo(cx + 19, h * 0.65); c.lineTo(cx - 17, h * 0.65);
-    c.closePath(); c.fill();
-    c.fillStyle = "#f59e0b";
-    c.beginPath(); c.ellipse(cx - 23, h * 0.33, 13, 9, -0.3, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(cx + 25, h * 0.35, 13, 9, 0.3, 0, Math.PI * 2); c.fill();
-    c.fillStyle = "#b45309";
-    c.beginPath(); c.arc(cx + 1, h * 0.2, 16, 0, Math.PI * 2); c.fill();
-    c.fillStyle = "#38bdf8";
-    c.fillRect(cx - 9, h * 0.17, 20, 5);
-    c.strokeStyle = "#fef08a"; c.lineWidth = 2;
-    c.beginPath(); c.moveTo(cx - 1, h * 0.4); c.lineTo(cx + 5, h * 0.48);
-    c.lineTo(cx, h * 0.5); c.lineTo(cx + 6, h * 0.58); c.stroke();
-    c.fillStyle = "#d97706";
-    c.save(); c.translate(cx - 28, h * 0.38); c.rotate(0.5);
-    c.fillRect(-6, 0, 12, 22); c.restore();
-    c.save(); c.translate(cx + 28, h * 0.38); c.rotate(-0.5);
-    c.fillRect(-6, 0, 12, 22); c.restore();
-    c.globalAlpha = 0.3;
-    const gg = c.createRadialGradient(cx, h * 0.5, 5, cx, h * 0.5, 45);
-    gg.addColorStop(0, "#facc15"); gg.addColorStop(1, "transparent");
-    c.fillStyle = gg; c.fillRect(0, 0, w, h);
-    c.globalAlpha = 1;
-  }],
-  volt_sentinel_walk_4: [100, 115, (c, w, h) => {
-    const cx = w / 2;
-    c.fillStyle = "#4a3800";
-    c.save(); c.translate(cx - 6, h * 0.65); c.rotate(0.25);
-    c.fillRect(-5, 0, 10, h * 0.26); c.restore();
-    c.fillStyle = "#6b4f00";
-    c.save(); c.translate(cx + 6, h * 0.65); c.rotate(-0.25);
-    c.fillRect(-5, 0, 10, h * 0.26); c.restore();
-    c.fillStyle = "#a16207";
-    c.fillRect(cx - 10, h * 0.88, 14, 10);
-    c.fillRect(cx + 4, h * 0.88, 14, 10);
-    const tg = c.createLinearGradient(cx - 20, h * 0.25, cx + 20, h * 0.65);
-    tg.addColorStop(0, "#fbbf24"); tg.addColorStop(0.5, "#d97706"); tg.addColorStop(1, "#92400e");
-    c.fillStyle = tg;
-    c.beginPath();
-    c.moveTo(cx - 22, h * 0.35); c.lineTo(cx + 22, h * 0.35);
-    c.lineTo(cx + 18, h * 0.65); c.lineTo(cx - 18, h * 0.65);
-    c.closePath(); c.fill();
-    c.fillStyle = "#f59e0b";
-    c.beginPath(); c.ellipse(cx - 24, h * 0.34, 13, 9, -0.3, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(cx + 24, h * 0.34, 13, 9, 0.3, 0, Math.PI * 2); c.fill();
-    c.fillStyle = "#b45309";
-    c.beginPath(); c.arc(cx, h * 0.2, 16, 0, Math.PI * 2); c.fill();
-    c.fillStyle = "#38bdf8";
-    c.fillRect(cx - 10, h * 0.17, 20, 5);
-    c.strokeStyle = "#fef08a"; c.lineWidth = 2;
-    c.beginPath(); c.moveTo(cx - 2, h * 0.4); c.lineTo(cx + 4, h * 0.48);
-    c.lineTo(cx - 1, h * 0.5); c.lineTo(cx + 5, h * 0.58); c.stroke();
-    c.fillStyle = "#d97706";
-    c.save(); c.translate(cx - 30, h * 0.38); c.rotate(-0.3);
-    c.fillRect(-6, 0, 12, 22); c.restore();
-    c.save(); c.translate(cx + 30, h * 0.38); c.rotate(0.3);
-    c.fillRect(-6, 0, 12, 22); c.restore();
-    c.globalAlpha = 0.25;
-    const gg = c.createRadialGradient(cx, h * 0.5, 5, cx, h * 0.5, 40);
-    gg.addColorStop(0, "#facc15"); gg.addColorStop(1, "transparent");
-    c.fillStyle = gg; c.fillRect(0, 0, w, h);
-    c.globalAlpha = 1;
-  }],
 
-  /* ================================================================
-   *  A) EMERALD PHANTOM WALK FRAMES (walk_1 – walk_4)
-   * ================================================================ */
-  emerald_phantom_walk_1: [100, 115, (c, w, h) => {
-    const cx = w / 2;
-    // Legs – ninja stance
-    c.fillStyle = "#064e3b";
-    c.fillRect(cx - 12, h * 0.66, 8, h * 0.27);
-    c.fillRect(cx + 4, h * 0.66, 8, h * 0.27);
-    // Boots – sleek
-    c.fillStyle = "#047857";
-    c.fillRect(cx - 14, h * 0.89, 12, 8);
-    c.fillRect(cx + 2, h * 0.89, 12, 8);
-    // Torso – lean ninja armor
-    const tg = c.createLinearGradient(cx - 18, h * 0.26, cx + 18, h * 0.64);
-    tg.addColorStop(0, "#10b981");
-    tg.addColorStop(0.5, "#059669");
-    tg.addColorStop(1, "#064e3b");
-    c.fillStyle = tg;
+    // Beveled armored lid top + horizontal seam
+    const lidGrad = c.createLinearGradient(0, 10, 0, 28);
+    lidGrad.addColorStop(0, "#64748b");
+    lidGrad.addColorStop(1, "#334155");
+    c.fillStyle = lidGrad;
     c.beginPath();
-    c.moveTo(cx - 18, h * 0.34);
-    c.lineTo(cx + 18, h * 0.34);
-    c.lineTo(cx + 15, h * 0.64);
-    c.lineTo(cx - 15, h * 0.64);
+    c.moveTo(cut + 2, 12);
+    c.lineTo(w - cut - 2, 12);
+    c.lineTo(w - 4, 24);
+    c.lineTo(4, 24);
     c.closePath();
     c.fill();
-    // Shoulder guards – angular
-    c.fillStyle = "#34d399";
-    c.beginPath(); c.moveTo(cx - 30, h * 0.34); c.lineTo(cx - 18, h * 0.3);
-    c.lineTo(cx - 18, h * 0.38); c.closePath(); c.fill();
-    c.beginPath(); c.moveTo(cx + 30, h * 0.34); c.lineTo(cx + 18, h * 0.3);
-    c.lineTo(cx + 18, h * 0.38); c.closePath(); c.fill();
-    // Helmet – angular ninja
-    c.fillStyle = "#065f46";
-    c.beginPath();
-    c.moveTo(cx, h * 0.08);
-    c.lineTo(cx + 18, h * 0.2);
-    c.lineTo(cx + 14, h * 0.28);
-    c.lineTo(cx - 14, h * 0.28);
-    c.lineTo(cx - 18, h * 0.2);
-    c.closePath();
-    c.fill();
-    // Visor – teal glow
-    c.fillStyle = "#5eead4";
-    c.fillRect(cx - 11, h * 0.19, 22, 4);
-    // Scarf/cloak trailing
-    c.fillStyle = "rgba(16,185,129,0.4)";
-    c.beginPath();
-    c.moveTo(cx - 15, h * 0.64);
-    c.quadraticCurveTo(cx, h * 0.72, cx + 15, h * 0.64);
-    c.lineTo(cx + 10, h * 0.76);
-    c.quadraticCurveTo(cx, h * 0.8, cx - 10, h * 0.76);
-    c.closePath();
-    c.fill();
-    // Arms – thin ninja
-    c.fillStyle = "#059669";
-    c.fillRect(cx - 28, h * 0.37, 10, 22);
-    c.fillRect(cx + 18, h * 0.37, 10, 22);
-    // Glow
-    c.globalAlpha = 0.2;
-    const gg = c.createRadialGradient(cx, h * 0.5, 5, cx, h * 0.5, 38);
-    gg.addColorStop(0, "#6ee7b7"); gg.addColorStop(1, "transparent");
-    c.fillStyle = gg; c.fillRect(0, 0, w, h);
-    c.globalAlpha = 1;
-  }],
-  emerald_phantom_walk_2: [100, 115, (c, w, h) => {
-    const cx = w / 2;
-    c.fillStyle = "#064e3b";
-    c.save(); c.translate(cx + 5, h * 0.66); c.rotate(0.25);
-    c.fillRect(-4, 0, 8, h * 0.25); c.restore();
-    c.fillStyle = "#065f46";
-    c.save(); c.translate(cx - 5, h * 0.66); c.rotate(-0.25);
-    c.fillRect(-4, 0, 8, h * 0.25); c.restore();
-    c.fillStyle = "#047857";
-    c.fillRect(cx - 18, h * 0.88, 12, 8);
-    c.fillRect(cx + 8, h * 0.88, 12, 8);
-    const tg = c.createLinearGradient(cx - 18, h * 0.26, cx + 18, h * 0.64);
-    tg.addColorStop(0, "#10b981"); tg.addColorStop(0.5, "#059669"); tg.addColorStop(1, "#064e3b");
-    c.fillStyle = tg;
-    c.beginPath();
-    c.moveTo(cx - 18, h * 0.34); c.lineTo(cx + 18, h * 0.34);
-    c.lineTo(cx + 15, h * 0.64); c.lineTo(cx - 15, h * 0.64);
-    c.closePath(); c.fill();
-    c.fillStyle = "#34d399";
-    c.beginPath(); c.moveTo(cx - 30, h * 0.34); c.lineTo(cx - 18, h * 0.3);
-    c.lineTo(cx - 18, h * 0.38); c.closePath(); c.fill();
-    c.beginPath(); c.moveTo(cx + 30, h * 0.34); c.lineTo(cx + 18, h * 0.3);
-    c.lineTo(cx + 18, h * 0.38); c.closePath(); c.fill();
-    c.fillStyle = "#065f46";
-    c.beginPath();
-    c.moveTo(cx, h * 0.08); c.lineTo(cx + 18, h * 0.2);
-    c.lineTo(cx + 14, h * 0.28); c.lineTo(cx - 14, h * 0.28);
-    c.lineTo(cx - 18, h * 0.2); c.closePath(); c.fill();
-    c.fillStyle = "#5eead4";
-    c.fillRect(cx - 11, h * 0.19, 22, 4);
-    c.fillStyle = "#059669";
-    c.save(); c.translate(cx - 26, h * 0.38); c.rotate(0.3);
-    c.fillRect(-5, 0, 10, 20); c.restore();
-    c.save(); c.translate(cx + 26, h * 0.38); c.rotate(-0.3);
-    c.fillRect(-5, 0, 10, 20); c.restore();
-    c.globalAlpha = 0.2;
-    const gg = c.createRadialGradient(cx, h * 0.5, 5, cx, h * 0.5, 38);
-    gg.addColorStop(0, "#6ee7b7"); gg.addColorStop(1, "transparent");
-    c.fillStyle = gg; c.fillRect(0, 0, w, h);
-    c.globalAlpha = 1;
-  }],
-  emerald_phantom_walk_3: [100, 115, (c, w, h) => {
-    const cx = w / 2;
-    c.fillStyle = "#065f46";
-    c.save(); c.translate(cx - 7, h * 0.66); c.rotate(-0.4);
-    c.fillRect(-4, 0, 8, h * 0.25); c.restore();
-    c.fillStyle = "#064e3b";
-    c.save(); c.translate(cx + 7, h * 0.66); c.rotate(0.4);
-    c.fillRect(-4, 0, 8, h * 0.25); c.restore();
-    c.fillStyle = "#047857";
-    c.fillRect(cx - 22, h * 0.86, 12, 8);
-    c.fillRect(cx + 12, h * 0.86, 12, 8);
-    const tg = c.createLinearGradient(cx - 18, h * 0.26, cx + 18, h * 0.64);
-    tg.addColorStop(0, "#10b981"); tg.addColorStop(0.5, "#059669"); tg.addColorStop(1, "#064e3b");
-    c.fillStyle = tg;
-    c.beginPath();
-    c.moveTo(cx - 17, h * 0.33); c.lineTo(cx + 19, h * 0.35);
-    c.lineTo(cx + 16, h * 0.64); c.lineTo(cx - 14, h * 0.64);
-    c.closePath(); c.fill();
-    c.fillStyle = "#34d399";
-    c.beginPath(); c.moveTo(cx - 29, h * 0.33); c.lineTo(cx - 17, h * 0.29);
-    c.lineTo(cx - 17, h * 0.37); c.closePath(); c.fill();
-    c.beginPath(); c.moveTo(cx + 31, h * 0.35); c.lineTo(cx + 19, h * 0.31);
-    c.lineTo(cx + 19, h * 0.39); c.closePath(); c.fill();
-    c.fillStyle = "#065f46";
-    c.beginPath();
-    c.moveTo(cx + 1, h * 0.08); c.lineTo(cx + 19, h * 0.2);
-    c.lineTo(cx + 15, h * 0.28); c.lineTo(cx - 13, h * 0.28);
-    c.lineTo(cx - 17, h * 0.2); c.closePath(); c.fill();
-    c.fillStyle = "#5eead4";
-    c.fillRect(cx - 10, h * 0.19, 22, 4);
-    c.fillStyle = "#059669";
-    c.save(); c.translate(cx - 25, h * 0.38); c.rotate(0.5);
-    c.fillRect(-5, 0, 10, 20); c.restore();
-    c.save(); c.translate(cx + 25, h * 0.38); c.rotate(-0.5);
-    c.fillRect(-5, 0, 10, 20); c.restore();
-    c.globalAlpha = 0.25;
-    const gg = c.createRadialGradient(cx, h * 0.5, 5, cx, h * 0.5, 42);
-    gg.addColorStop(0, "#6ee7b7"); gg.addColorStop(1, "transparent");
-    c.fillStyle = gg; c.fillRect(0, 0, w, h);
-    c.globalAlpha = 1;
-  }],
-  emerald_phantom_walk_4: [100, 115, (c, w, h) => {
-    const cx = w / 2;
-    c.fillStyle = "#064e3b";
-    c.save(); c.translate(cx - 5, h * 0.66); c.rotate(0.25);
-    c.fillRect(-4, 0, 8, h * 0.25); c.restore();
-    c.fillStyle = "#065f46";
-    c.save(); c.translate(cx + 5, h * 0.66); c.rotate(-0.25);
-    c.fillRect(-4, 0, 8, h * 0.25); c.restore();
-    c.fillStyle = "#047857";
-    c.fillRect(cx - 8, h * 0.88, 12, 8);
-    c.fillRect(cx + 2, h * 0.88, 12, 8);
-    const tg = c.createLinearGradient(cx - 18, h * 0.26, cx + 18, h * 0.64);
-    tg.addColorStop(0, "#10b981"); tg.addColorStop(0.5, "#059669"); tg.addColorStop(1, "#064e3b");
-    c.fillStyle = tg;
-    c.beginPath();
-    c.moveTo(cx - 18, h * 0.34); c.lineTo(cx + 18, h * 0.34);
-    c.lineTo(cx + 15, h * 0.64); c.lineTo(cx - 15, h * 0.64);
-    c.closePath(); c.fill();
-    c.fillStyle = "#34d399";
-    c.beginPath(); c.moveTo(cx - 30, h * 0.34); c.lineTo(cx - 18, h * 0.3);
-    c.lineTo(cx - 18, h * 0.38); c.closePath(); c.fill();
-    c.beginPath(); c.moveTo(cx + 30, h * 0.34); c.lineTo(cx + 18, h * 0.3);
-    c.lineTo(cx + 18, h * 0.38); c.closePath(); c.fill();
-    c.fillStyle = "#065f46";
-    c.beginPath();
-    c.moveTo(cx, h * 0.08); c.lineTo(cx + 18, h * 0.2);
-    c.lineTo(cx + 14, h * 0.28); c.lineTo(cx - 14, h * 0.28);
-    c.lineTo(cx - 18, h * 0.2); c.closePath(); c.fill();
-    c.fillStyle = "#5eead4";
-    c.fillRect(cx - 11, h * 0.19, 22, 4);
-    c.fillStyle = "#059669";
-    c.save(); c.translate(cx - 26, h * 0.38); c.rotate(-0.3);
-    c.fillRect(-5, 0, 10, 20); c.restore();
-    c.save(); c.translate(cx + 26, h * 0.38); c.rotate(0.3);
-    c.fillRect(-5, 0, 10, 20); c.restore();
-    c.globalAlpha = 0.2;
-    const gg = c.createRadialGradient(cx, h * 0.5, 5, cx, h * 0.5, 38);
-    gg.addColorStop(0, "#6ee7b7"); gg.addColorStop(1, "transparent");
-    c.fillStyle = gg; c.fillRect(0, 0, w, h);
-    c.globalAlpha = 1;
-  }],
+    c.fillStyle = "#020617";
+    c.fillRect(3, 25, w - 6, 3);
 
-  /* ================================================================
-   *  B) UNIQUE ENEMY TEXTURES
-   * ================================================================ */
-  bomber_body: [165, 85, (c, w, h) => {
-    const cx = w / 2, cy = h / 2;
-    // Main round body
-    const bg = c.createRadialGradient(cx, cy, 10, cx, cy, cx * 0.7);
-    bg.addColorStop(0, "#ff6b35");
-    bg.addColorStop(0.4, "#c2410c");
-    bg.addColorStop(0.8, "#7c2d12");
-    bg.addColorStop(1, "#431407");
-    c.fillStyle = bg;
+    // Metallic corner brackets & side latches
+    c.fillStyle = "#cbd5e1";
+    c.fillRect(6, 20, 10, 14);
+    c.fillRect(w - 16, 20, 10, 14);
+    c.fillStyle = "#475569";
+    c.fillRect(10, h - 12, 14, 10);
+    c.fillRect(w - 24, h - 12, 14, 10);
+
+    // Glowing violet/gold security core clasp in center
+    c.fillStyle = "#0f172a";
+    c.fillRect(w / 2 - 14, 20, 28, 22);
+    c.strokeStyle = "#facc15";
+    c.lineWidth = 2;
+    c.strokeRect(w / 2 - 14, 20, 28, 22);
+    const lockGlow = c.createRadialGradient(w / 2, 31, 1, w / 2, 31, 11);
+    lockGlow.addColorStop(0, "#fef9c3");
+    lockGlow.addColorStop(0.5, "#c084fc");
+    lockGlow.addColorStop(1, "rgba(168, 85, 247, 0.2)");
+    c.fillStyle = lockGlow;
     c.beginPath();
-    c.ellipse(cx, cy, cx * 0.55, cy * 0.75, 0, 0, Math.PI * 2);
+    c.arc(w / 2, 31, 9, 0, Math.PI * 2);
     c.fill();
-    // Heavy armor plates – left/right
-    c.fillStyle = "#57534e";
-    c.beginPath();
-    c.moveTo(cx - 50, cy - 20);
-    c.lineTo(cx - 35, cy - 32);
-    c.lineTo(cx - 20, cy - 20);
-    c.lineTo(cx - 20, cy + 20);
-    c.lineTo(cx - 35, cy + 32);
-    c.lineTo(cx - 50, cy + 20);
-    c.closePath();
-    c.fill();
-    c.beginPath();
-    c.moveTo(cx + 50, cy - 20);
-    c.lineTo(cx + 35, cy - 32);
-    c.lineTo(cx + 20, cy - 20);
-    c.lineTo(cx + 20, cy + 20);
-    c.lineTo(cx + 35, cy + 32);
-    c.lineTo(cx + 50, cy + 20);
-    c.closePath();
-    c.fill();
-    // Glowing core
-    const coreG = c.createRadialGradient(cx, cy, 2, cx, cy, 18);
-    coreG.addColorStop(0, "#fff7ed");
-    coreG.addColorStop(0.3, "#fdba74");
-    coreG.addColorStop(0.7, "#ea580c");
-    coreG.addColorStop(1, "rgba(234,88,12,0)");
-    c.fillStyle = coreG;
-    c.beginPath();
-    c.arc(cx, cy, 18, 0, Math.PI * 2);
-    c.fill();
-    // Eye slit
-    c.fillStyle = "#fef3c7";
-    c.fillRect(cx - 14, cy - 3, 28, 6);
-    // Bomb racks (small circles on bottom)
-    c.fillStyle = "#78716c";
+  }],
+  item_chip: [64, 64, (c, w, h) => {
+    const cx = w / 2;
+    const cy = h / 2;
+    // Gold connector pins on all 4 sides
+    c.fillStyle = "#fbbf24";
     for (let i = -2; i <= 2; i++) {
-      c.beginPath();
-      c.arc(cx + i * 14, cy + 28, 5, 0, Math.PI * 2);
-      c.fill();
+      const off = i * 7;
+      c.fillRect(cx + off - 2, 5, 4, 8);
+      c.fillRect(cx + off - 2, h - 13, 4, 8);
+      c.fillRect(5, cy + off - 2, 8, 4);
+      c.fillRect(w - 13, cy + off - 2, 8, 4);
     }
-    // Glow aura
-    c.globalAlpha = 0.15;
-    const ag = c.createRadialGradient(cx, cy, 20, cx, cy, cx * 0.8);
-    ag.addColorStop(0, "#fb923c"); ag.addColorStop(1, "transparent");
-    c.fillStyle = ag; c.fillRect(0, 0, w, h);
-    c.globalAlpha = 1;
-  }],
-
-  sniper_body: [189, 96, (c, w, h) => {
-    const cx = w / 2, cy = h / 2;
-    // Sleek elongated body
-    const bg = c.createLinearGradient(0, 0, w, 0);
-    bg.addColorStop(0, "#1e1b4b");
-    bg.addColorStop(0.3, "#4c1d95");
-    bg.addColorStop(0.6, "#6d28d9");
-    bg.addColorStop(1, "#3b0764");
-    c.fillStyle = bg;
-    c.beginPath();
-    c.moveTo(10, cy);
-    c.quadraticCurveTo(30, cy - 30, cx, cy - 24);
-    c.quadraticCurveTo(w - 20, cy - 18, w - 5, cy);
-    c.quadraticCurveTo(w - 20, cy + 18, cx, cy + 24);
-    c.quadraticCurveTo(30, cy + 30, 10, cy);
-    c.closePath();
-    c.fill();
-    // Scope / barrel extending forward
-    c.fillStyle = "#7c3aed";
-    c.fillRect(w - 40, cy - 4, 38, 8);
-    // Scope lens
-    c.fillStyle = "#a78bfa";
-    c.beginPath();
-    c.arc(w - 5, cy, 6, 0, Math.PI * 2);
-    c.fill();
-    c.fillStyle = "#e9d5ff";
-    c.beginPath();
-    c.arc(w - 5, cy, 3, 0, Math.PI * 2);
-    c.fill();
-    // Rear stabilizer fins
-    c.fillStyle = "#5b21b6";
-    c.beginPath();
-    c.moveTo(15, cy - 10);
-    c.lineTo(5, cy - 35);
-    c.lineTo(30, cy - 15);
-    c.closePath();
-    c.fill();
-    c.beginPath();
-    c.moveTo(15, cy + 10);
-    c.lineTo(5, cy + 35);
-    c.lineTo(30, cy + 15);
-    c.closePath();
-    c.fill();
-    // Eye
-    c.fillStyle = "#c084fc";
-    c.beginPath();
-    c.ellipse(cx - 10, cy, 8, 5, 0, 0, Math.PI * 2);
-    c.fill();
-    c.fillStyle = "#f5f3ff";
-    c.beginPath();
-    c.arc(cx - 10, cy, 2.5, 0, Math.PI * 2);
-    c.fill();
-    // Hull detail lines
-    c.strokeStyle = "#a78bfa";
-    c.lineWidth = 1;
-    c.beginPath();
-    c.moveTo(40, cy - 18); c.lineTo(w - 50, cy - 16);
-    c.moveTo(40, cy + 18); c.lineTo(w - 50, cy + 16);
-    c.stroke();
-    // Laser sight beam hint
-    c.globalAlpha = 0.3;
-    c.strokeStyle = "#e879f9";
-    c.lineWidth = 1.5;
-    c.setLineDash([4, 4]);
-    c.beginPath();
-    c.moveTo(w - 2, cy);
-    c.lineTo(w + 20, cy);
-    c.stroke();
-    c.setLineDash([]);
-    c.globalAlpha = 1;
-  }],
-
-  drone_body: [189, 96, (c, w, h) => {
-    const cx = w / 2, cy = h / 2;
-    // Central body – compact
-    const bg = c.createRadialGradient(cx, cy, 5, cx, cy, 30);
-    bg.addColorStop(0, "#166534");
-    bg.addColorStop(0.6, "#14532d");
-    bg.addColorStop(1, "#052e16");
-    c.fillStyle = bg;
-    c.beginPath();
-    c.ellipse(cx, cy, 24, 18, 0, 0, Math.PI * 2);
-    c.fill();
-    // Quad rotor arms
-    c.strokeStyle = "#15803d";
-    c.lineWidth = 4;
-    const rotorPositions: [number, number][] = [
-      [cx - 50, cy - 24], [cx + 50, cy - 24],
-      [cx - 50, cy + 24], [cx + 50, cy + 24],
-    ];
-    for (const [rx, ry] of rotorPositions) {
-      c.beginPath();
-      c.moveTo(cx + (rx < cx ? -20 : 20), cy + (ry < cy ? -14 : 14));
-      c.lineTo(rx, ry);
-      c.stroke();
-    }
-    // Rotors – spinning discs
-    c.globalAlpha = 0.5;
-    c.fillStyle = "#4ade80";
-    for (const [rx, ry] of rotorPositions) {
-      c.beginPath();
-      c.ellipse(rx, ry, 22, 8, 0, 0, Math.PI * 2);
-      c.fill();
-    }
-    c.globalAlpha = 1;
-    // Energy wings (connecting rotors with glow)
-    c.globalAlpha = 0.2;
-    c.fillStyle = "#86efac";
-    c.beginPath();
-    c.moveTo(cx - 50, cy - 24);
-    c.lineTo(cx, cy);
-    c.lineTo(cx - 50, cy + 24);
-    c.closePath();
-    c.fill();
-    c.beginPath();
-    c.moveTo(cx + 50, cy - 24);
-    c.lineTo(cx, cy);
-    c.lineTo(cx + 50, cy + 24);
-    c.closePath();
-    c.fill();
-    c.globalAlpha = 1;
-    // Central eye
-    c.fillStyle = "#22c55e";
-    c.beginPath();
-    c.arc(cx, cy, 7, 0, Math.PI * 2);
-    c.fill();
-    c.fillStyle = "#bbf7d0";
-    c.beginPath();
-    c.arc(cx, cy, 3, 0, Math.PI * 2);
-    c.fill();
-    // Hull lines
-    c.strokeStyle = "#16a34a";
-    c.lineWidth = 1;
-    c.beginPath();
-    c.ellipse(cx, cy, 30, 22, 0, 0, Math.PI * 2);
-    c.stroke();
-  }],
-
-  /* ================================================================
-   *  E) AEGIS PRIME – large armored sentinel
-   * ================================================================ */
-  aegis_prime_body: [177, 180, (c, w, h) => {
-    const cx = w / 2, cy = h / 2;
-    // Main body – hexagonal heavy armor
-    const bg = c.createLinearGradient(0, 0, w, h);
-    bg.addColorStop(0, "#0e7490");
-    bg.addColorStop(0.5, "#155e75");
-    bg.addColorStop(1, "#164e63");
-    c.fillStyle = bg;
-    c.beginPath();
-    for (let i = 0; i < 6; i++) {
-      const a = (i * Math.PI) / 3 - Math.PI / 6;
-      const px = cx + 55 * Math.cos(a);
-      const py = cy + 60 * Math.sin(a);
-      if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
-    }
-    c.closePath();
-    c.fill();
-    // Outer armor shell
-    c.strokeStyle = "#22d3ee";
-    c.lineWidth = 3;
-    c.stroke();
-    // Inner hex
-    c.strokeStyle = "#67e8f9";
-    c.lineWidth = 1.5;
-    c.beginPath();
-    for (let i = 0; i < 6; i++) {
-      const a = (i * Math.PI) / 3 - Math.PI / 6;
-      const px = cx + 38 * Math.cos(a);
-      const py = cy + 42 * Math.sin(a);
-      if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
-    }
-    c.closePath();
-    c.stroke();
-    // Energy shield glow surrounding
-    c.globalAlpha = 0.15;
-    const sg = c.createRadialGradient(cx, cy, 40, cx, cy, 85);
-    sg.addColorStop(0, "#06b6d4");
-    sg.addColorStop(1, "transparent");
-    c.fillStyle = sg;
-    c.fillRect(0, 0, w, h);
-    c.globalAlpha = 1;
-    // Shield arcs – left and right
-    c.strokeStyle = "rgba(34,211,238,0.6)";
-    c.lineWidth = 4;
-    c.beginPath();
-    c.arc(cx - 65, cy, 30, -0.8, 0.8);
-    c.stroke();
-    c.beginPath();
-    c.arc(cx + 65, cy, 30, Math.PI - 0.8, Math.PI + 0.8);
-    c.stroke();
-    // Central eye / core
-    const eg = c.createRadialGradient(cx, cy - 8, 2, cx, cy - 8, 16);
-    eg.addColorStop(0, "#ecfeff");
-    eg.addColorStop(0.4, "#22d3ee");
-    eg.addColorStop(1, "rgba(34,211,238,0)");
-    c.fillStyle = eg;
-    c.beginPath();
-    c.arc(cx, cy - 8, 16, 0, Math.PI * 2);
-    c.fill();
-    // Legs – heavy
-    c.fillStyle = "#0e7490";
-    c.fillRect(cx - 28, cy + 50, 16, 35);
-    c.fillRect(cx + 12, cy + 50, 16, 35);
-    // Feet
-    c.fillStyle = "#155e75";
-    c.fillRect(cx - 32, h - 10, 24, 10);
-    c.fillRect(cx + 8, h - 10, 24, 10);
-    // Shoulder turrets
-    c.fillStyle = "#0891b2";
-    c.beginPath(); c.arc(cx - 50, cy - 30, 14, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.arc(cx + 50, cy - 30, 14, 0, Math.PI * 2); c.fill();
-    // Turret barrels
-    c.fillStyle = "#155e75";
-    c.fillRect(cx - 54, cy - 50, 8, 20);
-    c.fillRect(cx + 46, cy - 50, 8, 20);
-    // Detail accents
-    c.strokeStyle = "#67e8f9";
-    c.lineWidth = 1;
-    c.beginPath();
-    c.moveTo(cx - 20, cy + 10); c.lineTo(cx - 20, cy + 45);
-    c.moveTo(cx + 20, cy + 10); c.lineTo(cx + 20, cy + 45);
-    c.stroke();
-  }],
-
-  /* ================================================================
-   *  F) ARCHON ZERO – massive cosmic horror entity
-   * ================================================================ */
-  archon_zero_body: [260, 320, (c, w, h) => {
-    const cx = w / 2, cy = h * 0.4;
-    // Void aura background
-    c.globalAlpha = 0.3;
-    const aura = c.createRadialGradient(cx, cy, 20, cx, cy, 150);
-    aura.addColorStop(0, "#a855f7");
-    aura.addColorStop(0.5, "#6b21a8");
-    aura.addColorStop(1, "transparent");
-    c.fillStyle = aura;
-    c.fillRect(0, 0, w, h);
-    c.globalAlpha = 1;
-    // Tentacles / tendrils – 8 of them spreading down
-    c.lineWidth = 5;
-    for (let i = 0; i < 8; i++) {
-      const baseAngle = (i / 8) * Math.PI * 0.8 + Math.PI * 0.6;
-      const tg = c.createLinearGradient(cx, cy + 40, cx + Math.cos(baseAngle) * 120, h);
-      tg.addColorStop(0, "#a855f7");
-      tg.addColorStop(0.5, "#7e22ce");
-      tg.addColorStop(1, "#3b0764");
-      c.strokeStyle = tg;
-      c.lineWidth = 6 - i * 0.3;
-      c.beginPath();
-      c.moveTo(cx + (i - 4) * 10, cy + 50);
-      const cp1x = cx + (i - 4) * 25 + Math.sin(i * 1.5) * 20;
-      const cp1y = cy + 100 + Math.cos(i * 2) * 20;
-      const endX = cx + (i - 4) * 28 + Math.sin(i * 2.3) * 30;
-      const endY = h - 10 + Math.sin(i) * 15;
-      c.quadraticCurveTo(cp1x, cp1y, endX, endY);
-      c.stroke();
-    }
-    // Main body mass – upper
-    const bodyG = c.createRadialGradient(cx, cy, 15, cx, cy, 80);
-    bodyG.addColorStop(0, "#0a0a0a");
-    bodyG.addColorStop(0.3, "#1e1b4b");
-    bodyG.addColorStop(0.6, "#581c87");
-    bodyG.addColorStop(1, "#3b0764");
-    c.fillStyle = bodyG;
-    c.beginPath();
-    c.ellipse(cx, cy, 75, 60, 0, 0, Math.PI * 2);
-    c.fill();
-    // Shoulder/crown spikes
-    c.fillStyle = "#7c3aed";
-    for (let i = 0; i < 5; i++) {
-      const a = Math.PI + (i / 4) * Math.PI;
-      c.beginPath();
-      c.moveTo(cx + Math.cos(a) * 55, cy + Math.sin(a) * 44);
-      c.lineTo(cx + Math.cos(a) * 90, cy + Math.sin(a) * 72 - 15);
-      c.lineTo(cx + Math.cos(a + 0.15) * 50, cy + Math.sin(a + 0.15) * 40);
-      c.closePath();
-      c.fill();
-    }
-    // Event horizon core
-    const ehG = c.createRadialGradient(cx, cy, 3, cx, cy, 32);
-    ehG.addColorStop(0, "#000000");
-    ehG.addColorStop(0.5, "#0a0a0a");
-    ehG.addColorStop(0.7, "#6b21a8");
-    ehG.addColorStop(0.85, "#d946ef");
-    ehG.addColorStop(1, "rgba(217,70,239,0)");
-    c.fillStyle = ehG;
-    c.beginPath();
-    c.arc(cx, cy, 32, 0, Math.PI * 2);
-    c.fill();
-    // Photon ring around core
-    c.strokeStyle = "#e879f9";
+    // Dark slate outer processor casing
+    c.fillStyle = "#0f172a";
+    c.strokeStyle = "#64748b";
     c.lineWidth = 2.5;
     c.beginPath();
-    c.arc(cx, cy, 28, 0, Math.PI * 2);
-    c.stroke();
-    c.strokeStyle = "#f0abfc";
-    c.lineWidth = 1;
-    c.beginPath();
-    c.arc(cx, cy, 34, 0, Math.PI * 2);
-    c.stroke();
-    // Eyes – three menacing eyes
-    c.fillStyle = "#d946ef";
-    c.beginPath(); c.ellipse(cx - 22, cy - 8, 7, 4, -0.2, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(cx + 22, cy - 8, 7, 4, 0.2, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(cx, cy - 28, 5, 3, 0, 0, Math.PI * 2); c.fill();
-    // Eye pupils
-    c.fillStyle = "#faf5ff";
-    c.beginPath(); c.arc(cx - 22, cy - 8, 2, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.arc(cx + 22, cy - 8, 2, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.arc(cx, cy - 28, 1.5, 0, Math.PI * 2); c.fill();
-    // Energy particles floating around
-    c.globalAlpha = 0.6;
-    c.fillStyle = "#c084fc";
-    for (let i = 0; i < 15; i++) {
-      const px = cx + Math.sin(i * 2.7) * (60 + i * 5);
-      const py = cy + Math.cos(i * 3.1) * (50 + i * 4);
-      c.beginPath();
-      c.arc(px, py, 1.5 + (i % 3), 0, Math.PI * 2);
-      c.fill();
-    }
-    c.globalAlpha = 1;
-  }],
-
-  /* ================================================================
-   *  G) OBSIDIAN WARDEN TEXTURES (10 total)
-   * ================================================================ */
-  ow_idle: [88, 108, (c, w, h) => {
-    const cx = w / 2;
-    // Legs – thick stone
-    c.fillStyle = "#57534e";
-    c.fillRect(cx - 14, h * 0.65, 12, h * 0.28);
-    c.fillRect(cx + 2, h * 0.65, 12, h * 0.28);
-    // Stone boots
-    c.fillStyle = "#78716c";
-    c.fillRect(cx - 16, h * 0.88, 16, 10);
-    c.fillRect(cx, h * 0.88, 16, 10);
-    // Torso – massive stone armor
-    const tg = c.createLinearGradient(cx - 24, h * 0.25, cx + 24, h * 0.65);
-    tg.addColorStop(0, "#a16207");
-    tg.addColorStop(0.3, "#78716c");
-    tg.addColorStop(0.7, "#57534e");
-    tg.addColorStop(1, "#44403c");
-    c.fillStyle = tg;
-    c.beginPath();
-    c.moveTo(cx - 26, h * 0.32);
-    c.lineTo(cx + 26, h * 0.32);
-    c.lineTo(cx + 22, h * 0.65);
-    c.lineTo(cx - 22, h * 0.65);
-    c.closePath();
+    c.rect(12, 12, w - 24, h - 24);
     c.fill();
-    // Stone plate cracks
-    c.strokeStyle = "#292524";
-    c.lineWidth = 1;
-    c.beginPath();
-    c.moveTo(cx - 10, h * 0.38); c.lineTo(cx - 5, h * 0.5);
-    c.lineTo(cx - 12, h * 0.6);
-    c.moveTo(cx + 8, h * 0.4); c.lineTo(cx + 14, h * 0.52);
     c.stroke();
-    // Shoulder boulders
-    c.fillStyle = "#92400e";
-    c.beginPath(); c.ellipse(cx - 28, h * 0.32, 14, 10, -0.2, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(cx + 28, h * 0.32, 14, 10, 0.2, 0, Math.PI * 2); c.fill();
-    // Head – blocky stone helmet
-    c.fillStyle = "#57534e";
-    c.fillRect(cx - 14, h * 0.1, 28, 24);
-    // Visor – gold glow
-    c.fillStyle = "#fbbf24";
-    c.fillRect(cx - 10, h * 0.17, 20, 5);
-    // Gold accent line
-    c.strokeStyle = "#d97706";
-    c.lineWidth = 2;
-    c.beginPath();
-    c.moveTo(cx, h * 0.37); c.lineTo(cx, h * 0.6);
-    c.stroke();
-    // Arms – stone gauntlets
-    c.fillStyle = "#78716c";
-    c.fillRect(cx - 38, h * 0.35, 14, 26);
-    c.fillRect(cx + 24, h * 0.35, 14, 26);
-  }],
 
-  ow_jump: [107, 112, (c, w, h) => {
-    const cx = w / 2;
-    // Legs tucked up
-    c.fillStyle = "#57534e";
-    c.save(); c.translate(cx - 10, h * 0.65); c.rotate(-0.5);
-    c.fillRect(-6, 0, 12, 22); c.restore();
-    c.save(); c.translate(cx + 10, h * 0.65); c.rotate(0.5);
-    c.fillRect(-6, 0, 12, 22); c.restore();
-    // Torso
-    const tg = c.createLinearGradient(cx - 24, h * 0.2, cx + 24, h * 0.6);
-    tg.addColorStop(0, "#a16207"); tg.addColorStop(0.4, "#78716c");
-    tg.addColorStop(1, "#44403c");
-    c.fillStyle = tg;
-    c.beginPath();
-    c.moveTo(cx - 26, h * 0.3); c.lineTo(cx + 26, h * 0.3);
-    c.lineTo(cx + 22, h * 0.63); c.lineTo(cx - 22, h * 0.63);
-    c.closePath(); c.fill();
-    // Crack details
-    c.strokeStyle = "#292524"; c.lineWidth = 1;
-    c.beginPath(); c.moveTo(cx - 8, h * 0.36); c.lineTo(cx - 3, h * 0.48); c.stroke();
-    // Shoulders
-    c.fillStyle = "#92400e";
-    c.beginPath(); c.ellipse(cx - 28, h * 0.3, 14, 10, -0.2, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(cx + 28, h * 0.3, 14, 10, 0.2, 0, Math.PI * 2); c.fill();
-    // Arms raised – stone gauntlets up
-    c.fillStyle = "#78716c";
-    c.save(); c.translate(cx - 34, h * 0.28); c.rotate(-0.8);
-    c.fillRect(-7, -20, 14, 26); c.restore();
-    c.save(); c.translate(cx + 34, h * 0.28); c.rotate(0.8);
-    c.fillRect(-7, -20, 14, 26); c.restore();
-    // Head
-    c.fillStyle = "#57534e";
-    c.fillRect(cx - 14, h * 0.08, 28, 24);
-    c.fillStyle = "#fbbf24";
-    c.fillRect(cx - 10, h * 0.15, 20, 5);
-    // Gold accent
-    c.strokeStyle = "#d97706"; c.lineWidth = 2;
-    c.beginPath(); c.moveTo(cx, h * 0.35); c.lineTo(cx, h * 0.58); c.stroke();
-  }],
+    // Inner beveled die + cyan circuit traces
+    c.fillStyle = "#1e293b";
+    c.strokeStyle = "#18e6ff";
+    c.lineWidth = 1.5;
+    c.fillRect(19, 19, w - 38, h - 38);
+    c.strokeRect(19, 19, w - 38, h - 38);
 
-  ow_attack_slash: [154, 158, (c, w, h) => {
-    const cx = w * 0.4, cy = h * 0.5;
-    // Legs braced
-    c.fillStyle = "#57534e";
-    c.fillRect(cx - 14, cy + 20, 12, 40);
-    c.fillRect(cx + 4, cy + 20, 12, 40);
-    c.fillStyle = "#78716c";
-    c.fillRect(cx - 16, cy + 55, 16, 10);
-    c.fillRect(cx + 2, cy + 55, 16, 10);
-    // Torso
-    const tg = c.createLinearGradient(cx - 26, cy - 40, cx + 26, cy + 20);
-    tg.addColorStop(0, "#a16207"); tg.addColorStop(0.5, "#78716c"); tg.addColorStop(1, "#44403c");
-    c.fillStyle = tg;
+    // Glowing cyan energy core
+    const g = c.createRadialGradient(cx, cy, 1, cx, cy, 12);
+    g.addColorStop(0, "#ffffff");
+    g.addColorStop(0.45, "#18e6ff");
+    g.addColorStop(1, "rgba(24, 230, 255, 0)");
+    c.fillStyle = g;
     c.beginPath();
-    c.moveTo(cx - 26, cy - 28); c.lineTo(cx + 26, cy - 28);
-    c.lineTo(cx + 22, cy + 20); c.lineTo(cx - 22, cy + 20);
-    c.closePath(); c.fill();
-    // Head
-    c.fillStyle = "#57534e";
-    c.fillRect(cx - 14, cy - 52, 28, 24);
-    c.fillStyle = "#fbbf24";
-    c.fillRect(cx - 10, cy - 45, 20, 5);
-    // Shoulders
-    c.fillStyle = "#92400e";
-    c.beginPath(); c.ellipse(cx - 28, cy - 28, 14, 10, 0, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(cx + 28, cy - 28, 14, 10, 0, 0, Math.PI * 2); c.fill();
-    // Right arm extended with rock mace – wide swing
-    c.fillStyle = "#78716c";
-    c.save(); c.translate(cx + 30, cy - 20); c.rotate(-0.6);
-    c.fillRect(0, -5, 50, 10);
-    // Mace head
-    c.fillStyle = "#92400e";
-    c.beginPath(); c.arc(55, 0, 14, 0, Math.PI * 2); c.fill();
-    // Mace spikes
-    c.fillStyle = "#a16207";
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2;
-      c.beginPath();
-      c.moveTo(55 + Math.cos(a) * 12, Math.sin(a) * 12);
-      c.lineTo(55 + Math.cos(a) * 20, Math.sin(a) * 20);
-      c.lineTo(55 + Math.cos(a + 0.3) * 12, Math.sin(a + 0.3) * 12);
-      c.closePath(); c.fill();
-    }
-    c.restore();
-    // Left arm guard
-    c.fillStyle = "#78716c";
-    c.fillRect(cx - 42, cy - 22, 14, 26);
-    // Slash trail
-    c.globalAlpha = 0.3;
-    c.strokeStyle = "#fbbf24"; c.lineWidth = 3;
-    c.beginPath();
-    c.arc(cx + 60, cy - 20, 50, -1.2, 0.8);
-    c.stroke();
-    c.globalAlpha = 1;
-  }],
-
-  ow_attack_blast: [217, 135, (c, w, h) => {
-    const cx = w * 0.3, cy = h / 2;
-    // Legs
-    c.fillStyle = "#57534e";
-    c.fillRect(cx - 12, cy + 15, 11, 32);
-    c.fillRect(cx + 3, cy + 15, 11, 32);
-    c.fillStyle = "#78716c";
-    c.fillRect(cx - 14, cy + 42, 15, 8);
-    c.fillRect(cx + 1, cy + 42, 15, 8);
-    // Torso – leaning forward
-    const tg = c.createLinearGradient(cx - 24, cy - 36, cx + 24, cy + 15);
-    tg.addColorStop(0, "#a16207"); tg.addColorStop(0.5, "#78716c"); tg.addColorStop(1, "#44403c");
-    c.fillStyle = tg;
-    c.beginPath();
-    c.moveTo(cx - 24, cy - 24); c.lineTo(cx + 24, cy - 24);
-    c.lineTo(cx + 20, cy + 15); c.lineTo(cx - 20, cy + 15);
-    c.closePath(); c.fill();
-    // Head
-    c.fillStyle = "#57534e";
-    c.fillRect(cx - 12, cy - 46, 26, 22);
-    c.fillStyle = "#fbbf24";
-    c.fillRect(cx - 8, cy - 40, 18, 5);
-    // Shoulders
-    c.fillStyle = "#92400e";
-    c.beginPath(); c.ellipse(cx - 26, cy - 24, 13, 9, 0, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(cx + 26, cy - 24, 13, 9, 0, 0, Math.PI * 2); c.fill();
-    // Arms thrusting forward
-    c.fillStyle = "#78716c";
-    c.fillRect(cx + 24, cy - 16, 40, 10);
-    // Earth spike extending forward
-    const spikeG = c.createLinearGradient(cx + 60, cy, w, cy);
-    spikeG.addColorStop(0, "#92400e"); spikeG.addColorStop(0.5, "#a16207"); spikeG.addColorStop(1, "#d97706");
-    c.fillStyle = spikeG;
-    c.beginPath();
-    c.moveTo(cx + 64, cy - 20);
-    c.lineTo(w - 5, cy - 4);
-    c.lineTo(w, cy);
-    c.lineTo(w - 5, cy + 4);
-    c.lineTo(cx + 64, cy + 10);
-    c.closePath();
+    c.arc(cx, cy, 12, 0, Math.PI * 2);
     c.fill();
-    // Spike fragments
-    c.fillStyle = "#78716c";
-    for (let i = 0; i < 4; i++) {
-      const fx = cx + 80 + i * 25;
-      const fy = cy - 24 - i * 3;
-      c.beginPath();
-      c.moveTo(fx, fy); c.lineTo(fx + 8, fy - 10); c.lineTo(fx + 10, fy + 2);
-      c.closePath(); c.fill();
-    }
-    // Impact glow
-    c.globalAlpha = 0.25;
-    const ig = c.createRadialGradient(w - 10, cy, 3, w - 10, cy, 30);
-    ig.addColorStop(0, "#fbbf24"); ig.addColorStop(1, "transparent");
-    c.fillStyle = ig; c.fillRect(w - 40, cy - 30, 40, 60);
-    c.globalAlpha = 1;
-  }],
-
-  ow_dash: [196, 118, (c, w, h) => {
-    const cx = w * 0.45, cy = h / 2;
-    // Motion blur lines behind
-    c.globalAlpha = 0.2;
-    c.strokeStyle = "#a8a29e";
-    c.lineWidth = 2;
-    for (let i = 0; i < 5; i++) {
-      c.beginPath();
-      c.moveTo(5, cy - 20 + i * 10);
-      c.lineTo(cx - 40, cy - 18 + i * 9);
-      c.stroke();
-    }
-    c.globalAlpha = 1;
-    // Legs – running low
-    c.fillStyle = "#57534e";
-    c.save(); c.translate(cx - 5, cy + 15); c.rotate(-0.6);
-    c.fillRect(-6, 0, 12, 30); c.restore();
-    c.save(); c.translate(cx + 10, cy + 15); c.rotate(0.3);
-    c.fillRect(-6, 0, 12, 30); c.restore();
-    // Torso – low charging
-    c.save();
-    c.translate(cx, cy);
-    c.rotate(-0.2);
-    const tg = c.createLinearGradient(-26, -28, 26, 15);
-    tg.addColorStop(0, "#a16207"); tg.addColorStop(0.5, "#78716c"); tg.addColorStop(1, "#44403c");
-    c.fillStyle = tg;
-    c.beginPath();
-    c.moveTo(-26, -24); c.lineTo(26, -24);
-    c.lineTo(22, 15); c.lineTo(-22, 15);
-    c.closePath(); c.fill();
-    c.restore();
-    // Head ducked
-    c.fillStyle = "#57534e";
-    c.save(); c.translate(cx + 5, cy - 30); c.rotate(-0.2);
-    c.fillRect(-12, -10, 26, 20); c.restore();
-    c.fillStyle = "#fbbf24";
-    c.fillRect(cx - 5, cy - 36, 18, 4);
-    // Shoulder armor – prominent forward shoulder
-    c.fillStyle = "#92400e";
-    c.beginPath(); c.ellipse(cx + 32, cy - 18, 18, 12, -0.3, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(cx - 24, cy - 14, 12, 9, 0, 0, Math.PI * 2); c.fill();
-    // Arms
-    c.fillStyle = "#78716c";
-    c.fillRect(cx + 26, cy - 10, 30, 10);
-    c.fillRect(cx - 36, cy - 8, 14, 22);
-    // Dust cloud
-    c.globalAlpha = 0.3;
-    c.fillStyle = "#a8a29e";
-    for (let i = 0; i < 6; i++) {
-      c.beginPath();
-      c.arc(15 + i * 8, cy + 20 + Math.sin(i) * 8, 6 + i, 0, Math.PI * 2);
-      c.fill();
-    }
-    c.globalAlpha = 1;
-  }],
-
-  ow_hit_reaction: [116, 129, (c, w, h) => {
-    const cx = w / 2, cy = h * 0.45;
-    // Legs stumbling
-    c.fillStyle = "#57534e";
-    c.save(); c.translate(cx - 10, cy + 25); c.rotate(0.15);
-    c.fillRect(-6, 0, 12, 34); c.restore();
-    c.save(); c.translate(cx + 10, cy + 25); c.rotate(-0.3);
-    c.fillRect(-6, 0, 12, 34); c.restore();
-    c.fillStyle = "#78716c";
-    c.fillRect(cx - 18, h - 12, 15, 10);
-    c.fillRect(cx + 6, h - 14, 15, 10);
-    // Torso recoiling back
-    c.save();
-    c.translate(cx, cy);
-    c.rotate(0.15);
-    const tg = c.createLinearGradient(-24, -26, 24, 20);
-    tg.addColorStop(0, "#a16207"); tg.addColorStop(0.5, "#78716c"); tg.addColorStop(1, "#44403c");
-    c.fillStyle = tg;
-    c.beginPath();
-    c.moveTo(-24, -22); c.lineTo(24, -22);
-    c.lineTo(20, 20); c.lineTo(-20, 20);
-    c.closePath(); c.fill();
-    c.restore();
-    // Crack effects on armor
-    c.strokeStyle = "#fbbf24"; c.lineWidth = 1.5;
-    c.beginPath();
-    c.moveTo(cx - 5, cy - 10); c.lineTo(cx - 15, cy + 5);
-    c.lineTo(cx - 8, cy + 15);
-    c.moveTo(cx + 3, cy - 8); c.lineTo(cx + 12, cy + 10);
-    c.stroke();
-    // Head tilted back
-    c.fillStyle = "#57534e";
-    c.save(); c.translate(cx - 2, cy - 28); c.rotate(0.2);
-    c.fillRect(-13, -10, 26, 22); c.restore();
-    c.fillStyle = "#fbbf24";
-    c.save(); c.translate(cx - 2, cy - 28); c.rotate(0.2);
-    c.fillRect(-9, -4, 18, 4); c.restore();
-    // Shoulders
-    c.fillStyle = "#92400e";
-    c.beginPath(); c.ellipse(cx - 26, cy - 16, 13, 9, 0.2, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(cx + 28, cy - 18, 13, 9, -0.1, 0, Math.PI * 2); c.fill();
-    // Arms flailing
-    c.fillStyle = "#78716c";
-    c.save(); c.translate(cx - 30, cy - 10); c.rotate(0.6);
-    c.fillRect(-6, 0, 12, 24); c.restore();
-    c.save(); c.translate(cx + 30, cy - 12); c.rotate(-0.4);
-    c.fillRect(-6, 0, 12, 24); c.restore();
-    // Stone debris particles
-    c.fillStyle = "#a8a29e";
-    c.globalAlpha = 0.6;
-    for (let i = 0; i < 8; i++) {
-      const px = cx + Math.sin(i * 3.7) * 35;
-      const py = cy + Math.cos(i * 2.3) * 30;
-      c.fillRect(px - 2, py - 2, 4 + (i % 3), 3 + (i % 2));
-    }
-    c.globalAlpha = 1;
-  }],
-
-  ow_walk_1: [99, 108, (c, w, h) => {
-    const cx = w / 2;
-    c.fillStyle = "#57534e";
-    c.fillRect(cx - 13, h * 0.65, 11, h * 0.27);
-    c.fillRect(cx + 2, h * 0.65, 11, h * 0.27);
-    c.fillStyle = "#78716c";
-    c.fillRect(cx - 15, h * 0.88, 15, 9);
-    c.fillRect(cx, h * 0.88, 15, 9);
-    const tg = c.createLinearGradient(cx - 24, h * 0.25, cx + 24, h * 0.65);
-    tg.addColorStop(0, "#a16207"); tg.addColorStop(0.4, "#78716c"); tg.addColorStop(1, "#44403c");
-    c.fillStyle = tg;
-    c.beginPath();
-    c.moveTo(cx - 24, h * 0.33); c.lineTo(cx + 24, h * 0.33);
-    c.lineTo(cx + 20, h * 0.64); c.lineTo(cx - 20, h * 0.64);
-    c.closePath(); c.fill();
-    c.strokeStyle = "#292524"; c.lineWidth = 1;
-    c.beginPath(); c.moveTo(cx - 8, h * 0.38); c.lineTo(cx - 3, h * 0.5); c.stroke();
-    c.fillStyle = "#92400e";
-    c.beginPath(); c.ellipse(cx - 26, h * 0.33, 13, 9, 0, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(cx + 26, h * 0.33, 13, 9, 0, 0, Math.PI * 2); c.fill();
-    c.fillStyle = "#57534e";
-    c.fillRect(cx - 13, h * 0.1, 26, 22);
-    c.fillStyle = "#fbbf24";
-    c.fillRect(cx - 9, h * 0.17, 18, 4);
-    c.fillStyle = "#78716c";
-    c.fillRect(cx - 36, h * 0.36, 13, 24);
-    c.fillRect(cx + 23, h * 0.36, 13, 24);
-    c.strokeStyle = "#d97706"; c.lineWidth = 1.5;
-    c.beginPath(); c.moveTo(cx, h * 0.37); c.lineTo(cx, h * 0.59); c.stroke();
-  }],
-
-  ow_walk_2: [99, 108, (c, w, h) => {
-    const cx = w / 2;
-    c.fillStyle = "#57534e";
-    c.save(); c.translate(cx + 5, h * 0.65); c.rotate(0.22);
-    c.fillRect(-5, 0, 11, h * 0.25); c.restore();
-    c.fillStyle = "#4a3f35";
-    c.save(); c.translate(cx - 5, h * 0.65); c.rotate(-0.22);
-    c.fillRect(-5, 0, 11, h * 0.25); c.restore();
-    c.fillStyle = "#78716c";
-    c.fillRect(cx - 18, h * 0.87, 15, 9);
-    c.fillRect(cx + 8, h * 0.87, 15, 9);
-    const tg = c.createLinearGradient(cx - 24, h * 0.25, cx + 24, h * 0.65);
-    tg.addColorStop(0, "#a16207"); tg.addColorStop(0.4, "#78716c"); tg.addColorStop(1, "#44403c");
-    c.fillStyle = tg;
-    c.beginPath();
-    c.moveTo(cx - 24, h * 0.33); c.lineTo(cx + 24, h * 0.33);
-    c.lineTo(cx + 20, h * 0.64); c.lineTo(cx - 20, h * 0.64);
-    c.closePath(); c.fill();
-    c.fillStyle = "#92400e";
-    c.beginPath(); c.ellipse(cx - 26, h * 0.33, 13, 9, 0, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(cx + 26, h * 0.33, 13, 9, 0, 0, Math.PI * 2); c.fill();
-    c.fillStyle = "#57534e";
-    c.fillRect(cx - 13, h * 0.1, 26, 22);
-    c.fillStyle = "#fbbf24";
-    c.fillRect(cx - 9, h * 0.17, 18, 4);
-    c.fillStyle = "#78716c";
-    c.save(); c.translate(cx - 32, h * 0.37); c.rotate(0.25);
-    c.fillRect(-6, 0, 13, 22); c.restore();
-    c.save(); c.translate(cx + 32, h * 0.37); c.rotate(-0.25);
-    c.fillRect(-6, 0, 13, 22); c.restore();
-    c.strokeStyle = "#d97706"; c.lineWidth = 1.5;
-    c.beginPath(); c.moveTo(cx, h * 0.37); c.lineTo(cx, h * 0.59); c.stroke();
-  }],
-
-  ow_walk_3: [99, 108, (c, w, h) => {
-    const cx = w / 2;
-    c.fillStyle = "#4a3f35";
-    c.save(); c.translate(cx - 7, h * 0.65); c.rotate(-0.35);
-    c.fillRect(-5, 0, 11, h * 0.25); c.restore();
-    c.fillStyle = "#57534e";
-    c.save(); c.translate(cx + 7, h * 0.65); c.rotate(0.35);
-    c.fillRect(-5, 0, 11, h * 0.25); c.restore();
-    c.fillStyle = "#78716c";
-    c.fillRect(cx - 22, h * 0.85, 15, 9);
-    c.fillRect(cx + 12, h * 0.85, 15, 9);
-    const tg = c.createLinearGradient(cx - 24, h * 0.25, cx + 24, h * 0.65);
-    tg.addColorStop(0, "#a16207"); tg.addColorStop(0.4, "#78716c"); tg.addColorStop(1, "#44403c");
-    c.fillStyle = tg;
-    c.beginPath();
-    c.moveTo(cx - 23, h * 0.32); c.lineTo(cx + 25, h * 0.34);
-    c.lineTo(cx + 21, h * 0.64); c.lineTo(cx - 19, h * 0.64);
-    c.closePath(); c.fill();
-    c.fillStyle = "#92400e";
-    c.beginPath(); c.ellipse(cx - 25, h * 0.32, 13, 9, 0, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(cx + 27, h * 0.34, 13, 9, 0, 0, Math.PI * 2); c.fill();
-    c.fillStyle = "#57534e";
-    c.fillRect(cx - 12, h * 0.1, 26, 22);
-    c.fillStyle = "#fbbf24";
-    c.fillRect(cx - 8, h * 0.17, 18, 4);
-    c.fillStyle = "#78716c";
-    c.save(); c.translate(cx - 30, h * 0.37); c.rotate(0.45);
-    c.fillRect(-6, 0, 13, 22); c.restore();
-    c.save(); c.translate(cx + 30, h * 0.37); c.rotate(-0.45);
-    c.fillRect(-6, 0, 13, 22); c.restore();
-    c.strokeStyle = "#d97706"; c.lineWidth = 1.5;
-    c.beginPath(); c.moveTo(cx + 1, h * 0.37); c.lineTo(cx + 1, h * 0.59); c.stroke();
-  }],
-
-  ow_walk_4: [99, 108, (c, w, h) => {
-    const cx = w / 2;
-    c.fillStyle = "#57534e";
-    c.save(); c.translate(cx - 5, h * 0.65); c.rotate(0.22);
-    c.fillRect(-5, 0, 11, h * 0.25); c.restore();
-    c.fillStyle = "#4a3f35";
-    c.save(); c.translate(cx + 5, h * 0.65); c.rotate(-0.22);
-    c.fillRect(-5, 0, 11, h * 0.25); c.restore();
-    c.fillStyle = "#78716c";
-    c.fillRect(cx - 8, h * 0.87, 15, 9);
-    c.fillRect(cx + 2, h * 0.87, 15, 9);
-    const tg = c.createLinearGradient(cx - 24, h * 0.25, cx + 24, h * 0.65);
-    tg.addColorStop(0, "#a16207"); tg.addColorStop(0.4, "#78716c"); tg.addColorStop(1, "#44403c");
-    c.fillStyle = tg;
-    c.beginPath();
-    c.moveTo(cx - 24, h * 0.33); c.lineTo(cx + 24, h * 0.33);
-    c.lineTo(cx + 20, h * 0.64); c.lineTo(cx - 20, h * 0.64);
-    c.closePath(); c.fill();
-    c.fillStyle = "#92400e";
-    c.beginPath(); c.ellipse(cx - 26, h * 0.33, 13, 9, 0, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.ellipse(cx + 26, h * 0.33, 13, 9, 0, 0, Math.PI * 2); c.fill();
-    c.fillStyle = "#57534e";
-    c.fillRect(cx - 13, h * 0.1, 26, 22);
-    c.fillStyle = "#fbbf24";
-    c.fillRect(cx - 9, h * 0.17, 18, 4);
-    c.fillStyle = "#78716c";
-    c.save(); c.translate(cx - 32, h * 0.37); c.rotate(-0.25);
-    c.fillRect(-6, 0, 13, 22); c.restore();
-    c.save(); c.translate(cx + 32, h * 0.37); c.rotate(0.25);
-    c.fillRect(-6, 0, 13, 22); c.restore();
-    c.strokeStyle = "#d97706"; c.lineWidth = 1.5;
-    c.beginPath(); c.moveTo(cx, h * 0.37); c.lineTo(cx, h * 0.59); c.stroke();
   }],
 };
 
@@ -1767,6 +433,7 @@ export class BootScene extends Phaser.Scene {
 
   create() {
     for (const [key, [w, h, draw]] of Object.entries(TEXTURES)) {
+      if (this.textures.exists(key)) this.textures.remove(key);
       const tex = this.textures.createCanvas(key, w, h);
       if (!tex) continue;
       draw(tex.getContext(), w, h);
@@ -1925,6 +592,29 @@ export class BootScene extends Phaser.Scene {
       ctx.closePath(); ctx.fill();
       ctx.globalAlpha = 1;
 
+      // Obsidian Void Platform Deck (y=564..720 so groundY=568 aligns flush on solid floor)
+      const deckG = ctx.createLinearGradient(0, 564, 0, 720);
+      deckG.addColorStop(0, "#24113d");
+      deckG.addColorStop(0.08, "#160929");
+      deckG.addColorStop(0.4, "#0d041a");
+      deckG.addColorStop(1, "#05010a");
+      ctx.fillStyle = deckG;
+      ctx.fillRect(0, 564, 1280, 156);
+      ctx.fillStyle = "#4c1d95";
+      ctx.fillRect(0, 564, 1280, 5);
+      ctx.fillStyle = "rgba(217, 70, 239, 0.7)";
+      ctx.fillRect(0, 578, 1280, 2);
+      ctx.strokeStyle = "rgba(139, 92, 246, 0.35)";
+      ctx.lineWidth = 2;
+      for (let px = 0; px < 1280; px += 160) {
+        ctx.beginPath();
+        ctx.moveTo(px, 569);
+        ctx.lineTo(px, 720);
+        ctx.stroke();
+        ctx.fillStyle = "rgba(192, 132, 252, 0.35)";
+        ctx.fillRect(px + 24, 608, 112, 10);
+      }
+
       bgTex.refresh();
     }
 
@@ -1945,10 +635,10 @@ export class BootScene extends Phaser.Scene {
       mirrorSing.refresh();
     }
 
-    // 1c. bg_orbit_mirrored (2560x720) — Earth orbit space scene
-    const orbitTex = this.textures.createCanvas("bg_orbit_mirrored", 2560, 720);
-    if (orbitTex) {
-      const oc = orbitTex.getContext();
+    // 1c. bg_orbit (1280x720) & bg_orbit_mirrored (2560x720) — Earth orbit space station deck
+    const singleOrbit = this.textures.createCanvas("bg_orbit", 1280, 720);
+    if (singleOrbit) {
+      const oc = singleOrbit.getContext();
       const halfW = 1280;
 
       // Deep space background
@@ -1974,15 +664,13 @@ export class BootScene extends Phaser.Scene {
       oc.globalAlpha = 1;
 
       // Earth in the distance (right side)
-      const earthX = 950, earthY = 420, earthR = 110;
-      // Earth atmosphere glow
+      const earthX = 950, earthY = 390, earthR = 110;
       oc.globalAlpha = 0.15;
       const atmoG = oc.createRadialGradient(earthX, earthY, earthR, earthX, earthY, earthR + 40);
       atmoG.addColorStop(0, "#38bdf8"); atmoG.addColorStop(1, "transparent");
       oc.fillStyle = atmoG;
       oc.beginPath(); oc.arc(earthX, earthY, earthR + 40, 0, Math.PI * 2); oc.fill();
       oc.globalAlpha = 1;
-      // Earth body
       const earthG = oc.createRadialGradient(earthX - 20, earthY - 20, 10, earthX, earthY, earthR);
       earthG.addColorStop(0, "#1e40af");
       earthG.addColorStop(0.3, "#1d4ed8");
@@ -1992,79 +680,86 @@ export class BootScene extends Phaser.Scene {
       earthG.addColorStop(1, "#0c1426");
       oc.fillStyle = earthG;
       oc.beginPath(); oc.arc(earthX, earthY, earthR, 0, Math.PI * 2); oc.fill();
-      // Continent hints
       oc.fillStyle = "#166534";
       oc.globalAlpha = 0.4;
       oc.beginPath(); oc.ellipse(earthX - 30, earthY - 20, 25, 18, 0.3, 0, Math.PI * 2); oc.fill();
       oc.beginPath(); oc.ellipse(earthX + 20, earthY + 15, 20, 30, -0.2, 0, Math.PI * 2); oc.fill();
       oc.globalAlpha = 1;
-      // Cloud wisps
       oc.globalAlpha = 0.2;
       oc.fillStyle = "#e2e8f0";
       oc.beginPath(); oc.ellipse(earthX - 15, earthY - 35, 30, 6, 0.2, 0, Math.PI * 2); oc.fill();
       oc.beginPath(); oc.ellipse(earthX + 25, earthY + 5, 25, 5, -0.3, 0, Math.PI * 2); oc.fill();
       oc.globalAlpha = 1;
 
-      // Satellite debris scattered
-      oc.fillStyle = "#64748b";
+      // Satellite debris scattered above the deck
       const debrisData: [number, number, number, number, number][] = [
         [200, 150, 20, 8, 0.4],
         [350, 280, 15, 6, -0.3],
         [500, 100, 25, 5, 0.7],
-        [700, 350, 18, 7, -0.5],
-        [150, 450, 12, 5, 0.2],
-        [600, 500, 22, 6, -0.6],
+        [700, 340, 18, 7, -0.5],
+        [150, 420, 12, 5, 0.2],
+        [600, 450, 22, 6, -0.6],
         [1050, 180, 16, 5, 0.8],
-        [850, 550, 14, 4, -0.2],
+        [820, 490, 14, 4, -0.2],
       ];
       for (const [dx, dy, dw, dh, dr] of debrisData) {
         oc.save();
         oc.translate(dx, dy);
         oc.rotate(dr);
-        // Main panel
         oc.fillStyle = "#475569";
         oc.fillRect(-dw / 2, -dh / 2, dw, dh);
-        // Solar panel wings
         oc.fillStyle = "#1e3a5f";
         oc.fillRect(-dw / 2 - 10, -2, 10, 4);
         oc.fillRect(dw / 2, -2, 10, 4);
-        // Glint
         oc.fillStyle = "rgba(255,255,255,0.4)";
         oc.fillRect(-dw / 2 + 2, -dh / 2 + 1, 4, 3);
         oc.restore();
       }
 
-      // Mirror the left half to the right half
-      oc.save();
-      oc.translate(2560, 0);
-      oc.scale(-1, 1);
-      const halfCanvas = oc.getImageData(0, 0, halfW, 720);
-      oc.restore();
-      // We need to draw the left half first completely, then flip
-      // Actually, re-draw mirrored: use the canvas itself
-      const tempCanvas = oc.getImageData(0, 0, halfW, 720);
-      oc.putImageData(tempCanvas, halfW, 0);
-      // Now manually mirror the right half
-      oc.save();
-      oc.translate(halfW, 0);
-      oc.scale(1, 1);
-      // Draw left-to-right mirrored
-      oc.translate(halfW, 0);
-      oc.scale(-1, 1);
-      oc.putImageData(tempCanvas, 0, 0);
-      oc.restore();
+      // Space Station Catwalk Guardrail + Platform Deck (y=564..720 matching GROUND_Y=568)
+      oc.strokeStyle = "rgba(100, 116, 139, 0.55)";
+      oc.lineWidth = 3;
+      oc.beginPath();
+      oc.moveTo(0, 514); oc.lineTo(halfW, 514);
+      oc.moveTo(0, 538); oc.lineTo(halfW, 538);
+      for (let gx = 40; gx < halfW; gx += 120) {
+        oc.moveTo(gx, 514); oc.lineTo(gx, 564);
+      }
+      oc.stroke();
 
-      orbitTex.refresh();
+      const deckGrad = oc.createLinearGradient(0, 564, 0, 720);
+      deckGrad.addColorStop(0, "#334155");
+      deckGrad.addColorStop(0.08, "#1e293b");
+      deckGrad.addColorStop(0.35, "#0f172a");
+      deckGrad.addColorStop(1, "#020617");
+      oc.fillStyle = deckGrad;
+      oc.fillRect(0, 564, halfW, 156);
+      oc.fillStyle = "#64748b";
+      oc.fillRect(0, 564, halfW, 5);
+      oc.fillStyle = "rgba(56, 189, 248, 0.75)";
+      oc.fillRect(0, 580, halfW, 3);
+      for (let px = 0; px < halfW; px += 160) {
+        oc.fillStyle = "#0f172a";
+        oc.fillRect(px, 569, 4, 151);
+        oc.fillStyle = "rgba(129, 140, 248, 0.35)";
+        oc.fillRect(px + 20, 610, 118, 12);
+      }
 
-      // Also create base non-mirrored bg_orbit (1280x720) for standard texture lookups
-      const singleOrbit = this.textures.createCanvas("bg_orbit", 1280, 720);
-      if (singleOrbit) {
-        const soc = singleOrbit.getContext();
-        const src = orbitTex.getCanvas();
+      singleOrbit.refresh();
+
+      const orbitTex = this.textures.createCanvas("bg_orbit_mirrored", 2560, 720);
+      if (orbitTex) {
+        const mc = orbitTex.getContext();
+        const src = singleOrbit.getCanvas();
         if (src) {
-          soc.drawImage(src, 0, 0, halfW, 720, 0, 0, halfW, 720);
+          mc.drawImage(src, 0, 0);
+          mc.save();
+          mc.translate(2560, 0);
+          mc.scale(-1, 1);
+          mc.drawImage(src, 0, 0);
+          mc.restore();
         }
-        singleOrbit.refresh();
+        orbitTex.refresh();
       }
     }
 
