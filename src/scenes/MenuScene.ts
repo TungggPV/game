@@ -119,15 +119,21 @@ export class MenuScene extends Phaser.Scene {
     });
     text(this, 690, 684, "P1: A/D  ·  P2: ←/→  ·  Tab: đổi chế độ  ·  H: hướng dẫn", 14, "#7f95a8", "700");
 
-    new Button(this, 130, 652, 170, 52, "BẮT ĐẦU", () => this.start(), 0xffe45c).setSelected(true);
-    new Button(this, 260, 652, 115, 46, "Võ Đường", () => {
+    // Row 1: Primary action & gameplay modes (left pane, x < 600, no overlap with cards)
+    new Button(this, 135, 622, 170, 44, "BẮT ĐẦU", () => this.start(), 0xffe45c).setSelected(true);
+    new Button(this, 285, 622, 110, 44, "Võ Đường", () => {
       sfx.confirm();
-      this.scene.start("training");
+      const prog = loadProgress();
+      const unlocked = HEROES.filter((h) => prog.unlocks.includes(h.id));
+      const heroId = (unlocked[this.picks[0]] ?? unlocked[0]).id;
+      this.scene.start("training", { mode: "training", heroes: [heroId] });
     }, 0xd946ef);
-    new Button(this, 385, 652, 115, 46, "Xưởng Giáp", () => this.scene.start("workshop"), 0x18e6ff);
-    new Button(this, 505, 652, 115, 46, "Sổ Tay", () => this.scene.start("codex"), 0x7dffb0);
-    new Button(this, 625, 652, 115, 46, "BXH Vô Tận", () => this.openEndlessLeaderboard(), 0xffa500);
-    new Button(this, 740, 652, 100, 46, "Giúp (H)", () => this.toggleHelp());
+    new Button(this, 410, 622, 120, 44, "Xưởng Giáp", () => this.scene.start("workshop"), 0x18e6ff);
+    new Button(this, 535, 622, 110, 44, "Sổ Tay", () => this.scene.start("codex"), 0x7dffb0);
+
+    // Row 2: Secondary utilities (neatly placed below Row 1)
+    new Button(this, 135, 674, 170, 36, "BXH Vô Tận", () => this.openEndlessLeaderboard(), 0xffa500);
+    new Button(this, 285, 674, 110, 36, "Giúp (H)", () => this.toggleHelp());
 
     const K = Phaser.Input.Keyboard.KeyCodes;
     this.keys = this.input.keyboard!.addKeys({

@@ -42,9 +42,10 @@ export class TrainingScene extends GameScene {
     super("training");
   }
 
-  override init() {
+  override init(data?: Partial<import("./GameScene").GameData> & { heroId?: string }) {
     this.mode = "training";
-    this.heroIds = ["ignis"];
+    const pickedHero = data?.heroes?.[0] ?? data?.heroId ?? "nova_blade";
+    this.heroIds = [pickedHero];
     this.heroes = [];
     this.enemies = [];
     this.stageIndex = 0;

@@ -106,11 +106,11 @@ export class GameScene extends Phaser.Scene {
   get stage(): StageDef { return STAGES[this.mode === "pk" ? 0 : this.stageIndex]; }
   get worldWidth() { return this.mode === "pk" ? ARENA_WIDTH : ARENA_WIDTH * this.stage.waves.length; }
 
-  init(data: GameData) {
-    this.mode = data.mode;
-    this.heroIds = data.heroes;
-    this.botDifficulty = data.botDifficulty;
-    this.handicaps = data.handicaps;
+  init(data?: Partial<GameData> & { heroId?: string }) {
+    this.mode = data?.mode ?? "solo";
+    this.heroIds = data?.heroes ?? (data?.heroId ? [data.heroId] : ["nova_blade"]);
+    this.botDifficulty = data?.botDifficulty;
+    this.handicaps = data?.handicaps;
     this.activeModifier = "none";
     this.heroes = [];
     this.enemies = [];

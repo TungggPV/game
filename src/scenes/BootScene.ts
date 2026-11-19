@@ -2055,6 +2055,17 @@ export class BootScene extends Phaser.Scene {
       oc.restore();
 
       orbitTex.refresh();
+
+      // Also create base non-mirrored bg_orbit (1280x720) for standard texture lookups
+      const singleOrbit = this.textures.createCanvas("bg_orbit", 1280, 720);
+      if (singleOrbit) {
+        const soc = singleOrbit.getContext();
+        const src = orbitTex.getCanvas();
+        if (src) {
+          soc.drawImage(src, 0, 0, halfW, 720, 0, 0, halfW, 720);
+        }
+        singleOrbit.refresh();
+      }
     }
 
     // 2. floor_void
