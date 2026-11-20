@@ -782,28 +782,22 @@ export class Enemy extends Actor {
         else if (this.move === "whip" || this.move === "dimension_slash") tex = "boss_whip";
         else if (this.move === "beam" || this.move === "clone_cross") tex = "boss_beam";
         else if (this.move === "summon") tex = "boss_summon";
-        else tex = this.enraged ? "boss_rage" : "boss_idle";
+        else tex = this.enraged ? "boss_rage" : "boss";
       } else if (this.enraged) {
         tex = "boss_rage";
-      } else if (moving) {
-        tex = Math.floor(a.stride) % 2 ? "boss_idle" : "boss";
       }
     } else if (this.def.type === "crawler" || this.def.type === "bomber") {
       if (this.state === "selfDestruct" || (this.state === "active" && this.move === "explode")) tex = "crawler_explode";
       else if (this.state === "windup" || (this.state === "active" && this.move === "leap")) tex = "crawler_leap";
-      else if (moving) tex = Math.floor(a.stride * 1.8) % 2 ? "crawler_walk" : "crawler";
     } else if (this.def.type === "mutant") {
       if (this.state === "windup" || this.state === "active") tex = "mutant_punch";
-      else if (moving) tex = (["mutant_idle", "mutant_walk1", "mutant_walk2"] as const)[Math.floor(a.stride * 1.5) % 3];
     } else if (this.def.type === "hunter" || this.def.type === "sniper" || this.def.type === "drone") {
       if (this.state === "active" && (this.move === "shoot" || this.move === "snipe")) tex = "hunter_fire";
       else if (this.state === "windup") tex = "hunter_dive";
-      else if (Math.abs(this.vx) > 120) tex = Math.floor(t * 8) % 2 ? "hunter_dive" : "hunter";
     } else if (this.def.type === "aegis" || this.def.type === "aegis_prime") {
       if (this.isBroken() || this.state === "hurt") tex = "aegis_break";
       else if ((this.state === "windup" || this.state === "active") && this.move === "bash") tex = "aegis_bash";
       else if ((this.state === "windup" || this.state === "active") && this.move === "shoot") tex = "aegis_shot";
-      else if (moving) tex = Math.floor(a.stride * 1.5) % 2 ? "aegis_walk" : "aegis";
     }
     if (tex !== a.lastTex) {
       if (this.scene.textures.exists(tex)) {
@@ -853,7 +847,7 @@ export class Enemy extends Actor {
       lean = -this.facing * 0.18;
     } else if (moving) {
       const cyc = a.stride * Math.PI;
-      yOff = this.flying ? 0 : -Math.abs(Math.sin(cyc)) * (this.def.type === "crawler" ? 3 : 6);
+      yOff = this.flying ? 0 : -Math.abs(Math.sin(cyc)) * (this.def.type === "crawler" || this.def.type === "bomber" ? 3 : this.def.type === "mutant" ? 7 : 6);
       sy = 1 + Math.cos(cyc * 2) * 0.03;
       lean = (this.vx / (this.def.speed * 1.5)) * 0.08;
     } else {
