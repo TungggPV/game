@@ -5,7 +5,21 @@ export const MANIFEST = manifestJson as Record<string, SpriteEntry>;
 
 export const spriteUrl = (key: string) => `/assets/game/${MANIFEST[key].file}`;
 
-export type HeroPose = "idle" | "walk_1" | "walk_2" | "walk_3" | "walk_4" | "jump" | "attack_slash" | "attack_blast" | "dash" | "hit_reaction";
+export type HeroPose =
+  | "idle"
+  | "walk_1"
+  | "walk_2"
+  | "walk_3"
+  | "walk_4"
+  | "walk_5"
+  | "walk_6"
+  | "walk_7"
+  | "walk_8"
+  | "jump"
+  | "attack_slash"
+  | "attack_blast"
+  | "dash"
+  | "hit_reaction";
 
 export const heroKey = (heroId: string, pose: HeroPose) => `${heroId}_${pose}`;
 

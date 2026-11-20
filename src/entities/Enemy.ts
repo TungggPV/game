@@ -4,13 +4,13 @@ import { ENEMIES, type EnemyDef, type EnemyType } from "../config/content";
 import { anchorX, textureHeight } from "../systems/assets";
 import { getDifficultyModifiers } from "../systems/difficulty";
 import { PALETTE } from "../systems/Fx";
-import { AfterimageRingBuffer } from "../systems/motionSynth";
+import { AfterimageRingBuffer, expDecay } from "../systems/motionSynth";
 import { sfx } from "../systems/sfx";
 import type { GameScene } from "../scenes/GameScene";
 import { Actor, type Hit } from "./Actor";
 import type { Hero } from "./Hero";
 
-const LEFT_FACING_TEX = new Set(["crawler", "boss_slam", "boss_whip", "boss_beam"]);
+const LEFT_FACING_TEX = new Set(["crawler", "bomber", "boss_slam", "boss_whip", "boss_beam"]);
 
 export type EliteAffix = "vampiric" | "orbit_shield" | "teleporter" | "molten_trail";
 
@@ -35,6 +35,7 @@ export class Enemy extends Actor {
   shieldHp = 0;
   maxShieldHp = 0;
   readonly afterimages: AfterimageRingBuffer;
+  private blendSprite: Phaser.GameObjects.Image;
 
   // Elite Affixes
   isElite = false;
@@ -74,10 +75,12 @@ export class Enemy extends Actor {
       this.maxPosture = this.posture = 1500;
     }
     this.afterimages = new AfterimageRingBuffer(scene, DEPTH.enemy - 1);
+    this.blendSprite = scene.add.image(x, this.y, def.sprite).setDepth(DEPTH.enemy).setVisible(false);
     this.enemyFxGfx = scene.add.graphics().setDepth(this.sprite.depth + 1).setBlendMode(Phaser.BlendModes.ADD);
 
     if (def.tint) {
       this.sprite.setTint(def.tint);
+      this.blendSprite.setTint(def.tint);
     }
     if (this.flying) this.y = GROUND_Y - 280;
     this.sprite.setOrigin(anchorX(def.sprite), 1).setScale(this.baseScale);
@@ -342,9 +345,16 @@ export class Enemy extends Actor {
 
     const preferred = this.def.type === "hunter" ? 330 : this.def.type === "aegis" ? 240 : this.isBoss ? 230 : 90;
     const speed = this.def.speed * speedMul;
-    if (dist > preferred + 20) this.vx = Math.sign(dx) * speed;
-    else if (dist < preferred - 60 && (this.def.type === "hunter" || this.def.type === "aegis")) this.vx = -Math.sign(dx) * speed * 0.7;
-    else this.vx *= 0.8;
+    if (dist > preferred + 20) {
+      this.state = "move";
+      this.vx = Math.sign(dx) * speed;
+    } else if (dist < preferred - 60 && (this.def.type === "hunter" || this.def.type === "aegis")) {
+      this.state = "move";
+      this.vx = -Math.sign(dx) * speed * 0.7;
+    } else {
+      this.vx *= 0.8;
+      if (Math.abs(this.vx) <= 20 && this.state === "move") this.state = "idle";
+    }
   }
 
   private pickMove(dist: number, target: Hero): Move | null {
@@ -760,7 +770,7 @@ export class Enemy extends Actor {
     }
   }
 
-  private anim = { sx: 1, sy: 1, vx: 0, vy: 0, lean: 0, turn: 1, stride: 0, wasGround: true, lastTex: "" };
+  private anim = { sx: 1, sy: 1, vx: 0, vy: 0, lean: 0, turn: 1, stride: 0, bob: 0, wasGround: true, lastTex: "" };
 
   impulse(sx: number, sy: number) {
     this.anim.sx = sx;
@@ -772,7 +782,8 @@ export class Enemy extends Actor {
   private render() {
     const dt = this.scene.dt || 1 / 60;
     const a = this.anim;
-    const moving = this.state === "move" && Math.abs(this.vx) > 20;
+    const moving = (this.state === "move" || this.state === "idle") && Math.abs(this.vx) > 20;
+    if (moving) a.stride += (Math.abs(this.vx) * dt) / (this.isBoss ? 26 : 18);
 
     const t = this.scene.time.now / 1000;
     let tex = this.def.sprite;
@@ -785,12 +796,23 @@ export class Enemy extends Actor {
         else tex = this.enraged ? "boss_rage" : "boss";
       } else if (this.enraged) {
         tex = "boss_rage";
+      } else if (moving) {
+        const fIdx = (Math.floor(a.stride) % 4) + 1;
+        tex = `boss_run_${fIdx}`;
       }
     } else if (this.def.type === "crawler" || this.def.type === "bomber") {
       if (this.state === "selfDestruct" || (this.state === "active" && this.move === "explode")) tex = "crawler_explode";
       else if (this.state === "windup" || (this.state === "active" && this.move === "leap")) tex = "crawler_leap";
+      else if (moving) {
+        const fIdx = (Math.floor(a.stride) % 4) + 1;
+        tex = `${this.def.type}_run_${fIdx}`;
+      }
     } else if (this.def.type === "mutant") {
       if (this.state === "windup" || this.state === "active") tex = "mutant_punch";
+      else if (moving) {
+        const fIdx = (Math.floor(a.stride) % 4) + 1;
+        tex = `mutant_run_${fIdx}`;
+      }
     } else if (this.def.type === "hunter" || this.def.type === "sniper" || this.def.type === "drone") {
       if (this.state === "active" && (this.move === "shoot" || this.move === "snipe")) tex = "hunter_fire";
       else if (this.state === "windup") tex = "hunter_dive";
@@ -798,7 +820,12 @@ export class Enemy extends Actor {
       if (this.isBroken() || this.state === "hurt") tex = "aegis_break";
       else if ((this.state === "windup" || this.state === "active") && this.move === "bash") tex = "aegis_bash";
       else if ((this.state === "windup" || this.state === "active") && this.move === "shoot") tex = "aegis_shot";
+      else if (moving) {
+        const fIdx = (Math.floor(a.stride) % 4) + 1;
+        tex = `aegis_run_${fIdx}`;
+      }
     }
+    if (!this.scene.textures.exists(tex)) tex = this.def.sprite;
     if (tex !== a.lastTex) {
       if (this.scene.textures.exists(tex)) {
         this.sprite.setTexture(tex);
@@ -821,17 +848,23 @@ export class Enemy extends Actor {
     a.vy += ((1 - a.sy) * k - a.vy * c) * dt;
     a.sx += a.vx * dt;
     a.sy += a.vy * dt;
-    if (moving) a.stride += (Math.abs(this.vx) * dt) / (this.isBoss ? 60 : 40);
 
     a.turn += (this.facing - a.turn) * Math.min(1, dt * (this.isBoss ? 10 : 18));
     const sign = a.turn >= 0 ? 1 : -1;
-    const poseFacing = LEFT_FACING_TEX.has(tex) ? -1 : this.def.artFacing;
+    const poseFacing = LEFT_FACING_TEX.has(tex) || tex.startsWith("crawler_run_") || tex.startsWith("bomber_run_") ? -1 : this.def.artFacing;
     const flip = sign !== poseFacing;
     const ax = anchorX(tex);
     this.sprite.setFlipX(flip).setOrigin(flip ? 1 - ax : ax, 1);
 
+    const targetBob =
+      moving && !this.flying
+        ? -Math.abs(Math.sin(a.stride * Math.PI * 0.5)) *
+          (this.def.type === "crawler" || this.def.type === "bomber" ? 2.5 : this.def.type === "mutant" ? 5 : 4.5)
+        : 0;
+    a.bob = expDecay(a.bob, targetBob, 20, dt);
+
     let lean = 0;
-    let yOff = 0;
+    let yOff = a.bob;
     let sx = 1;
     let sy = 1;
     if (this.state === "windup") {
@@ -843,12 +876,13 @@ export class Enemy extends Actor {
       yOff = 0;
     } else if (this.state === "active") {
       lean = this.facing * 0.12;
+      yOff = 0;
     } else if (this.state === "hurt") {
       lean = -this.facing * 0.18;
+      yOff = 0;
     } else if (moving) {
-      const cyc = a.stride * Math.PI;
-      yOff = this.flying ? 0 : -Math.abs(Math.sin(cyc)) * (this.def.type === "crawler" || this.def.type === "bomber" ? 3 : this.def.type === "mutant" ? 7 : 6);
-      sy = 1 + Math.cos(cyc * 2) * 0.03;
+      const cyc = a.stride * Math.PI * 0.5;
+      sy = 1 + Math.cos(cyc * 2) * 0.025;
       lean = (this.vx / (this.def.speed * 1.5)) * 0.08;
     } else {
       sy = 1 + Math.sin(t * 2.6 + this.hoverSeed) * 0.015;
@@ -858,14 +892,44 @@ export class Enemy extends Actor {
     a.lean += (lean - a.lean) * Math.min(1, dt * 12);
 
     const scale = this.baseScale;
+    const renderSx = scale * a.sx * sx * Math.max(0.25, Math.abs(a.turn));
+    const renderSy = scale * a.sy * sy;
     this.sprite
       .setPosition(this.x, this.y + yOff)
-      .setScale(scale * a.sx * sx * Math.max(0.25, Math.abs(a.turn)), scale * a.sy * sy)
+      .setScale(renderSx, renderSy)
       .setRotation(a.lean);
     this.renderCommon();
     if (this.state === "windup" && this.flashTime <= 0 && !this.isStunned()) {
       const pulse = 0.5 + Math.sin(t * 30) * 0.5;
       this.sprite.setTint(Phaser.Display.Color.GetColor(255, 196 + pulse * 59, 204 + pulse * 51));
+    }
+
+    // 60 FPS Sub-Frame Cross-Blend Interpolation between adjacent enemy run frames
+    if (moving && !this.flying && !this.dead && tex.includes("_run_")) {
+      const sepIdx = tex.lastIndexOf("_run_");
+      const baseRun = tex.slice(0, sepIdx);
+      const curIdx = (Math.floor(a.stride) % 4) + 1;
+      const nextTex = `${baseRun}_run_${(curIdx % 4) + 1}`;
+      if (this.scene.textures.exists(nextTex)) {
+        const frac = a.stride - Math.floor(a.stride);
+        const nextAx = anchorX(nextTex);
+        const nextBaseScale = (this.def.height / textureHeight(nextTex)) * (this.def.scale ?? 1) * 1.18;
+        this.blendSprite
+          .setTexture(nextTex)
+          .setFlipX(flip)
+          .setOrigin(flip ? 1 - nextAx : nextAx, 1)
+          .setPosition(this.x, this.y + yOff)
+          .setScale(nextBaseScale * a.sx * sx * Math.max(0.25, Math.abs(a.turn)), nextBaseScale * a.sy * sy)
+          .setRotation(a.lean)
+          .setAlpha(Math.sin(frac * Math.PI) * 0.36 * this.sprite.alpha)
+          .setVisible(true);
+        if (this.sprite.isTinted) this.blendSprite.setTint(this.sprite.tintTopLeft);
+        else this.blendSprite.clearTint();
+      } else {
+        this.blendSprite.setVisible(false);
+      }
+    } else {
+      this.blendSprite.setVisible(false);
     }
 
     // Update Procedural Attachments & 60FPS Enemy Overlays
@@ -984,6 +1048,7 @@ export class Enemy extends Actor {
   }
 
   override destroy() {
+    this.blendSprite.destroy();
     this.enemyFxGfx.destroy();
     this.thermalBomb?.destroy();
     this.laserScope?.destroy();

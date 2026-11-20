@@ -95,6 +95,7 @@ export class GameScene extends Phaser.Scene {
   private groundVignette?: Phaser.GameObjects.Rectangle;
   private stageFxGfx?: Phaser.GameObjects.Graphics;
   private pauseKeys: Phaser.Input.Keyboard.Key[] = [];
+  private camLookAhead = 90;
 
   constructor(key = "game") {
     super(key);
@@ -942,17 +943,16 @@ export class GameScene extends Phaser.Scene {
     const cam = this.cameras.main;
     const alive = this.heroes.filter((h) => !h.dead);
     const avgFacing = alive.length > 0 ? alive.reduce((s, h) => s + h.facing, 0) / alive.length : 1;
-    const lookAhead = avgFacing * 110;
-    let target = this.arenaMin;
-    if (this.phase === "advance") {
-      const avg = alive.reduce((s, h) => s + h.x, 0) / Math.max(1, alive.length);
-      target = Phaser.Math.Clamp(avg - GAME_WIDTH * 0.4 + lookAhead, this.arenaMin, this.arenaMin + ARENA_WIDTH);
-    } else {
-      const avg = alive.length > 0 ? alive.reduce((s, h) => s + h.x, 0) / alive.length : this.arenaMin + ARENA_WIDTH * 0.5;
-      const desired = avg - GAME_WIDTH * 0.5 + lookAhead;
-      target = Math.abs(desired - cam.scrollX) > 160 ? Phaser.Math.Clamp(desired, this.arenaMin, this.arenaMax - GAME_WIDTH) : cam.scrollX;
-    }
-    cam.scrollX = expDecay(cam.scrollX, target, 5.5, dt);
+    this.camLookAhead = expDecay(this.camLookAhead, avgFacing * 85, 4.2, dt);
+
+    const avg = alive.length > 0 ? alive.reduce((s, h) => s + h.x, 0) / alive.length : this.arenaMin + ARENA_WIDTH * 0.5;
+    const maxScroll = Math.max(this.arenaMin, (this.phase === "advance" ? this.arenaMin + ARENA_WIDTH : this.arenaMax) - GAME_WIDTH);
+    const desired = avg - GAME_WIDTH * (this.phase === "advance" ? 0.42 : 0.48) + this.camLookAhead;
+    const delta = desired - cam.scrollX;
+    const deadzone = this.phase === "advance" ? 0 : 24;
+    const continuousTarget = Math.abs(delta) > deadzone ? cam.scrollX + (delta - Math.sign(delta) * deadzone) : cam.scrollX;
+    const target = Phaser.Math.Clamp(continuousTarget, this.arenaMin, maxScroll);
+    cam.scrollX = expDecay(cam.scrollX, target, 8.0, dt);
   }
 
   // Callbacks

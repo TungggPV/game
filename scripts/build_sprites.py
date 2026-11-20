@@ -13,6 +13,7 @@ Run: python scripts/build_sprites.py   (needs pillow + numpy)
 from __future__ import annotations
 
 import json
+import math
 from collections import deque
 from pathlib import Path
 
@@ -171,7 +172,7 @@ def clear_true_flat_pockets(a: np.ndarray, bg: np.ndarray, shadow_px: int = 16) 
             )
             if len(comp) >= 35 and m_sat <= 2.2 and d_lum <= 2.6 and (len(comp) >= 75 or touches_floor):
                 a[ys_c, xs_c, 3] = 0
-            elif 18 <= len(comp) <= 90 and white_armor_nb == 0 and m_sat <= 6.0 and comp_std <= 3.6 and min(ys_c) >= int(h * 0.55):
+            elif 18 <= len(comp) <= 450 and white_armor_nb == 0 and m_sat <= 4.5 and comp_std <= 3.6 and min(ys_c) >= int(h * 0.45):
                 a[ys_c, xs_c, 3] = 0
 
 
@@ -441,8 +442,8 @@ def body_anchor(a: np.ndarray, pose: str) -> float:
     lum = rgb.mean(axis=2)
     alpha = a[..., 3]
 
-    if pose in ("idle", "walk_1", "walk_2", "walk_3", "walk_4"):
-        # Exclude green/purple cape tails extending behind shoulder (x < 0.35*w) by focusing on opaque helmet core
+    if pose == "idle" or pose.startswith("walk_"):
+        # Exclude green/purple cape tails extending behind shoulder by focusing on opaque helmet core
         y0, y1 = int(h * 0.08), int(h * 0.34)
         mask = alpha[y0:y1, :] > 180
         xs = np.nonzero(mask)[1]
@@ -664,6 +665,10 @@ def generate_variant_hero(
         recolored = recolor_fn(src_arr)
         if pose == "art":
             manifest[f"{target_id}_art"] = save(trim(recolored, pad=2), f"{target_id}_art", 420)
+        elif pose.startswith("walk_"):
+            entry = save(recolored, f"{target_id}_{pose}")
+            entry["ax"] = manifest[f"{src_hero}_{pose}"]["ax"]
+            manifest[f"{target_id}_{pose}"] = entry
         else:
             trimmed = trim(recolored, pad=2)
             entry = save(trimmed, f"{target_id}_{pose}")
@@ -681,6 +686,284 @@ def generate_variant_hero(
         cx, cy, r = side * fx, side * fy, side * fr
         a[((yy - cy) ** 2 + (xx - cx) ** 2) > r * r, 3] = 0
         manifest[f"{target_id}_icon_{slot}"] = save(trim(a, 0), f"{target_id}_icon_{slot}", 96)
+
+
+def _smoothstep(edge0: float, edge1: float, x: np.ndarray) -> np.ndarray:
+    t = np.clip((x - edge0) / max(1e-5, edge1 - edge0), 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
+
+
+def _alpha_over(dst: np.ndarray, src: np.ndarray) -> None:
+    sa = src[..., 3:4].astype(np.float32) / 255.0
+    da = dst[..., 3:4].astype(np.float32) / 255.0
+    out_a = sa + da * (1.0 - sa)
+    mask = (out_a[..., 0] > 1e-4) & (sa[..., 0] > 1e-4)
+    for c in range(3):
+        sc = src[..., c].astype(np.float32)
+        dc = dst[..., c].astype(np.float32)
+        dst[mask, c] = np.clip(
+            (sc[mask] * sa[mask, 0] + dc[mask] * da[mask, 0] * (1.0 - sa[mask, 0])) / out_a[mask, 0], 0, 255
+        ).astype(dst.dtype)
+    dst[..., 3] = np.clip(out_a[..., 0] * 255.0, 0, 255).astype(dst.dtype)
+
+
+def _warp_continuous_leg(
+    full_img: np.ndarray,
+    hip_x: float,
+    hip_y: float,
+    knee_y: float,
+    ang_thigh_deg: float,
+    ang_shin_deg: float,
+    dx_hip: float,
+    dy_hip: float,
+    body_dy: float,
+) -> np.ndarray:
+    h, w = full_img.shape[:2]
+    out = np.zeros_like(full_img)
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+
+    w_hip = _smoothstep(hip_y - 3.0, hip_y + 8.0, yy)
+    w_shin = _smoothstep(knee_y - 5.0, knee_y + 5.0, yy)
+
+    th1 = math.radians(ang_thigh_deg) * w_hip
+    th2 = math.radians(ang_thigh_deg + ang_shin_deg) * w_hip
+    c1, s1 = np.cos(th1), np.sin(th1)
+    c2, s2 = np.cos(th2), np.sin(th2)
+
+    l_thigh = knee_y - hip_y
+    thx = hip_x + dx_hip * w_hip
+    thy = hip_y + dy_hip * w_hip + body_dy
+    tkx = thx - l_thigh * np.sin(math.radians(ang_thigh_deg)) * w_hip
+    tky = thy + l_thigh * np.cos(math.radians(ang_thigh_deg)) * w_hip
+
+    dx1 = xx - thx
+    dy1 = yy - thy
+    sx1 = hip_x + (dx1 * c1 + dy1 * s1)
+    sy1 = hip_y + (-dx1 * s1 + dy1 * c1)
+
+    dx2 = xx - tkx
+    dy2 = yy - tky
+    sx2 = hip_x + (dx2 * c2 + dy2 * s2)
+    sy2 = knee_y + (-dx2 * s2 + dy2 * c2)
+
+    sx = sx1 * (1.0 - w_shin) + sx2 * w_shin
+    sy = sy1 * (1.0 - w_shin) + sy2 * w_shin
+
+    x0 = np.floor(sx).astype(np.int32)
+    y0 = np.floor(sy).astype(np.int32)
+    x1 = x0 + 1
+    y1 = y0 + 1
+    valid = (x0 >= 0) & (x1 < w) & (y0 >= 0) & (y1 < h)
+    wx = sx - x0
+    wy = sy - y0
+
+    for c in range(4):
+        ch = full_img[..., c].astype(np.float32)
+        v00 = np.where(valid, ch[np.clip(y0, 0, h - 1), np.clip(x0, 0, w - 1)], 0.0)
+        v10 = np.where(valid, ch[np.clip(y0, 0, h - 1), np.clip(x1, 0, w - 1)], 0.0)
+        v01 = np.where(valid, ch[np.clip(y1, 0, h - 1), np.clip(x0, 0, w - 1)], 0.0)
+        v11 = np.where(valid, ch[np.clip(y1, 0, h - 1), np.clip(x1, 0, w - 1)], 0.0)
+        val = (v00 * (1 - wx) + v10 * wx) * (1 - wy) + (v01 * (1 - wx) + v11 * wx) * wy
+        if c == 3:
+            val = np.where(val > 105.0, np.clip((val - 105.0) * 2.4 + 135.0, 0.0, 255.0), 0.0)
+        out[..., c] = np.clip(val, 0, 255).astype(full_img.dtype)
+
+    out[: int(hip_y - 2), :, 3] = 0
+    slivers = np.zeros(out.shape[:2], dtype=bool)
+    slivers[2:-2, :] = (
+        (out[2:-2, :, 3] > 0)
+        & ((out[1:-3, :, 3] == 0) | (out[:-4, :, 3] == 0))
+        & ((out[3:-1, :, 3] == 0) | (out[4:, :, 3] == 0))
+    )
+    out[slivers, 3] = 0
+    keep_main(out, 0.15)
+    return out
+
+
+def synthesize_8frame_run(base_frames: list[np.ndarray]) -> list[np.ndarray]:
+    """Articulate 4 cleaned base walk poses into 8 distinct full-gait run phases with passing crossovers."""
+    max_h = max(f.shape[0] for f in base_frames) + 14
+    max_w = max(f.shape[1] for f in base_frames) + 28
+    cx_target = max_w // 2
+    floor_y = max_h - 4
+    aligned = []
+    for f in base_frames:
+        h, w = f.shape[:2]
+        mask = f[int(h * 0.08) : int(h * 0.34), :, 3] > 180
+        xs = np.nonzero(mask)[1]
+        h_cx = int(round((np.percentile(xs, 10) + np.percentile(xs, 90)) / 2)) if xs.size else w // 2
+        can = np.zeros((max_h, max_w, 4), dtype=f.dtype)
+        x_off = cx_target - h_cx
+        y_off = floor_y - h
+        can[y_off : y_off + h, x_off : x_off + w] = f
+        aligned.append(can)
+
+    gait = [
+        # 1. Contact A: wide forward stride
+        (0, +4.0, +4.0, -1.0, 0.0, -4.0, -2.0, +1.0, 0.0, True, +1.0, +4.0, 0),
+        # 2. Recoil A: knee absorbs impact, rear heel lifts
+        (1, -8.0, +22.0, +2.0, -3.0, +6.0, +9.0, -1.0, 0.0, True, +2.5, +2.0, 0),
+        # 3. Passing A: legs cross under hip, rear knee tucked forward
+        (2, -24.0, +28.0, +7.0, -5.5, +17.0, +3.0, -4.5, 0.0, False, -1.0, -2.0, 0),
+        # 4. High Point / Drive A: full push-off, rear leg reaches ahead
+        (3, -34.0, +12.0, +9.5, -4.5, +25.0, +10.0, -6.0, -1.0, False, -2.5, -4.5, 2),
+        # 5. Contact B: opposite stride extension
+        (3, +2.0, +8.0, 0.0, -1.0, -2.0, +3.0, +1.0, 0.0, True, +1.0, -3.5, 0),
+        # 6. Recoil B: weight settles, recovery leg lifts
+        (0, -12.0, +25.0, +3.5, -4.0, +8.0, +7.0, -2.0, 0.0, True, +2.5, -1.0, 0),
+        # 7. Passing B: second leg crossover under hip
+        (1, -27.0, +30.0, +8.0, -6.0, +19.0, +2.0, -5.5, 0.0, True, -1.0, +2.0, 0),
+        # 8. High Point / Drive B: front leg extends toward Contact A
+        (2, -14.0, +16.0, +3.0, -2.5, +6.0, -5.0, -1.0, -3.0, True, -2.5, +4.0, 2),
+    ]
+
+    out_frames: list[np.ndarray] = []
+    for idx, bt, bs_ang, bdx, bdy, ft, fs_ang, fdx, fdy, front_top, body_dy, arm_sw, lift in gait:
+        src = aligned[idx].copy()
+        h, w = src.shape[:2]
+        hip_y = floor_y - 44
+        knee_y = floor_y - 25
+
+        yy, xx = np.mgrid[0:h, 0:w]
+        crotch_x = (cx_target - 5) + np.clip((yy - hip_y) * 0.14, -4, 6)
+        side_arms = ((yy < hip_y + 14) & (xx < cx_target - 15)) | ((yy < hip_y + 9) & (xx > cx_target + 10))
+
+        src_back = src.copy()
+        src_back[side_arms | ((yy >= hip_y - 2) & (xx >= crotch_x)), 3] = 0
+
+        src_front = src.copy()
+        src_front[side_arms | ((yy >= hip_y - 2) & (xx < crotch_x)), 3] = 0
+
+        upper = np.zeros_like(src)
+        upper_mask = (yy < hip_y + 2) | side_arms
+        upper[upper_mask] = src[upper_mask]
+
+        arm_band = np.clip(1.0 - np.abs(yy - (floor_y - 62)) / 22.0, 0.0, 1.0)
+        arm_side = np.clip((xx - cx_target) / 22.0, -1.0, 1.0)
+        u_sx = xx - arm_side * arm_band * arm_sw
+        u_sy = yy - body_dy - arm_side * arm_band * (arm_sw * 0.32)
+        ux0 = np.clip(np.round(u_sx).astype(np.int32), 0, w - 1)
+        uy0 = np.clip(np.round(u_sy).astype(np.int32), 0, h - 1)
+        upper_warped = upper[uy0, ux0]
+
+        w_back = _warp_continuous_leg(src_back, cx_target - 9, hip_y, knee_y, bt, bs_ang, bdx, bdy, body_dy)
+        w_front = _warp_continuous_leg(src_front, cx_target + 7, hip_y, knee_y, ft, fs_ang, fdx, fdy, body_dy)
+
+        comp = np.zeros_like(src)
+        if front_top:
+            _alpha_over(comp, w_back)
+            _alpha_over(comp, w_front)
+        else:
+            _alpha_over(comp, w_front)
+            _alpha_over(comp, w_back)
+        _alpha_over(comp, upper_warped)
+
+        ys_op = np.nonzero(comp[..., 3] > 80)[0]
+        if ys_op.size:
+            cur_bot = int(ys_op.max())
+            target_bot = floor_y - lift
+            dy_shift = target_bot - cur_bot
+            if dy_shift != 0:
+                shifted = np.zeros_like(comp)
+                s_y0 = max(0, -dy_shift)
+                s_y1 = min(h, h - dy_shift)
+                d_y0 = max(0, dy_shift)
+                d_y1 = min(h, h + dy_shift)
+                shifted[d_y0:d_y1] = comp[s_y0:s_y1]
+                comp = shifted
+
+        out_frames.append(comp)
+    return out_frames
+
+
+def synthesize_enemy_run4(base: np.ndarray, kind: str) -> list[np.ndarray]:
+    """Synthesize a smooth 4-frame high-res walk cycle from an enemy's main portrait."""
+    padded = np.pad(base, ((8, 8), (8, 8), (0, 0)), mode="constant", constant_values=0)
+    h, w = padded.shape[:2]
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    cx = w * 0.5
+    frames: list[np.ndarray] = []
+
+    for k in range(4):
+        ph = k * (math.pi / 2.0)
+        s = math.sin(ph)
+        c = math.cos(ph)
+
+        if kind == "crawler":
+            w_leg = _smoothstep(h * 0.45, h * 0.62, yy)
+            w_a = 0.5 + 0.5 * np.cos((xx - cx) / (w * 0.14) * math.pi)
+            lift_a = max(0.0, s)
+            lift_b = max(0.0, -s)
+            dy = -(w_a * lift_a + (1.0 - w_a) * lift_b) * (h * 0.085) * w_leg + abs(s) * (h * 0.02) * (1.0 - w_leg)
+            dx = (w_a * c - (1.0 - w_a) * c) * (w * 0.038) * w_leg
+        else:
+            w_leg = _smoothstep(h * 0.56, h * 0.70, yy)
+            w_left = _smoothstep(cx + w * 0.08, cx - w * 0.08, xx)
+            w_right = 1.0 - w_left
+
+            in_leg_corridor = np.maximum(
+                _smoothstep(w * 0.36, w * 0.25, np.abs(xx - cx)), _smoothstep(h * 0.74, h * 0.82, yy)
+            )
+            w_leg = w_leg * in_leg_corridor
+
+            lift_l = max(0.0, s) * (h * 0.085)
+            lift_r = max(0.0, -s) * (h * 0.085)
+            stride_l = c * (w * 0.042)
+            stride_r = -c * (w * 0.042)
+
+            leg_dy = -(w_left * lift_l + w_right * lift_r) * w_leg
+            leg_dx = (w_left * stride_l + w_right * stride_r) * w_leg
+
+            w_arm = _smoothstep(w * 0.16, w * 0.28, np.abs(xx - cx)) * (1.0 - _smoothstep(h * 0.65, h * 0.80, yy))
+            arm_sign = np.where(xx < cx, -1.0, 1.0)
+            arm_dy = arm_sign * s * (h * 0.038) * w_arm
+            arm_dx = -arm_sign * c * (w * 0.025) * w_arm
+
+            body_bob = -abs(s) * (h * 0.022) * (1.0 - w_leg)
+            dy = leg_dy + arm_dy + body_bob
+            dx = leg_dx + arm_dx
+
+        sx = xx - dx
+        sy = yy - dy
+        x0 = np.floor(sx).astype(np.int32)
+        y0 = np.floor(sy).astype(np.int32)
+        x1 = x0 + 1
+        y1 = y0 + 1
+        valid = (x0 >= 0) & (x1 < w) & (y0 >= 0) & (y1 < h)
+        wx = sx - x0
+        wy = sy - y0
+
+        out = np.zeros_like(padded)
+        for ch_i in range(4):
+            ch = padded[..., ch_i].astype(np.float32)
+            v00 = np.where(valid, ch[np.clip(y0, 0, h - 1), np.clip(x0, 0, w - 1)], 0.0)
+            v10 = np.where(valid, ch[np.clip(y0, 0, h - 1), np.clip(x1, 0, w - 1)], 0.0)
+            v01 = np.where(valid, ch[np.clip(y1, 0, h - 1), np.clip(x0, 0, w - 1)], 0.0)
+            v11 = np.where(valid, ch[np.clip(y1, 0, h - 1), np.clip(x1, 0, w - 1)], 0.0)
+            val = (v00 * (1 - wx) + v10 * wx) * (1 - wy) + (v01 * (1 - wx) + v11 * wx) * wy
+            if ch_i == 3:
+                val = np.where(val > 100.0, np.clip((val - 100.0) * 2.3 + 130.0, 0.0, 255.0), 0.0)
+            out[..., ch_i] = np.clip(val, 0, 255).astype(padded.dtype)
+        frames.append(out)
+    return frames
+
+
+def _crop_union_frames(frames: list[np.ndarray], pivot_x: float, pad: int = 2) -> tuple[list[np.ndarray], float]:
+    """Crop all frames in a cycle to their shared union bbox so w, h, ground line, and torso ax never jitter."""
+    h, w = frames[0].shape[:2]
+    union = np.zeros((h, w), dtype=bool)
+    for fr in frames:
+        union |= fr[..., 3] > 0
+    ys, xs = np.nonzero(union)
+    if ys.size == 0:
+        return frames, 0.5
+    uy0 = max(0, int(ys.min()) - pad)
+    uy1 = min(h, int(ys.max()) + 1 + pad)
+    ux0 = max(0, int(xs.min()) - pad)
+    ux1 = min(w, int(xs.max()) + 1 + pad)
+    cropped = [fr[uy0:uy1, ux0:ux1].copy() for fr in frames]
+    ax = float((pivot_x - ux0) / max(1, ux1 - ux0))
+    return cropped, ax
 
 
 def main() -> None:
@@ -703,6 +986,16 @@ def main() -> None:
             entry = save(trimmed, f"{hero}_{pose}")
             entry["ax"] = body_anchor(trimmed, pose)
             manifest[f"{hero}_{pose}"] = entry
+
+        # Synthesize articulated 8-frame run cycle (walk_1..walk_8) with leg-passing crossovers
+        run8 = synthesize_8frame_run([cleaned_heroes[hero][f"walk_{k}"] for k in range(1, 5)])
+        run8_cropped, run8_ax = _crop_union_frames(run8, float(run8[0].shape[1] // 2), pad=2)
+        for k, fr in enumerate(run8_cropped, 1):
+            pose_name = f"walk_{k}"
+            cleaned_heroes[hero][pose_name] = fr
+            entry = save(fr, f"{hero}_{pose_name}")
+            entry["ax"] = run8_ax
+            manifest[f"{hero}_{pose_name}"] = entry
 
         for pose, (x0, x1) in ROW2_POSES:
             x1_eff = 948 if (hero == "emerald_phantom" and pose == "hit_reaction") else x1
@@ -738,7 +1031,7 @@ def main() -> None:
     generate_variant_hero("cryo_archon", "volt_sentinel", cleaned_heroes["volt_sentinel"], recolor_to_cryo_archon, manifest)
     generate_variant_hero("void_reaper", "emerald_phantom", cleaned_heroes["emerald_phantom"], recolor_to_void_reaper, manifest)
 
-    # 3. Extract all 25 enemy sprites/poses from uncut enemy master sheet + aliases
+    # 3. Extract all 25 enemy sprites/poses from uncut enemy master sheet + aliases + high-res 4-frame runs
     enemy_sheet = load(ENEMY_MASTER_SHEET)
     enemy_bg = estimate_sheet_bg(enemy_sheet)
     cleaned_enemies: dict[str, np.ndarray] = {}
@@ -751,6 +1044,22 @@ def main() -> None:
         entry = save(trimmed, name)
         entry["ax"] = foot_anchor(trimmed)
         manifest[name] = entry
+
+    for ename in ("crawler", "mutant", "aegis", "boss"):
+        base_e = cleaned_enemies[ename]
+        base_ax_px = foot_anchor(base_e) * base_e.shape[1] + 8.0
+        eruns = synthesize_enemy_run4(base_e, ename)
+        eruns_cropped, erun_ax = _crop_union_frames(eruns, base_ax_px, pad=2)
+        for k, fr in enumerate(eruns_cropped, 1):
+            rname = f"{ename}_run_{k}"
+            entry = save(fr, rname)
+            entry["ax"] = erun_ax
+            manifest[rname] = entry
+            if ename == "crawler":
+                bname = f"bomber_run_{k}"
+                bentry = save(fr, bname)
+                bentry["ax"] = erun_ax
+                manifest[bname] = bentry
 
     for alias, src_name in ENEMY_ALIASES.items():
         trimmed = cleaned_enemies[src_name]

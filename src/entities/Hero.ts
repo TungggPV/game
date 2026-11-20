@@ -47,10 +47,11 @@ export class Hero extends Actor {
   private ghostTimer = 0;
   private readonly pal: Palette;
   private readonly hasWalk: boolean;
-  // Procedural animation state: spring-driven squash/stretch, smoothed lean and turn.
-  private anim = { sx: 1, sy: 1, vx: 0, vy: 0, lean: 0, turn: 1, stride: 0, dust: 0, wasGround: true, lastKey: "" };
+  // Procedural animation state: spring-driven squash/stretch, smoothed lean, bob and turn.
+  private anim = { sx: 1, sy: 1, vx: 0, vy: 0, lean: 0, turn: 1, stride: 0, bob: 0, dust: 0, wasGround: true, lastKey: "" };
   readonly afterimages: AfterimageRingBuffer;
   readonly smearArc: ProceduralSmearArc;
+  private blendSprite: Phaser.GameObjects.Image;
   private comboAura?: Phaser.GameObjects.Image;
   private hexShield?: Phaser.GameObjects.Image;
   private energyScarf: Phaser.GameObjects.Graphics;
@@ -77,6 +78,7 @@ export class Hero extends Actor {
     this.energy = 30 + Math.max(0, Math.round(upEnergy));
     this.afterimages = new AfterimageRingBuffer(scene, DEPTH.hero - 1);
     this.smearArc = new ProceduralSmearArc(scene);
+    this.blendSprite = scene.add.image(x, this.y, heroKey(def.id, "idle")).setDepth(DEPTH.hero + index).setVisible(false);
     this.comboAura = scene.add.image(0, 0, "glow").setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.hero - 1).setVisible(false);
     this.energyScarf = scene.add.graphics().setDepth(DEPTH.hero + index - 1);
     this.energyScarf.setBlendMode(Phaser.BlendModes.ADD);
@@ -461,7 +463,7 @@ export class Hero extends Actor {
     if (this.state === "attack") return "attack_slash";
     if (this.state === "cast") return this.castPose;
     if (!this.onGround) return "jump";
-    if (this.hasWalk && Math.abs(this.vx) > 60) return `walk_${(Math.floor(this.anim.stride) % 4) + 1}` as HeroPose;
+    if (this.hasWalk && Math.abs(this.vx) > 35) return `walk_${(Math.floor(this.anim.stride) % 8) + 1}` as HeroPose;
     return "idle";
   }
 
@@ -477,7 +479,7 @@ export class Hero extends Actor {
     const a = this.anim;
     const grounded = this.onGround;
     const speed = Math.abs(this.vx);
-    const running = grounded && speed > 60 && (this.state === "free" || this.state === "hurt");
+    const running = grounded && speed > 35 && (this.state === "free" || this.state === "hurt");
 
     // Landing squash + dust.
     if (grounded && !a.wasGround && !this.dead) {
@@ -496,8 +498,8 @@ export class Hero extends Actor {
     a.sx += a.vx * dt;
     a.sy += a.vy * dt;
 
-    // Stride advances with distance covered so feet don't skate.
-    if (running) a.stride += (speed * dt) / 34;
+    // Stride advances at smooth 8-frame sprint cadence proportional to distance covered.
+    if (running) a.stride += (speed * dt) / 18;
     else a.stride = 0;
 
     const pose = this.pose();
@@ -518,18 +520,20 @@ export class Hero extends Actor {
     this.sprite.setFlipX(flip).setOrigin(flip ? 1 - ax : ax, 1);
 
     const t = this.scene.time.now / 1000;
+    const walkCycle = (a.stride / 8) * Math.PI * 2;
+    const targetBob = running ? -Math.abs(Math.sin(walkCycle)) * 4.5 : 0;
+    a.bob = expDecay(a.bob, targetBob, 22, dt);
+    const yOff = a.bob;
+
     let leanTarget = 0;
-    let yOff = 0;
     let breathe = 0;
     if (running) {
-      leanTarget = (this.vx / (this.def.speed * 1.2)) * 0.15;
-      const cycle = a.stride * Math.PI * (this.hasWalk ? 0.5 : 1);
-      yOff = -Math.abs(Math.sin(cycle)) * 6;
-      breathe = Math.cos(cycle * 2) * 0.03;
+      leanTarget = (this.vx / (this.def.speed * 1.15)) * 0.13 + Math.sin(walkCycle) * 0.022 * this.facing;
+      breathe = Math.cos(walkCycle * 2) * 0.022;
       a.dust -= dt;
       if (a.dust <= 0) {
-        this.scene.fx.dust(this.x - this.facing * 24, this.facing, 0.45);
-        a.dust = 0.16;
+        this.scene.fx.dust(this.x - this.facing * 24, this.facing, 0.42);
+        a.dust = 0.14;
       }
     } else if (!grounded && !this.dead) {
       leanTarget = Phaser.Math.Clamp(this.vy / 1400, -0.5, 0.5) * 0.25 * this.facing + (this.vx / 2400);
@@ -552,7 +556,33 @@ export class Hero extends Actor {
     this.sprite.setPosition(this.x, this.y + yOff).setScale(sx, sy).setRotation(a.lean);
     this.renderCommon();
 
-    // 60FPS Procedural Energy Cape + Front/Back Armor Sub-Rig (Reactor, Visor Glint, Thrusters, Orbiting Shards, Weapon Aura)
+    if (this.invuln > 0 && !this.dead && this.state !== "dash" && this.state !== "sweep" && this.state !== "cast") {
+      this.sprite.setAlpha(0.55 + Math.sin(this.scene.time.now / 35) * 0.35);
+    } else {
+      this.sprite.setAlpha(this.dead ? 0.55 : 1);
+    }
+
+    // 60 FPS Sub-Frame Cross-Blend Interpolation between adjacent articulated run poses
+    if (running && this.hasWalk && !this.dead) {
+      const frameIdx = Math.floor(a.stride) % 8;
+      const nextPose = `walk_${((frameIdx + 1) % 8) + 1}` as HeroPose;
+      const nextKey = heroKey(this.def.id, nextPose);
+      const frac = a.stride - Math.floor(a.stride);
+      const nextAx = anchorX(nextKey);
+      this.blendSprite
+        .setTexture(nextKey)
+        .setFlipX(flip)
+        .setOrigin(flip ? 1 - nextAx : nextAx, 1)
+        .setPosition(this.x, this.y + yOff)
+        .setScale(sx, sy)
+        .setRotation(a.lean)
+        .setAlpha(Math.sin(frac * Math.PI) * 0.38 * this.sprite.alpha)
+        .setVisible(true);
+    } else {
+      this.blendSprite.setVisible(false);
+    }
+
+    // 60FPS Procedural Energy Cape + Front/Back Armor Sub-Rig (Sprint Streaks, Thrusters, Visor Glint, Orbiting Motes)
     this.drawProceduralRig(t, yOff, running, grounded);
 
     // 2. Weapon Glow streak at hand during attack
@@ -574,12 +604,6 @@ export class Hero extends Actor {
         .setAlpha(0.45);
     } else {
       this.comboAura?.setVisible(false);
-    }
-
-    if (this.invuln > 0 && !this.dead && this.state !== "dash" && this.state !== "sweep" && this.state !== "cast") {
-      this.sprite.setAlpha(0.55 + Math.sin(this.scene.time.now / 35) * 0.35);
-    } else {
-      this.sprite.setAlpha(this.dead ? 0.55 : 1);
     }
 
     if (this.hexShield) {
@@ -647,7 +671,25 @@ export class Hero extends Actor {
       }
     }
 
-    // 3. Thruster Jet Cones during sprint, airborne, dash, or Overdrive
+    // 3. Thruster Jet Cones & 60 FPS Sprint Wind-Streaks / Footstep Sparks during sprint, airborne, dash, or Overdrive
+    if (running) {
+      const spdRatio = Math.min(1, Math.abs(this.vx) / Math.max(1, this.def.speed));
+      for (const [kIdx, syOff] of [-18, -54, -92].entries()) {
+        const phase = (t * 7.5 + kIdx * 0.33) % 1;
+        const streakLen = (18 + spdRatio * 24) * (1 - phase * 0.4);
+        const startX = this.x - dir * (14 + phase * 18);
+        const startY = this.y + syOff + yOff;
+        back.lineStyle(2.0 - kIdx * 0.3, light, (0.36 - kIdx * 0.06) * (1 - phase) * spdRatio);
+        back.beginPath();
+        back.moveTo(startX, startY);
+        back.lineTo(startX - dir * streakLen, startY + 2);
+        back.strokePath();
+      }
+      if (Math.random() < 0.35 * spdRatio) {
+        back.fillStyle(light, 0.72);
+        back.fillCircle(this.x - dir * (10 + Math.random() * 14), GROUND_Y - 3 - Math.random() * 6, 2.2);
+      }
+    }
     if (running || !grounded || this.state === "dash" || this.state === "sweep" || this.overdriveTimer > 0) {
       const flicker = 0.75 + Math.sin(t * 48) * 0.25;
       const jetLen = (this.state === "dash" || this.overdriveTimer > 0 ? 34 : 20) * flicker;
@@ -804,6 +846,7 @@ export class Hero extends Actor {
   }
 
   override destroy() {
+    this.blendSprite.destroy();
     this.hexShield?.destroy();
     this.energyScarf.destroy();
     this.armorOverlayGfx.destroy();
