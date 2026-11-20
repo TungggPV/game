@@ -4,7 +4,7 @@ import type { Actor, Hit } from "../entities/Actor";
 import type { Enemy } from "../entities/Enemy";
 import type { Hero } from "../entities/Hero";
 import type { GameScene } from "../scenes/GameScene";
-import { PALETTE } from "./Fx";
+import { fxSeq, PALETTE } from "./Fx";
 import { sfx } from "./sfx";
 
 export type Hazard = {
@@ -188,7 +188,7 @@ export class HazardSystem {
     const startX = x - 320;
     const startY = this.scene.cameras.main.worldView.y - 100;
     const rock = { x: startX, y: startY };
-    const meteorKeys = ["fx_meteor_1", "fx_meteor_2", "fx_meteor_3", "fx_meteor_4"];
+    const meteorKeys = fxSeq("fx_meteor", 8);
     const head = this.scene.add
       .image(startX, startY, "glow")
       .setTint(pal.main)
@@ -227,7 +227,7 @@ export class HazardSystem {
       duration: 360,
       ease: "Quad.easeIn",
       onUpdate: (tw) => {
-        const mk = meteorKeys[Math.floor(tw.progress * 8) % meteorKeys.length];
+        const mk = meteorKeys[Math.floor(tw.progress * 16) % meteorKeys.length];
         if (core.texture.key !== mk && this.scene.textures.exists(mk)) core.setTexture(mk);
       },
       onComplete: () => {

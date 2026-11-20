@@ -3,7 +3,7 @@ import { GROUND_Y, type SkillSlot } from "../config/constants";
 import type { SkillDef } from "../config/heroes";
 import type { Hero } from "../entities/Hero";
 import type { GameScene } from "../scenes/GameScene";
-import { PALETTE } from "./Fx";
+import { fxSeq, PALETTE } from "./Fx";
 import { sfx } from "./sfx";
 
 export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: SkillDef) => {
@@ -17,7 +17,7 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
       sfx[skill.chain ? "zap" : "shoot"]();
       const mx = hero.x + dir * 70;
       const my = hero.y - 88;
-      fx.playAnim(mx, my, ["fx_blast_anim_1", "fx_blast_anim_2", "fx_blast_anim_3", "fx_blast_anim_4"], {
+      fx.playAnim(mx, my, fxSeq("fx_blast_anim", 8), {
         flipX: dir < 0,
         tint: pal.main,
         scale: 0.68,
@@ -60,7 +60,7 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
             scene.time.delayedCall(i * 75, () => {
               for (const side of i === 0 ? [0] : [-1, 1]) {
                 const px = Phaser.Math.Clamp(hero.x + side * offset, minX + 60, maxX - 60);
-                fx.playAnim(px, GROUND_Y + 6, ["fx_earth_spire_1", "fx_earth_spire_2", "fx_earth_spire_3", "fx_earth_spire_4"], {
+                fx.playAnim(px, GROUND_Y + 6, fxSeq("fx_earth_spire", 8), {
                   originY: 1,
                   blendMode: Phaser.BlendModes.NORMAL,
                   scale: 1.35,
@@ -76,13 +76,13 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
           return;
         }
         // Nova Overdrive: swirling plasma vortex + sweeping beam + animated Nova pillars
-        fx.playAnim(hero.x, GROUND_Y + 6, ["fx_nova_vortex_1", "fx_nova_vortex_2", "fx_nova_vortex_3", "fx_nova_vortex_4"], {
+        fx.playAnim(hero.x, GROUND_Y + 6, fxSeq("fx_nova_vortex", 8), {
           originY: 1,
           scale: 1.85,
           endScale: 2.35,
           duration: 620,
         });
-        fx.playAnim(hero.x + dir * 240, cy, ["fx_blast_anim_3", "fx_blast_anim_4", "fx_blast_anim_5", "fx_blast_anim_6"], {
+        fx.playAnim(hero.x + dir * 240, cy, fxSeq("fx_blast_anim", 8), {
           flipX: dir < 0,
           tint: pal.main,
           scale: 2.6,
@@ -103,7 +103,7 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
         for (let i = 0; i < 6; i += 1) {
           const px = Phaser.Math.Linear(minX + 120, maxX - 120, i / 5);
           scene.time.delayedCall(80 + Math.abs(px - hero.x) / 4, () => {
-            fx.playAnim(px, GROUND_Y + 6, ["fx_nova_pillar_1", "fx_nova_pillar_2", "fx_nova_pillar_3", "fx_nova_pillar_4"], {
+            fx.playAnim(px, GROUND_Y + 6, fxSeq("fx_nova_pillar", 8), {
               originY: 1,
               scale: 1.35,
               endScale: 1.55,
@@ -122,7 +122,7 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
       const cy = hero.y - 75;
       if (hero.def.element === "fire") {
         // Inferno Arc: sweeping painted fire vortex + dual fire crescents
-        fx.playAnim(cx, GROUND_Y + 8, ["fx_fire_vortex_1", "fx_fire_vortex_2", "fx_fire_vortex_3", "fx_fire_vortex_4"], {
+        fx.playAnim(cx, GROUND_Y + 8, fxSeq("fx_fire_vortex", 8), {
           originY: 1,
           flipX: dir < 0,
           scale: 1.45,
@@ -147,14 +147,14 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
         fx.shake(0.01, 180);
       } else if (hero.def.element === "void") {
         // Phantom Rift: animated dimensional X-tear + black-hole orb implosion + siphon heal
-        fx.playAnim(cx, cy, ["fx_void_rift_1", "fx_void_rift_2", "fx_void_rift_3", "fx_void_rift_4"], {
+        fx.playAnim(cx, cy, fxSeq("fx_void_rift", 8), {
           scale: 1.25,
           endScale: 1.65,
           endRotation: 0.18 * dir,
           duration: 380,
           depth: 58,
         });
-        fx.playAnim(cx, cy, ["fx_void_orb_1", "fx_void_orb_2", "fx_void_orb_3", "fx_void_orb_4"], {
+        fx.playAnim(cx, cy, fxSeq("fx_void_orb", 8), {
           scale: 0.85,
           endScale: 1.25,
           duration: 360,
@@ -171,7 +171,7 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
       } else if (hero.def.element === "earth") {
         // Earth Barrier: 3 erupting volcanic obsidian spire monoliths + ground fissures
         for (const off of [-48, 0, 48]) {
-          fx.playAnim(cx + off, GROUND_Y + 6, ["fx_earth_spire_1", "fx_earth_spire_2", "fx_earth_spire_3", "fx_earth_spire_4"], {
+          fx.playAnim(cx + off, GROUND_Y + 6, fxSeq("fx_earth_spire", 8), {
             originY: 1,
             blendMode: Phaser.BlendModes.NORMAL,
             scale: off === 0 ? 1.3 : 1.05,
@@ -189,7 +189,7 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
         [0, 1, 2].forEach((i) => {
           scene.time.delayedCall(i * 55, () => fx.slash(cx, cy + 30 - i * 40, dir, pal, { scale: 1.5 + i * 0.25, tilt: -0.28, sweep: 0.76, duration: 260, thin: i === 1 }));
         });
-        fx.playAnim(cx, GROUND_Y + 6, ["fx_nova_pillar_1", "fx_nova_pillar_2", "fx_nova_pillar_3", "fx_nova_pillar_4"], {
+        fx.playAnim(cx, GROUND_Y + 6, fxSeq("fx_nova_pillar", 8), {
           originY: 1,
           scale: 1.28,
           endScale: 1.46,
@@ -239,7 +239,7 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
           }
           if (hero.def.element === "cryo") {
             // Eternal Permafrost: falling crystalline ice monolith sprite slamming into frost nova
-            const iceKeys = ["fx_ice_monolith_1", "fx_ice_monolith_2", "fx_ice_monolith_3", "fx_ice_monolith_4"];
+            const iceKeys = fxSeq("fx_ice_monolith", 8);
             const ice = scene.add
               .image(x, -120, scene.textures.exists(iceKeys[0]) ? iceKeys[0] : "shard")
               .setOrigin(0.5, 1)
@@ -256,7 +256,7 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
                 sfx.boom();
                 ice.setOrigin(0.5, 1).setRotation(0);
                 fx.playAnim(x, GROUND_Y + 6, iceKeys, { originY: 1, blendMode: Phaser.BlendModes.NORMAL, scale: 1.25, endScale: 1.4, duration: 520 });
-                fx.playAnim(x, GROUND_Y - 10, ["fx_cryo_blizzard_1", "fx_cryo_blizzard_2", "fx_cryo_blizzard_3", "fx_cryo_blizzard_4"], {
+                fx.playAnim(x, GROUND_Y - 10, fxSeq("fx_cryo_blizzard", 8), {
                   scale: 1.15,
                   scaleY: 0.42,
                   duration: 380,
@@ -276,13 +276,13 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
           sfx.zap();
           const top = scene.cameras.main.worldView.y - 20;
           fx.lightning(x + Phaser.Math.Between(-50, 50), top, x, GROUND_Y - 6, pal.main, 1.2, 2, 240);
-          fx.playAnim(x, GROUND_Y + 8, ["fx_volt_bolt_1", "fx_volt_bolt_2", "fx_volt_bolt_3", "fx_volt_bolt_4"], {
+          fx.playAnim(x, GROUND_Y + 8, fxSeq("fx_volt_bolt", 8), {
             originY: 1,
             scale: 1.35,
             endScale: 1.55,
             duration: 340,
           });
-          fx.playAnim(x, GROUND_Y - 30, ["fx_boom_energy_1", "fx_boom_energy_2", "fx_boom_energy_3", "fx_boom_energy_4", "fx_boom_energy_5", "fx_boom_energy_6"], {
+          fx.playAnim(x, GROUND_Y - 30, fxSeq("fx_boom_energy", 8), {
             scale: 0.9,
             endScale: 1.2,
             tint: pal.main,
@@ -326,7 +326,7 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
             .setDisplaySize(Math.abs(toX - fromX), 18).setAlpha(0.62).setDepth(55);
           scene.tweens.add({ targets: line, displayHeight: 2, alpha: 0, duration: 260, onComplete: () => line.destroy() });
           if (isVoid) {
-            fx.playAnim(midX + ((i % 3) - 1) * 140, y, ["fx_void_rift_1", "fx_void_rift_2", "fx_void_rift_3", "fx_void_rift_4"], {
+            fx.playAnim(midX + ((i % 3) - 1) * 140, y, fxSeq("fx_void_rift", 8), {
               scale: 1.05,
               endScale: 1.35,
               rotation: (i % 2 ? 1 : -1) * 0.25,
@@ -335,7 +335,7 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
               depth: 57,
             });
             if (i % 2 === 0) {
-              fx.playAnim(midX, GROUND_Y - 70, ["fx_void_orb_1", "fx_void_orb_2", "fx_void_orb_3", "fx_void_orb_4"], {
+              fx.playAnim(midX, GROUND_Y - 70, fxSeq("fx_void_orb", 8), {
                 scale: 1.0,
                 endScale: 1.35,
                 alpha: 0.76,
@@ -343,7 +343,7 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
               });
             }
           } else if (i % 2 === 0) {
-            fx.playAnim(midX, GROUND_Y + 6, ["fx_wind_tornado_1", "fx_wind_tornado_2", "fx_wind_tornado_3", "fx_wind_tornado_4"], {
+            fx.playAnim(midX, GROUND_Y + 6, fxSeq("fx_wind_tornado", 8), {
               originY: 1,
               scale: 1.25,
               endScale: 1.5,

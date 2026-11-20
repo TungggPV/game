@@ -416,6 +416,8 @@ const TEXTURES: Record<string, [number, number, Draw]> = {
 };
 
 export class BootScene extends Phaser.Scene {
+  private aliasMap: Array<[string, string]> = [];
+
   constructor() {
     super("boot");
   }
@@ -428,10 +430,27 @@ export class BootScene extends Phaser.Scene {
       .setOrigin(0.5);
     this.load.on("progress", (p: number) => (bar.width = 480 * p));
 
-    for (const key of Object.keys(MANIFEST)) this.load.image(key, spriteUrl(key));
+    this.aliasMap = [];
+    const seenFile = new Map<string, string>();
+    for (const key of Object.keys(MANIFEST)) {
+      const file = MANIFEST[key].file;
+      const primary = seenFile.get(file);
+      if (primary) {
+        this.aliasMap.push([key, primary]);
+      } else {
+        seenFile.set(file, key);
+        this.load.image(key, spriteUrl(key));
+      }
+    }
   }
 
   create() {
+    for (const [alias, primary] of this.aliasMap) {
+      if (!this.textures.exists(alias) && this.textures.exists(primary)) {
+        const img = this.textures.get(primary).getSourceImage() as HTMLImageElement;
+        if (img) this.textures.addImage(alias, img);
+      }
+    }
     for (const [key, [w, h, draw]] of Object.entries(TEXTURES)) {
       if (this.textures.exists(key)) this.textures.remove(key);
       const tex = this.textures.createCanvas(key, w, h);

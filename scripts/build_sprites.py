@@ -675,6 +675,21 @@ def orient_attack_slash_forward(trimmed: np.ndarray, hero: str = "nova_blade") -
     return trim(af, pad=2)
 
 
+def _emit_hero_aliases(manifest: dict[str, dict], hid: str) -> None:
+    """Register legacy pose aliases pointing to canonical high-density frames without duplicating PNGs."""
+    aliases = {
+        "jump_rise": "jump_2",
+        "jump_apex": "jump_4",
+        "jump_fall": "jump_5",
+        "attack_slash_1": "attack_c1_3",
+        "attack_slash_2": "attack_c2_3",
+        "attack_slash_3": "attack_c3_3",
+    }
+    for alias, target in aliases.items():
+        if f"{hid}_{target}" in manifest:
+            manifest[f"{hid}_{alias}"] = dict(manifest[f"{hid}_{target}"])
+
+
 def generate_variant_hero(
     target_id: str,
     src_hero: str,
@@ -683,7 +698,18 @@ def generate_variant_hero(
     manifest: dict[str, dict],
 ) -> None:
     """Create a complete expanded-pose + art + 4-icon hero variant via recolor helper."""
-    cycle_prefixes = ("walk_", "idle_", "jump_", "attack_slash_", "attack_blast_", "cast_ult_", "dash_")
+    cycle_prefixes = (
+        "walk_",
+        "idle_",
+        "jump_",
+        "attack_c1_",
+        "attack_c2_",
+        "attack_c3_",
+        "attack_blast_",
+        "cast_ult_",
+        "dash_",
+        "hit_reaction_",
+    )
     for pose, src_arr in src_poses.items():
         recolored = recolor_fn(src_arr)
         if pose == "art":
@@ -697,6 +723,7 @@ def generate_variant_hero(
             entry = save(trimmed, f"{target_id}_{pose}")
             entry["ax"] = body_anchor(trimmed, pose)
             manifest[f"{target_id}_{pose}"] = entry
+    _emit_hero_aliases(manifest, target_id)
 
     icon_names = {"basic": "j_basic_attack", "skill1": "k_skill1", "skill2": "l_skill2", "ultimate": "u_ultimate"}
     for slot, file in icon_names.items():
@@ -834,8 +861,8 @@ def _bilinear_warp(
     return out
 
 
-def synthesize_12frame_run(base_frames: list[np.ndarray]) -> list[np.ndarray]:
-    """Articulate 4 cleaned base walk poses into 12 smooth gait phases (6 per half-stride)."""
+def synthesize_16frame_run(base_frames: list[np.ndarray]) -> list[np.ndarray]:
+    """Articulate 4 cleaned base walk poses into 16 silky gait phases (8 per half-stride) with bilinear upper warp."""
     max_h = max(f.shape[0] for f in base_frames) + 14
     max_w = max(f.shape[1] for f in base_frames) + 28
     cx_target = max_w // 2
@@ -852,25 +879,40 @@ def synthesize_12frame_run(base_frames: list[np.ndarray]) -> list[np.ndarray]:
         can[y_off : y_off + h, x_off : x_off + w] = f
         aligned.append(can)
 
-    gait = [
+    base_gait = [
         # Half-stride A: Contact -> Recoil -> Pass-In -> Pass-Cross -> Drive -> Reach
-        (0, +5.0, +4.0, -1.0, 0.0, -5.0, -2.0, +1.0, 0.0, True, +1.0, +4.5, 0),
-        (0, -4.0, +18.0, +1.5, -2.0, +4.0, +7.0, -0.5, 0.0, True, +2.8, +2.5, 0),
-        (1, -14.0, +27.0, +4.5, -4.5, +12.0, +5.0, -3.0, 0.0, True, +0.8, 0.0, 0),
-        (2, -25.0, +28.0, +7.5, -5.5, +18.0, +3.0, -4.8, 0.0, False, -1.2, -2.2, 0),
-        (3, -34.0, +14.0, +9.5, -4.5, +24.0, +9.0, -6.0, -1.0, False, -2.6, -4.2, 2),
-        (3, -18.0, +6.0, +4.5, -2.5, +12.0, +6.0, -2.5, -1.5, False, -1.8, -4.8, 3),
+        (0, +5.0, +4.0, -1.0, 0.0, -5.0, -2.0, +1.0, 0.0, True, +1.0, +4.5, 0.0),
+        (0, -4.0, +18.0, +1.5, -2.0, +4.0, +7.0, -0.5, 0.0, True, +2.8, +2.5, 0.0),
+        (1, -14.0, +27.0, +4.5, -4.5, +12.0, +5.0, -3.0, 0.0, True, +0.8, 0.0, 0.0),
+        (2, -25.0, +28.0, +7.5, -5.5, +18.0, +3.0, -4.8, 0.0, False, -1.2, -2.2, 0.0),
+        (3, -34.0, +14.0, +9.5, -4.5, +24.0, +9.0, -6.0, -1.0, False, -2.6, -4.2, 2.0),
+        (3, -18.0, +6.0, +4.5, -2.5, +12.0, +6.0, -2.5, -1.5, False, -1.8, -4.8, 3.0),
         # Half-stride B: Contact -> Recoil -> Pass-In -> Pass-Cross -> Drive -> Reach
-        (3, +3.0, +7.0, 0.0, -1.0, -3.0, +3.0, +1.0, 0.0, True, +1.0, -3.5, 0),
-        (0, -6.0, +20.0, +2.0, -2.8, +5.0, +8.0, -1.0, 0.0, True, +2.8, -1.5, 0),
-        (1, -17.0, +29.0, +5.5, -5.0, +14.0, +4.0, -3.5, 0.0, True, +0.6, +0.5, 0),
-        (1, -27.0, +30.0, +8.0, -6.0, +19.0, +2.0, -5.5, 0.0, True, -1.2, +2.4, 0),
-        (2, -22.0, +19.0, +5.5, -3.8, +12.0, -3.0, -3.0, -2.5, True, -2.5, +4.2, 2),
-        (2, -8.0, +11.0, +2.0, -1.8, +2.0, -4.0, 0.0, -2.0, True, -1.5, +4.8, 3),
+        (3, +3.0, +7.0, 0.0, -1.0, -3.0, +3.0, +1.0, 0.0, True, +1.0, -3.5, 0.0),
+        (0, -6.0, +20.0, +2.0, -2.8, +5.0, +8.0, -1.0, 0.0, True, +2.8, -1.5, 0.0),
+        (1, -17.0, +29.0, +5.5, -5.0, +14.0, +4.0, -3.5, 0.0, True, +0.6, +0.5, 0.0),
+        (1, -27.0, +30.0, +8.0, -6.0, +19.0, +2.0, -5.5, 0.0, True, -1.2, +2.4, 0.0),
+        (2, -22.0, +19.0, +5.5, -3.8, +12.0, -3.0, -3.0, -2.5, True, -2.5, +4.2, 2.0),
+        (2, -8.0, +11.0, +2.0, -1.8, +2.0, -4.0, 0.0, -2.0, True, -1.5, +4.8, 3.0),
     ]
 
+    n_base = len(base_gait)
+    gait16 = []
+    for i in range(16):
+        pos = i * (n_base / 16.0)
+        k0 = int(math.floor(pos)) % n_base
+        k1 = (k0 + 1) % n_base
+        frac = pos - math.floor(pos)
+        tc = 0.5 - 0.5 * math.cos(frac * math.pi)
+        r0 = base_gait[k0]
+        r1 = base_gait[k1]
+        idx = r0[0] if frac < 0.5 else r1[0]
+        front_top = r0[9] if frac < 0.5 else r1[9]
+        interp = tuple(r0[j] + (r1[j] - r0[j]) * tc for j in (1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12))
+        gait16.append((idx, interp[0], interp[1], interp[2], interp[3], interp[4], interp[5], interp[6], interp[7], front_top, interp[8], interp[9], int(round(interp[10]))))
+
     out_frames: list[np.ndarray] = []
-    for idx, bt, bs_ang, bdx, bdy, ft, fs_ang, fdx, fdy, front_top, body_dy, arm_sw, lift in gait:
+    for idx, bt, bs_ang, bdx, bdy, ft, fs_ang, fdx, fdy, front_top, body_dy, arm_sw, lift in gait16:
         src = aligned[idx].copy()
         h, w = src.shape[:2]
         hip_y = floor_y - 44
@@ -892,11 +934,9 @@ def synthesize_12frame_run(base_frames: list[np.ndarray]) -> list[np.ndarray]:
 
         arm_band = np.clip(1.0 - np.abs(yy - (floor_y - 62)) / 22.0, 0.0, 1.0)
         arm_side = np.clip((xx - cx_target) / 22.0, -1.0, 1.0)
-        u_sx = xx - arm_side * arm_band * arm_sw
-        u_sy = yy - body_dy - arm_side * arm_band * (arm_sw * 0.32)
-        ux0 = np.clip(np.round(u_sx).astype(np.int32), 0, w - 1)
-        uy0 = np.clip(np.round(u_sy).astype(np.int32), 0, h - 1)
-        upper_warped = upper[uy0, ux0]
+        u_sx = (xx - arm_side * arm_band * arm_sw).astype(np.float32)
+        u_sy = (yy - body_dy - arm_side * arm_band * (arm_sw * 0.32)).astype(np.float32)
+        upper_warped = _bilinear_warp(upper, u_sx, u_sy, alpha_thresh=0.0)
 
         w_back = _warp_continuous_leg(src_back, cx_target - 9, hip_y, knee_y, bt, bs_ang, bdx, bdy, body_dy)
         w_front = _warp_continuous_leg(src_front, cx_target + 7, hip_y, knee_y, ft, fs_ang, fdx, fdy, body_dy)
@@ -928,8 +968,8 @@ def synthesize_12frame_run(base_frames: list[np.ndarray]) -> list[np.ndarray]:
     return out_frames
 
 
-def synthesize_hero_idle4(base_idle: np.ndarray) -> tuple[list[np.ndarray], float]:
-    """Synthesize 4-frame idle breathing/visor/arm combat stance with planted boots and locked torso ax."""
+def synthesize_hero_idle8(base_idle: np.ndarray) -> tuple[list[np.ndarray], float]:
+    """Synthesize 8-frame idle breathing/visor/arm combat stance with planted boots and locked torso ax."""
     pivot_x = body_anchor(base_idle, "idle") * base_idle.shape[1] + 8.0
     padded = np.pad(base_idle, ((8, 8), (8, 8), (0, 0)), mode="constant", constant_values=0)
     h, w = padded.shape[:2]
@@ -939,18 +979,18 @@ def synthesize_hero_idle4(base_idle: np.ndarray) -> tuple[list[np.ndarray], floa
     w_arm = _smoothstep(w * 0.16, w * 0.30, np.abs(xx - pivot_x)) * w_up
 
     frames: list[np.ndarray] = []
-    for k in range(4):
-        ph = k * (math.pi / 2.0)
+    for k in range(8):
+        ph = k * (math.pi / 4.0)
         s = math.sin(ph)
         c = math.cos(ph)
-        dy = -s * 2.3 * w_up + c * 1.6 * w_arm
-        dx = c * 0.9 * w_up + s * 1.1 * w_arm
+        dy = -s * 2.4 * w_up + c * 1.7 * w_arm
+        dx = c * 0.9 * w_up + s * 1.15 * w_arm
         frames.append(_bilinear_warp(padded, xx - dx, yy - dy, alpha_thresh=0.0))
     return _crop_union_frames(frames, pivot_x, pad=2)
 
 
-def synthesize_hero_jump3(base_jump: np.ndarray) -> tuple[list[np.ndarray], float]:
-    """Synthesize 3-phase jump arc (rise, apex, fall) with locked union bounds."""
+def synthesize_hero_jump6(base_jump: np.ndarray) -> tuple[list[np.ndarray], float]:
+    """Synthesize 6 continuous airborne jump phases (takeoff -> rise -> tuck -> apex -> dive -> landing prep)."""
     pivot_x = body_anchor(base_jump, "jump") * base_jump.shape[1] + 14.0
     padded = np.pad(base_jump, ((14, 14), (14, 14), (0, 0)), mode="constant", constant_values=0)
     h, w = padded.shape[:2]
@@ -961,84 +1001,100 @@ def synthesize_hero_jump3(base_jump: np.ndarray) -> tuple[list[np.ndarray], floa
     w_leg = _smoothstep(h * 0.55, h * 0.75, yy)
     w_arm = _smoothstep(h * 0.50, h * 0.30, yy)
 
-    # Rise: -5.5 deg tilt, 1.04 vertical stretch, leg tuck
-    th_r = math.radians(-5.5)
-    c_r, s_r = math.cos(th_r), math.sin(th_r)
-    sx_r = pivot_x + dx0 * c_r + (dy0 / 1.04) * s_r
-    sy_r = pivot_y - dx0 * s_r + (dy0 / 1.04) * c_r - (-4.5 * w_leg)
-    rise = _bilinear_warp(padded, sx_r, sy_r, alpha_thresh=0.0)
+    specs = [
+        (-6.5, 1.05, +3.5, -2.5),
+        (-4.5, 1.03, -3.5, -1.0),
+        (-2.0, 1.01, -5.0, 0.0),
+        (0.0, 1.00, 0.0, 0.0),
+        (+5.5, 0.98, +3.5, -2.5),
+        (+8.0, 0.96, +5.5, -4.0),
+    ]
+    frames: list[np.ndarray] = []
+    for ang, sy_sc, leg_dy, arm_dy in specs:
+        if ang == 0.0 and sy_sc == 1.0 and leg_dy == 0.0:
+            frames.append(padded.copy())
+            continue
+        th = math.radians(ang)
+        c, s = math.cos(th), math.sin(th)
+        dy_off = leg_dy * w_leg + arm_dy * w_arm
+        sx = pivot_x + dx0 * c + (dy0 / sy_sc) * s
+        sy = pivot_y - dx0 * s + (dy0 / sy_sc) * c - dy_off
+        frames.append(_bilinear_warp(padded, sx, sy, alpha_thresh=0.0))
+    return _crop_union_frames(frames, pivot_x, pad=2)
 
-    # Apex: neutral hover
-    apex = padded.copy()
 
-    # Fall: +7.0 deg pitch forward, braced descending legs, raised balance arms
-    th_f = math.radians(7.0)
-    c_f, s_f = math.cos(th_f), math.sin(th_f)
-    dy_off = 4.5 * w_leg - 3.0 * w_arm
-    sx_f = pivot_x + dx0 * c_f + dy0 * s_f
-    sy_f = pivot_y - dx0 * s_f + dy0 * c_f - dy_off
-    fall = _bilinear_warp(padded, sx_f, sy_f, alpha_thresh=0.0)
-
-    return _crop_union_frames([rise, apex, fall], pivot_x, pad=2)
-
-
-def synthesize_hero_combo3(base_slash: np.ndarray) -> tuple[list[np.ndarray], float]:
-    """Synthesize 3-hit melee combo variants (cut, uppercut, heavy finisher) preserving translucent arcs."""
-    pivot_x = body_anchor(base_slash, "attack_slash") * base_slash.shape[1] + 26.0
-    padded = np.pad(base_slash, ((26, 26), (26, 26), (0, 0)), mode="constant", constant_values=0)
+def synthesize_hero_combo12(base_slash: np.ndarray) -> tuple[list[np.ndarray], float]:
+    """Synthesize 12 locked-union combo frames (3 hits x 4 phases: windup -> swing -> peak -> follow-through)."""
+    pivot_x = body_anchor(base_slash, "attack_slash") * base_slash.shape[1] + 28.0
+    padded = np.pad(base_slash, ((28, 28), (28, 28), (0, 0)), mode="constant", constant_values=0)
     h, w = padded.shape[:2]
     pivot_y = h * 0.56
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
     dx0 = xx - pivot_x
     dy0 = yy - pivot_y
+    w_blade = _smoothstep(pivot_x - 16.0, pivot_x + 16.0, xx)
+    w_lunge = _smoothstep(pivot_x - 12.0, pivot_x + 30.0, xx)
+    w_far_arc = _smoothstep(pivot_x + 42.0, pivot_x + 68.0, xx)
 
-    # Combo 1: horizontal cut
-    s1 = padded.copy()
+    def make_hit_4(tilt_deg: float, arc_boost: float, lunge_px: float) -> list[np.ndarray]:
+        phases = [
+            (-9.5 + tilt_deg * 0.35, -4.5, +2.0, 0.96, 0.16),
+            (tilt_deg * 0.55 - 2.0, +2.0 * w_lunge, -1.0, 1.01, 0.72),
+            (tilt_deg, lunge_px * w_lunge, 0.0, arc_boost, 1.00),
+            (tilt_deg + 4.5, lunge_px * 0.65 * w_lunge, +1.5, 0.99, 0.38),
+        ]
+        out: list[np.ndarray] = []
+        for deg, shx, shy, sc_mul, far_alpha in phases:
+            th = np.radians(deg * (0.4 + 0.6 * w_blade))
+            c, s = np.cos(th), np.sin(th)
+            sc = 1.0 + (sc_mul - 1.0) * w_lunge
+            lx = (dx0 - shx) / sc
+            ly = (dy0 - shy) / sc
+            fr = _bilinear_warp(padded, pivot_x + lx * c + ly * s, pivot_y - lx * s + ly * c, alpha_thresh=0.0)
+            if far_alpha < 0.99:
+                atten = 1.0 - w_far_arc * (1.0 - far_alpha)
+                fr[..., 3] = np.clip(fr[..., 3].astype(np.float32) * atten, 0, 255).astype(fr.dtype)
+            out.append(fr)
+        return out
 
-    # Combo 2: rising uppercut (-10.5 deg weapon tilt + -3 deg body tilt + upward blade lift)
-    w_blade = _smoothstep(pivot_x - 16.0, pivot_x + 12.0, xx)
-    th_2 = np.radians(-3.0 - 10.5 * w_blade)
-    c2, s2_sin = np.cos(th_2), np.sin(th_2)
-    sx2 = pivot_x + dx0 * c2 + dy0 * s2_sin
-    sy2 = pivot_y - dx0 * s2_sin + dy0 * c2 - (-4.0 * w_blade)
-    s2 = _bilinear_warp(padded, sx2, sy2, alpha_thresh=0.0)
-
-    # Combo 3: heavy overhead finisher (+8.5 deg downward smash + forward lunge + 1.04x arc punch)
-    w_lunge = _smoothstep(pivot_x - 12.0, pivot_x + 28.0, xx)
-    arc_scale = 1.0 + 0.04 * w_lunge
-    th_3 = math.radians(8.5)
-    c3, s3_sin = math.cos(th_3), math.sin(th_3)
-    dx3 = (dx0 - 5.5 * w_lunge) / arc_scale
-    dy3 = dy0 / arc_scale
-    sx3 = pivot_x + dx3 * c3 + dy3 * s3_sin
-    sy3 = pivot_y - dx3 * s3_sin + dy3 * c3
-    s3 = _bilinear_warp(padded, sx3, sy3, alpha_thresh=0.0)
-
-    return _crop_union_frames([s1, s2, s3], pivot_x, pad=2)
+    c1 = make_hit_4(0.0, 1.02, 3.0)
+    c2 = make_hit_4(-10.5, 1.04, 4.0)
+    c3 = make_hit_4(+9.0, 1.07, 6.0)
+    return _crop_union_frames(c1 + c2 + c3, pivot_x, pad=2)
 
 
-def synthesize_hero_dash2(base_dash: np.ndarray) -> tuple[list[np.ndarray], float]:
-    """Synthesize 2-phase dash (coiled launch -> stretched horizontal glide)."""
-    pivot_x = body_anchor(base_dash, "dash") * base_dash.shape[1] + 14.0
-    padded = np.pad(base_dash, ((10, 10), (14, 14), (0, 0)), mode="constant", constant_values=0)
+def synthesize_hero_dash6(base_dash: np.ndarray) -> tuple[list[np.ndarray], float]:
+    """Synthesize 6 continuous horizontal jet dash phases (coil -> launch -> thrust -> glide -> brake -> settle)."""
+    pivot_x = body_anchor(base_dash, "dash") * base_dash.shape[1] + 16.0
+    padded = np.pad(base_dash, ((12, 12), (16, 16), (0, 0)), mode="constant", constant_values=0)
     h, w = padded.shape[:2]
     pivot_y = h * 0.55
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
     dx0 = xx - pivot_x
     dy0 = yy - pivot_y
 
-    th_1 = math.radians(4.0)
-    c1, s1 = math.cos(th_1), math.sin(th_1)
-    d1 = _bilinear_warp(padded, pivot_x + (dx0 / 0.96) * c1 + dy0 * s1, pivot_y - (dx0 / 0.96) * s1 + dy0 * c1, alpha_thresh=0.0)
+    specs = [
+        (+3.0, 0.94, 0.97, -3.0),
+        (+6.5, 1.03, 0.95, +1.5),
+        (+8.5, 1.08, 0.93, +4.0),
+        (+7.0, 1.06, 0.94, +3.0),
+        (+2.5, 0.99, 0.98, +0.5),
+        (-1.0, 0.97, 1.01, -1.0),
+    ]
+    frames: list[np.ndarray] = []
+    for ang, sx_sc, sy_sc, shx in specs:
+        th = math.radians(ang)
+        c, s = math.cos(th), math.sin(th)
+        lx = (dx0 - shx) / sx_sc
+        ly = dy0 / sy_sc
+        frames.append(_bilinear_warp(padded, pivot_x + lx * c + ly * s, pivot_y - lx * s + ly * c, alpha_thresh=0.0))
+    return _crop_union_frames(frames, pivot_x, pad=2)
 
-    d2 = _bilinear_warp(padded, pivot_x + dx0 / 1.05, pivot_y + dy0 / 0.96, alpha_thresh=0.0)
-    return _crop_union_frames([d1, d2], pivot_x, pad=2)
 
-
-def synthesize_hero_blast4(base_blast: np.ndarray) -> tuple[list[np.ndarray], float]:
-    """Synthesize 4-frame ranged blast sequence (coiled charge -> ignition -> recoil -> settle)."""
-    pivot_x = body_anchor(base_blast, "attack_blast") * base_blast.shape[1] + 18.0
-    padded = np.pad(base_blast, ((14, 14), (18, 18), (0, 0)), mode="constant", constant_values=0)
+def synthesize_hero_blast8(base_blast: np.ndarray) -> tuple[list[np.ndarray], float]:
+    """Synthesize 8-frame ranged blast sequence (gather -> aim -> charge -> ignition -> peak -> recoil -> settle -> guard)."""
+    pivot_x = body_anchor(base_blast, "attack_blast") * base_blast.shape[1] + 20.0
+    padded = np.pad(base_blast, ((14, 14), (20, 20), (0, 0)), mode="constant", constant_values=0)
     h, w = padded.shape[:2]
     pivot_y = h * 0.55
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
@@ -1055,16 +1111,20 @@ def synthesize_hero_blast4(base_blast: np.ndarray) -> tuple[list[np.ndarray], fl
         return _bilinear_warp(padded, pivot_x + lx * c + ly * s, pivot_y - lx * s + ly * c, alpha_thresh=0.0)
 
     frames = [
-        mk_pose(-4.0, -4.0, 0.96, 1.0),
-        mk_pose(+3.0, +3.0, 1.0, 1.04),
-        mk_pose(-6.0, -2.0, 1.0, 1.08),
-        mk_pose(-1.5, 0.0, 1.0, 1.0),
+        mk_pose(-3.5, -2.5, 0.96, 0.94),
+        mk_pose(-1.5, -1.0, 0.98, 0.98),
+        mk_pose(+1.0, +1.0, 1.00, 1.03),
+        mk_pose(+3.5, +3.0, 1.00, 1.06),
+        mk_pose(-2.0, +0.5, 1.00, 1.09),
+        mk_pose(-6.5, -2.5, 1.00, 1.04),
+        mk_pose(-3.5, -1.0, 1.00, 1.01),
+        mk_pose(-0.8, 0.0, 1.00, 1.00),
     ]
     return _crop_union_frames(frames, pivot_x, pad=2)
 
 
-def synthesize_hero_ult4(base_slash: np.ndarray) -> tuple[list[np.ndarray], float]:
-    """Synthesize 4-frame dramatic melee/ultimate surge sequence (crouch -> surge -> overdrive -> settle)."""
+def synthesize_hero_ult8(base_slash: np.ndarray) -> tuple[list[np.ndarray], float]:
+    """Synthesize 8-frame dramatic ultimate surge sequence (crouch -> gather -> rise -> surge -> apex -> shockwave -> land -> settle)."""
     pivot_x = body_anchor(base_slash, "attack_slash") * base_slash.shape[1] + 24.0
     padded = np.pad(base_slash, ((24, 24), (24, 24), (0, 0)), mode="constant", constant_values=0)
     h, w = padded.shape[:2]
@@ -1083,24 +1143,48 @@ def synthesize_hero_ult4(base_slash: np.ndarray) -> tuple[list[np.ndarray], floa
         return _bilinear_warp(padded, pivot_x + lx * c + ly * s, pivot_y - lx * s + ly * c, alpha_thresh=0.0)
 
     frames = [
-        mk_pose(-3.0, -2.0, +5.0, 0.93, 1.0),
-        mk_pose(-8.5, +1.0, -6.0, 1.04, 1.02),
-        mk_pose(+7.0, +5.0, -1.0, 1.01, 1.06),
-        mk_pose(+2.0, +1.0, 0.0, 1.0, 1.01),
+        mk_pose(-4.0, -3.0, +6.0, 0.92, 0.98),
+        mk_pose(-6.5, -1.5, +2.0, 0.96, 1.00),
+        mk_pose(-9.0, +1.0, -5.0, 1.03, 1.02),
+        mk_pose(-4.0, +3.5, -7.0, 1.05, 1.05),
+        mk_pose(+6.5, +5.5, -2.0, 1.02, 1.08),
+        mk_pose(+8.5, +4.0, +1.0, 0.99, 1.05),
+        mk_pose(+3.5, +2.0, +2.0, 0.98, 1.02),
+        mk_pose(+0.5, 0.0, 0.0, 1.00, 1.00),
     ]
     return _crop_union_frames(frames, pivot_x, pad=2)
 
 
-def synthesize_enemy_run8(base: np.ndarray, kind: str) -> list[np.ndarray]:
-    """Synthesize a smooth 8-frame high-res walk cycle from an enemy's main portrait."""
+def synthesize_hero_hurt4(base_hurt: np.ndarray) -> tuple[list[np.ndarray], float]:
+    """Synthesize 4-frame hit recoil cycle (impact snap -> stagger lean -> knee brace -> recover)."""
+    pivot_x = body_anchor(base_hurt, "hit_reaction") * base_hurt.shape[1] + 14.0
+    padded = np.pad(base_hurt, ((14, 14), (14, 14), (0, 0)), mode="constant", constant_values=0)
+    h, w = padded.shape[:2]
+    pivot_y = h * 0.72
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    dx0 = xx - pivot_x
+    dy0 = yy - pivot_y
+    specs = [(-10.0, -4.0, -2.0, 1.03), (-7.0, -2.0, +2.0, 0.97), (-3.5, -1.0, +4.0, 0.95), (-1.0, 0.0, +1.0, 0.99)]
+    frames: list[np.ndarray] = []
+    for ang, shx, shy, sy_sc in specs:
+        th = math.radians(ang)
+        c, s = math.cos(th), math.sin(th)
+        lx = dx0 - shx
+        ly = (dy0 - shy) / sy_sc
+        frames.append(_bilinear_warp(padded, pivot_x + lx * c + ly * s, pivot_y - lx * s + ly * c, alpha_thresh=0.0))
+    return _crop_union_frames(frames, pivot_x, pad=2)
+
+
+def synthesize_enemy_run12(base: np.ndarray, kind: str) -> list[np.ndarray]:
+    """Synthesize a smooth 12-frame high-res walk cycle from an enemy's main portrait."""
     padded = np.pad(base, ((8, 8), (8, 8), (0, 0)), mode="constant", constant_values=0)
     h, w = padded.shape[:2]
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
     cx = w * 0.5
     frames: list[np.ndarray] = []
 
-    for k in range(8):
-        ph = k * (math.pi / 4.0)
+    for k in range(12):
+        ph = k * (math.pi / 6.0)
         s = math.sin(ph)
         c = math.cos(ph)
 
@@ -1109,8 +1193,8 @@ def synthesize_enemy_run8(base: np.ndarray, kind: str) -> list[np.ndarray]:
             w_a = 0.5 + 0.5 * np.cos((xx - cx) / (w * 0.14) * math.pi)
             lift_a = max(0.0, s)
             lift_b = max(0.0, -s)
-            dy = -(w_a * lift_a + (1.0 - w_a) * lift_b) * (h * 0.085) * w_leg + abs(s) * (h * 0.02) * (1.0 - w_leg)
-            dx = (w_a * c - (1.0 - w_a) * c) * (w * 0.038) * w_leg
+            dy = -(w_a * lift_a + (1.0 - w_a) * lift_b) * (h * 0.088) * w_leg + abs(s) * (h * 0.022) * (1.0 - w_leg)
+            dx = (w_a * c - (1.0 - w_a) * c) * (w * 0.04) * w_leg
         else:
             w_leg = _smoothstep(h * 0.56, h * 0.70, yy)
             w_left = _smoothstep(cx + w * 0.08, cx - w * 0.08, xx)
@@ -1121,25 +1205,75 @@ def synthesize_enemy_run8(base: np.ndarray, kind: str) -> list[np.ndarray]:
             )
             w_leg = w_leg * in_leg_corridor
 
-            lift_l = max(0.0, s) * (h * 0.085)
-            lift_r = max(0.0, -s) * (h * 0.085)
-            stride_l = c * (w * 0.042)
-            stride_r = -c * (w * 0.042)
+            lift_l = max(0.0, s) * (h * 0.088)
+            lift_r = max(0.0, -s) * (h * 0.088)
+            stride_l = c * (w * 0.044)
+            stride_r = -c * (w * 0.044)
 
             leg_dy = -(w_left * lift_l + w_right * lift_r) * w_leg
             leg_dx = (w_left * stride_l + w_right * stride_r) * w_leg
 
             w_arm = _smoothstep(w * 0.16, w * 0.28, np.abs(xx - cx)) * (1.0 - _smoothstep(h * 0.65, h * 0.80, yy))
             arm_sign = np.where(xx < cx, -1.0, 1.0)
-            arm_dy = arm_sign * s * (h * 0.038) * w_arm
-            arm_dx = -arm_sign * c * (w * 0.025) * w_arm
+            arm_dy = arm_sign * s * (h * 0.04) * w_arm
+            arm_dx = -arm_sign * c * (w * 0.026) * w_arm
 
-            body_bob = -abs(s) * (h * 0.022) * (1.0 - w_leg)
+            body_bob = -abs(s) * (h * 0.024) * (1.0 - w_leg)
             dy = leg_dy + arm_dy + body_bob
             dx = leg_dx + arm_dx
 
         frames.append(_bilinear_warp(padded, xx - dx, yy - dy, alpha_thresh=100.0))
     return frames
+
+
+def synthesize_enemy_idle6(base: np.ndarray, kind: str) -> list[np.ndarray]:
+    """Synthesize 6 smooth breathing or hover-float idle frames for enemies & bosses."""
+    padded = np.pad(base, ((8, 8), (8, 8), (0, 0)), mode="constant", constant_values=0)
+    h, w = padded.shape[:2]
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    cx = w * 0.5
+    frames: list[np.ndarray] = []
+    w_up = 1.0 - _smoothstep(h * 0.52, h * 0.72, yy)
+    w_arm = _smoothstep(w * 0.16, w * 0.30, np.abs(xx - cx)) * w_up
+
+    for k in range(6):
+        ph = k * (math.pi / 3.0)
+        s = math.sin(ph)
+        c = math.cos(ph)
+        if kind == "hunter":
+            dy = s * (h * 0.032) + c * (h * 0.014) * _smoothstep(w * 0.18, w * 0.36, np.abs(xx - cx))
+            dx = c * (w * 0.012)
+        else:
+            dy = -s * (h * 0.018) * w_up + c * (h * 0.012) * w_arm
+            dx = c * (w * 0.008) * w_up + s * (w * 0.008) * w_arm
+        frames.append(_bilinear_warp(padded, xx - dx, yy - dy, alpha_thresh=0.0))
+    return frames
+
+
+def synthesize_enemy_attack4(base: np.ndarray, face_dir: int = 1) -> tuple[list[np.ndarray], float]:
+    """Synthesize 4-frame enemy/boss strike cycle (windup -> lunge -> impact -> recover) in union bbox."""
+    pivot_x = foot_anchor(base) * base.shape[1] + 16.0
+    padded = np.pad(base, ((14, 14), (16, 16), (0, 0)), mode="constant", constant_values=0)
+    h, w = padded.shape[:2]
+    pivot_y = h * 0.65
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    dx0 = xx - pivot_x
+    dy0 = yy - pivot_y
+    f = float(face_dir)
+    specs = [
+        (-8.0 * f, -5.0 * f, +3.0, 0.96, 0.96),
+        (+4.5 * f, +3.0 * f, -2.0, 1.02, 1.02),
+        (+9.5 * f, +7.0 * f, 0.0, 1.05, 1.06),
+        (+3.0 * f, +2.0 * f, +1.5, 0.99, 1.01),
+    ]
+    frames: list[np.ndarray] = []
+    for ang, shx, shy, sx_sc, sy_sc in specs:
+        th = math.radians(ang)
+        c, s = math.cos(th), math.sin(th)
+        lx = (dx0 - shx) / sx_sc
+        ly = (dy0 - shy) / sy_sc
+        frames.append(_bilinear_warp(padded, pivot_x + lx * c + ly * s, pivot_y - lx * s + ly * c, alpha_thresh=0.0))
+    return _crop_union_frames(frames, pivot_x, pad=2)
 
 
 def _crop_union_frames(frames: list[np.ndarray], pivot_x: float, pad: int = 2) -> tuple[list[np.ndarray], float]:
@@ -1218,8 +1352,8 @@ def _fit_union_canvas(cells: list[np.ndarray], target_w: int, target_h: int) -> 
     return out
 
 
-def _anim_variants_4(base: np.ndarray, mode: str) -> list[np.ndarray]:
-    """Synthesize 4 smooth looping progression frames from one high-res VFX painting."""
+def _anim_variants_8(base: np.ndarray, mode: str) -> list[np.ndarray]:
+    """Synthesize 8 smooth looping progression frames from one high-res VFX artwork."""
     padded = np.pad(base, ((16, 16), (16, 16), (0, 0)), mode="constant", constant_values=0)
     h, w = padded.shape[:2]
     cx, cy = w * 0.5, h * 0.5
@@ -1228,30 +1362,30 @@ def _anim_variants_4(base: np.ndarray, mode: str) -> list[np.ndarray]:
     r_norm = np.hypot(dx0, dy0) / max(1.0, min(w, h) * 0.45)
 
     frames: list[np.ndarray] = []
-    for k in range(4):
-        ph = k * (math.pi / 2.0)
+    for k in range(8):
+        ph = k * (math.pi / 4.0)
         s = math.sin(ph)
         c = math.cos(ph)
         if mode == "surge":
-            wave_y = s * 4.5 + np.sin(yy * 0.08 - k * 1.4) * 3.5 * np.clip(r_norm, 0.2, 1.0)
-            wave_x = np.cos(yy * 0.09 + ph) * 3.8 * _smoothstep(0.15, 0.85, r_norm)
+            wave_y = s * 4.5 + np.sin(yy * 0.08 - k * 0.72) * 3.5 * np.clip(r_norm, 0.2, 1.0)
+            wave_x = np.cos(yy * 0.09 + ph) * 3.6 * _smoothstep(0.15, 0.85, r_norm)
             sc = 1.0 + c * 0.035
             sx = cx + dx0 / sc - wave_x
             sy = cy + dy0 / (sc + 0.02 * s) - wave_y
         elif mode == "spin":
             ang = 0.16 * s + 0.28 * c * np.clip(1.0 - r_norm * 0.5, 0.2, 1.0)
             ca, sa = np.cos(ang), np.sin(ang)
-            sc = 1.0 + 0.045 * math.sin(ph)
+            sc = 1.0 + 0.045 * s
             sx = cx + (dx0 * ca + dy0 * sa) / sc
             sy = cy + (-dx0 * sa + dy0 * ca) / sc
         elif mode == "burst":
-            sc = 0.88 + k * 0.075
-            swirl = (k - 1.5) * 0.09 * _smoothstep(0.2, 1.0, r_norm)
+            sc = 0.84 + k * 0.045
+            swirl = (k - 3.5) * 0.055 * _smoothstep(0.2, 1.0, r_norm)
             ca, sa = np.cos(swirl), np.sin(swirl)
             sx = cx + (dx0 * ca + dy0 * sa) / sc
             sy = cy + (-dx0 * sa + dy0 * ca) / sc
         else:  # crackle
-            wig = np.sin(yy * 0.14 + ph * 1.3) * 4.2 + np.cos(xx * 0.12 - ph) * 2.4
+            wig = np.sin(yy * 0.14 + ph * 1.3) * 4.0 + np.cos(xx * 0.12 - ph) * 2.4
             sc = 1.0 + 0.04 * s
             sx = cx + dx0 / sc - wig * 0.65
             sy = cy + dy0 / sc - np.cos(yy * 0.11 + ph) * 3.0
@@ -1269,172 +1403,329 @@ def _save_fx_cycle(manifest: dict[str, dict], name_prefix: str, frames: list[np.
 
 
 def _paint_earth_spires() -> list[np.ndarray]:
-    """Paint 4 erupting volcanic obsidian spire monolith frames with glowing magma cracks."""
-    sz = 192
+    """Paint 8 multi-faceted volcanic basalt spire monolith frames with branching magma cracks & debris."""
+    sz = 208
     frames: list[np.ndarray] = []
-    for k in range(4):
-        im = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
-        d = ImageDraw.Draw(im)
-        rise = [0.68, 0.88, 1.0, 0.84][k]
+    rise_curve = [0.46, 0.72, 0.92, 1.0, 0.97, 0.90, 0.76, 0.56]
+    spires = [
+        (sz * 0.25, 96, -18, 26, -1),
+        (sz * 0.50, 152, 2, 34, 0),
+        (sz * 0.75, 108, 18, 28, +1),
+    ]
+    for k in range(8):
+        rise = rise_curve[k]
         base_y = sz - 18
-        spires = [(sz * 0.28, 86 * rise, -14, 24), (sz * 0.5, 138 * rise, 0, 32), (sz * 0.72, 96 * rise, 16, 26)]
-
-        # Warm ambient magma glow around rock base
         glow = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
         gd = ImageDraw.Draw(glow)
-        gd.ellipse((32, base_y - 34, sz - 32, base_y + 12), fill=(255, 140, 35, 130))
-        gd.ellipse((sz * 0.34, base_y - int(115 * rise), sz * 0.66, base_y), fill=(255, 175, 65, 85))
-        glow = glow.filter(ImageFilter.GaussianBlur(10))
-        im = Image.alpha_composite(im, glow)
+        gd.ellipse((24, base_y - 36, sz - 24, base_y + 14), fill=(255, 120, 22, 145))
+        gd.ellipse((sz * 0.30, base_y - int(130 * rise), sz * 0.70, base_y), fill=(255, 170, 50, 95))
+        im = glow.filter(ImageFilter.GaussianBlur(10))
+
+        vein_glow = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
+        vd = ImageDraw.Draw(vein_glow)
         d = ImageDraw.Draw(im)
 
-        for sx_c, h_sp, lean, hw in spires:
+        for sx_c, h_max, lean, hw, side_idx in spires:
+            h_sp = h_max * rise
             tip_x = sx_c + lean
             tip_y = base_y - h_sp
-            d.polygon(
-                [(sx_c - hw, base_y), (sx_c - hw * 0.45, tip_y + h_sp * 0.42), (tip_x, tip_y), (sx_c + hw * 0.72, base_y)],
-                fill=(42, 32, 28, 250),
-            )
-            d.polygon(
-                [(sx_c, base_y), (tip_x, tip_y), (sx_c + hw * 0.45, tip_y + h_sp * 0.52), (sx_c + hw * 0.72, base_y)],
-                fill=(102, 74, 48, 248),
-            )
-            # Glowing molten magma veins
-            d.line([(sx_c - hw * 0.1, base_y - 4), (tip_x + 2, tip_y + 14), (sx_c + hw * 0.25, base_y - 24)], fill=(255, 185, 55, 255), width=3)
-            d.line([(tip_x, tip_y + 16), (sx_c - hw * 0.35, base_y - 18)], fill=(255, 240, 170, 240), width=2)
-        for m in range(5):
-            px = sz * (0.22 + 0.14 * m) + math.sin(k * 1.5 + m) * 10
-            py = base_y - (45 + ((m * 29 + k * 24) % 95))
-            d.polygon([(px, py - 5), (px + 4, py), (px, py + 5), (px - 4, py)], fill=(255, 215, 95, 235))
+            # Jagged craggy rock silhouette (8 vertices, never flat single triangles)
+            poly_full = [
+                (sx_c - hw * 1.05, base_y),
+                (sx_c - hw * 0.88, base_y - h_sp * 0.34),
+                (sx_c - hw * 0.52, base_y - h_sp * 0.58),
+                (tip_x - hw * 0.24, tip_y + h_sp * 0.22),
+                (tip_x, tip_y),
+                (tip_x + hw * 0.28, tip_y + h_sp * 0.26),
+                (sx_c + hw * 0.62, base_y - h_sp * 0.48),
+                (sx_c + hw * 0.96, base_y),
+            ]
+            d.polygon(poly_full, fill=(32, 24, 22, 252))
+            # Mid basalt chisel plane
+            poly_mid = [
+                (sx_c - hw * 0.22, base_y),
+                (sx_c - hw * 0.34, base_y - h_sp * 0.50),
+                (tip_x, tip_y),
+                (tip_x + hw * 0.28, tip_y + h_sp * 0.26),
+                (sx_c + hw * 0.56, base_y - h_sp * 0.44),
+                (sx_c + hw * 0.84, base_y),
+            ]
+            d.polygon(poly_mid, fill=(68, 50, 38, 250))
+            # Lit ochre right bevel facet + specular edge
+            poly_lit = [
+                (sx_c + hw * 0.08, base_y),
+                (sx_c + hw * 0.02, base_y - h_sp * 0.48),
+                (tip_x, tip_y),
+                (tip_x + hw * 0.26, tip_y + h_sp * 0.28),
+                (sx_c + hw * 0.62, base_y - h_sp * 0.44),
+                (sx_c + hw * 0.88, base_y),
+            ]
+            d.polygon(poly_lit, fill=(128, 92, 54, 248))
+            d.line([(tip_x, tip_y), (tip_x + hw * 0.26, tip_y + h_sp * 0.28), (sx_c + hw * 0.86, base_y)], fill=(204, 152, 86, 225), width=2)
+
+            # Branching molten magma cracks recorded into both glow overlay & sharp gold core
+            cracks = [
+                [(sx_c - hw * 0.14, base_y - 3), (sx_c - hw * 0.24, base_y - h_sp * 0.34), (tip_x + 2, base_y - h_sp * 0.64), (tip_x - 2, tip_y + h_sp * 0.16)],
+                [(sx_c - hw * 0.24, base_y - h_sp * 0.34), (sx_c + hw * 0.32, base_y - h_sp * 0.20), (sx_c + hw * 0.48, base_y - 5)],
+                [(tip_x + 2, base_y - h_sp * 0.64), (sx_c + hw * 0.36, base_y - h_sp * 0.42)],
+            ]
+            for path_pts in cracks:
+                vd.line(path_pts, fill=(255, 138, 25, 225), width=7)
+                d.line(path_pts, fill=(255, 198, 65, 255), width=3)
+                d.line(path_pts, fill=(255, 246, 185, 245), width=1)
+
+        im = Image.alpha_composite(im, vein_glow.filter(ImageFilter.GaussianBlur(3)))
+        d = ImageDraw.Draw(im)
+        # Re-stroke bright molten center filaments & floating volcanic chips
+        for sx_c, h_max, lean, hw, _ in spires:
+            h_sp = h_max * rise
+            tip_x, tip_y = sx_c + lean, base_y - h_sp
+            d.line([(sx_c - hw * 0.14, base_y - 3), (sx_c - hw * 0.24, base_y - h_sp * 0.34), (tip_x + 2, base_y - h_sp * 0.64)], fill=(255, 242, 165, 240), width=2)
+
+        for m in range(7):
+            ph = k * 0.78 + m * 1.15
+            px = sz * (0.18 + 0.105 * m) + math.sin(ph) * 11
+            py = base_y - (32 + ((m * 31 + k * 21) % 128))
+            if m % 2 == 0:
+                d.polygon([(px - 4, py), (px - 1, py - 5), (px + 4, py - 2), (px + 2, py + 4)], fill=(58, 44, 36, 240), outline=(255, 185, 65, 220))
+            else:
+                d.polygon([(px, py - 5), (px + 3.5, py), (px, py + 5), (px - 3.5, py)], fill=(255, 224, 110, 240))
         frames.append(np.array(im, dtype=np.int16))
     return frames
 
 
 def _paint_ice_monoliths() -> list[np.ndarray]:
-    """Paint 4 faceted glacier crystal spear monolith frames with specular cyan-white facets."""
-    sz = 192
+    """Paint 8 multi-shaft beveled glacier crystal monolith frames with refracted sapphire/cyan facets."""
+    sz = 208
     frames: list[np.ndarray] = []
-    for k in range(4):
+    for k in range(8):
         base_y = sz - 16
-        pulse = 0.88 + 0.12 * math.sin(k * math.pi / 2.0)
+        pulse = 0.78 + 0.22 * math.sin((k / 7.0) * math.pi * 0.85 + 0.25)
         glow = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
         gd = ImageDraw.Draw(glow)
-        gd.ellipse((40, base_y - 44, sz - 40, base_y + 10), fill=(56, 189, 248, 125))
-        gd.polygon([(sz * 0.36, base_y), (sz * 0.5, 20), (sz * 0.64, base_y)], fill=(125, 211, 252, 95))
-        im = glow.filter(ImageFilter.GaussianBlur(9))
+        gd.ellipse((32, base_y - 44, sz - 32, base_y + 12), fill=(56, 189, 248, 135))
+        gd.polygon([(sz * 0.34, base_y), (sz * 0.50, 18), (sz * 0.66, base_y)], fill=(125, 211, 252, 105))
+        im = glow.filter(ImageFilter.GaussianBlur(10))
         d = ImageDraw.Draw(im)
 
-        sh = int(146 * pulse)
-        d.polygon([(sz * 0.24, base_y), (sz * 0.31, base_y - sh * 0.56), (sz * 0.44, base_y)], fill=(14, 116, 184, 225))
-        d.polygon([(sz * 0.76, base_y), (sz * 0.69, base_y - sh * 0.62), (sz * 0.56, base_y)], fill=(56, 189, 248, 225))
-        # Center translucent spear facets
-        d.polygon([(sz * 0.35, base_y), (sz * 0.5, base_y - sh), (sz * 0.5, base_y)], fill=(125, 211, 252, 245))
-        d.polygon([(sz * 0.5, base_y - sh), (sz * 0.65, base_y), (sz * 0.5, base_y)], fill=(224, 250, 255, 250))
-        d.line([(sz * 0.35, base_y), (sz * 0.5, base_y - sh), (sz * 0.65, base_y)], fill=(255, 255, 255, 255), width=2)
-        d.line([(sz * 0.5, base_y - sh + 4), (sz * 0.5, base_y - 4)], fill=(255, 255, 255, 245), width=2)
-        for m in range(6):
-            a = k * 0.7 + m * 1.05
-            sx = sz * 0.5 + math.cos(a) * (36 + (m % 2) * 18)
-            sy = sz * 0.52 + math.sin(a) * 44
-            d.polygon([(sx, sy - 6), (sx + 3, sy), (sx, sy + 6), (sx - 3, sy)], fill=(235, 252, 255, 230))
+        sh = int(156 * pulse)
+        # 5 beveled prism crystal shafts (outer L/R flanking shards, mid L/R crystals, tall center spear)
+        prisms = [
+            (sz * 0.20, int(sh * 0.42), -14, 15),
+            (sz * 0.80, int(sh * 0.46), +14, 15),
+            (sz * 0.34, int(sh * 0.68), -8, 20),
+            (sz * 0.66, int(sh * 0.72), +9, 20),
+            (sz * 0.50, sh, 0, 28),
+        ]
+        for cx_p, hp, tilt, hw in prisms:
+            tx = cx_p + tilt
+            ty = base_y - hp
+            sh_y = ty + hp * 0.32
+            # Left shadow sapphire facet
+            d.polygon([(cx_p - hw, base_y), (cx_p - hw * 0.82, sh_y), (tx, ty), (cx_p, base_y)], fill=(14, 96, 174, 228))
+            # Center azure bevel
+            d.polygon([(cx_p - hw * 0.30, base_y), (cx_p - hw * 0.35, sh_y + 6), (tx, ty), (cx_p + hw * 0.16, base_y)], fill=(56, 189, 248, 238))
+            # Right icy cyan-white specular facet
+            d.polygon([(cx_p + hw * 0.08, base_y), (tx, ty), (cx_p + hw * 0.82, sh_y + 4), (cx_p + hw, base_y)], fill=(214, 248, 255, 245))
+            # Specular crystal ridge highlights & internal ice fracture
+            d.line([(cx_p - hw * 0.82, sh_y), (tx, ty), (cx_p + hw * 0.82, sh_y + 4)], fill=(255, 255, 255, 248), width=2)
+            d.line([(tx, ty), (cx_p + hw * 0.08, base_y - 3)], fill=(255, 255, 255, 250), width=2)
+            d.line([(cx_p - hw * 0.42, base_y - hp * 0.36), (cx_p + hw * 0.35, base_y - hp * 0.24)], fill=(255, 255, 255, 190), width=1)
+
+        for m in range(8):
+            a = k * 0.52 + m * 0.785
+            sx = sz * 0.5 + math.cos(a) * (42 + (m % 3) * 14)
+            sy = sz * 0.50 + math.sin(a) * 52
+            d.polygon([(sx, sy - 6), (sx + 3.5, sy), (sx, sy + 6), (sx - 3.5, sy)], fill=(240, 253, 255, 235))
         frames.append(np.array(im, dtype=np.int16))
     return frames
 
 
 def _paint_cryo_blizzard() -> list[np.ndarray]:
-    """Paint 4 rotating hexagonal crystalline frost snowflake mandala frames."""
-    sz = 196
+    """Paint 8 swirling curved frost-ribbon & beveled snowflake mandala frames."""
+    sz = 208
     frames: list[np.ndarray] = []
-    for k in range(4):
-        rot = k * (math.pi / 12.0)
+    cx = cy = sz * 0.5
+    for k in range(8):
+        rot = k * (math.pi / 24.0)
         glow = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
         gd = ImageDraw.Draw(glow)
-        gd.ellipse((24, 24, sz - 24, sz - 24), outline=(56, 189, 248, 130), width=12)
-        gd.ellipse((48, 48, sz - 48, sz - 48), fill=(186, 230, 253, 85))
-        im = glow.filter(ImageFilter.GaussianBlur(8))
+        gd.ellipse((20, 20, sz - 20, sz - 20), outline=(56, 189, 248, 145), width=14)
+        gd.ellipse((48, 48, sz - 48, sz - 48), fill=(186, 230, 253, 95))
+        im = glow.filter(ImageFilter.GaussianBlur(9))
         d = ImageDraw.Draw(im)
-        cx = cy = sz * 0.5
-        d.ellipse((18, 18, sz - 18, sz - 18), outline=(125, 211, 252, 215), width=3)
-        d.ellipse((40, 40, sz - 40, sz - 40), outline=(255, 255, 255, 195), width=2)
+
+        # 4 swirling tapered logarithmic wind ribbons curving cleanly around the vortex
+        for arm in range(4):
+            a0 = rot * 2.0 + arm * (math.pi * 0.5)
+            pts_out, pts_in = [], []
+            for st in range(13):
+                t = st / 12.0
+                th = a0 + t * 1.95
+                r_mid = 34.0 + t * 58.0
+                thick = math.sin(t * math.pi) * 6.5 + 1.5
+                pts_out.append((cx + math.cos(th) * (r_mid + thick), cy + math.sin(th) * (r_mid + thick)))
+                pts_in.append((cx + math.cos(th) * (r_mid - thick), cy + math.sin(th) * (r_mid - thick)))
+            d.polygon(pts_out + list(reversed(pts_in)), fill=(125, 211, 252, 205))
+
+        d.ellipse((18, 18, sz - 18, sz - 18), outline=(186, 230, 253, 210), width=2)
         for i in range(6):
             a = rot + (i * math.pi) / 3.0
             ca, sa = math.cos(a), math.sin(a)
-            x2, y2 = cx + ca * 82, cy + sa * 82
-            d.line([(cx, cy), (x2, y2)], fill=(235, 252, 255, 245), width=3)
-            # Crystal chevron barbs
-            for frac, arm in ((0.48, 16), (0.72, 12)):
-                bx, by = cx + ca * (82 * frac), cy + sa * (82 * frac)
-                for side in (-0.65, 0.65):
-                    d.line([(bx, by), (bx + math.cos(a + side) * arm, by + math.sin(a + side) * arm)], fill=(125, 211, 252, 240), width=2)
-            d.polygon([(x2 + ca * 6, y2 + sa * 6), (x2 - sa * 5, y2 + ca * 5), (x2 - ca * 5, y2 - sa * 5), (x2 + sa * 5, y2 - ca * 5)], fill=(255, 255, 255, 245))
+            px_perp, py_perp = -sa, ca
+            x2, y2 = cx + ca * 84, cy + sa * 84
+            # Beveled kite crystal arm
+            d.polygon(
+                [
+                    (cx + ca * 14, cy + sa * 14),
+                    (cx + ca * 48 + px_perp * 6, cy + sa * 48 + py_perp * 6),
+                    (x2, y2),
+                    (cx + ca * 48 - px_perp * 6, cy + sa * 48 - py_perp * 6),
+                ],
+                fill=(224, 248, 255, 235),
+                outline=(125, 211, 252, 245),
+            )
+            for frac, arm_len in ((0.50, 17), (0.74, 12)):
+                bx, by = cx + ca * (84 * frac), cy + sa * (84 * frac)
+                for side in (-0.62, 0.62):
+                    d.line([(bx, by), (bx + math.cos(a + side) * arm_len, by + math.sin(a + side) * arm_len)], fill=(255, 255, 255, 235), width=2)
+        for m in range(8):
+            ma = k * 0.4 + m * 0.785
+            mx = cx + math.cos(ma) * (66 + (m % 2) * 16)
+            my = cy + math.sin(ma) * (66 + (m % 2) * 16)
+            d.ellipse((mx - 3, my - 3, mx + 3, my + 3), fill=(255, 255, 255, 230))
         frames.append(np.array(im, dtype=np.int16))
     return frames
 
 
 def _paint_void_orbs() -> list[np.ndarray]:
-    """Paint 4 black-hole singularity core frames with tilted neon-magenta accretion disk."""
-    sz = 180
+    """Paint 8 black-hole singularity core frames with spiral accretion arms, lensing rim & wisps."""
+    sz = 196
     frames: list[np.ndarray] = []
-    for k in range(4):
+    cx = cy = sz * 0.5
+    for k in range(8):
+        ph = k * (math.pi / 4.0)
         glow = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
         gd = ImageDraw.Draw(glow)
-        gd.ellipse((14, sz * 0.34, sz - 14, sz * 0.66), fill=(192, 38, 211, 145))
-        gd.ellipse((42, 42, sz - 42, sz - 42), fill=(217, 70, 239, 135))
-        im = glow.filter(ImageFilter.GaussianBlur(9))
+        gd.ellipse((12, sz * 0.32, sz - 12, sz * 0.68), fill=(192, 38, 211, 155))
+        gd.ellipse((38, 38, sz - 38, sz - 38), fill=(147, 51, 234, 140))
+        im = glow.filter(ImageFilter.GaussianBlur(10))
         d = ImageDraw.Draw(im)
-        cx = cy = sz * 0.5
-        # Tilted multi-ring accretion ellipses
-        tilt = (k % 2) * 3 - 1
-        d.ellipse((16, sz * 0.37 + tilt, sz - 16, sz * 0.63 + tilt), outline=(232, 121, 249, 235), width=4)
-        d.ellipse((28, sz * 0.41 - tilt, sz - 28, sz * 0.59 - tilt), outline=(253, 244, 255, 220), width=2)
-        # Pitch-black event horizon + white-magenta photon ring
-        d.ellipse((cx - 30, cy - 30, cx + 30, cy + 30), fill=(6, 2, 16, 255), outline=(255, 255, 255, 255), width=3)
-        d.ellipse((cx - 35, cy - 35, cx + 35, cy + 35), outline=(217, 70, 239, 240), width=3)
-        for i in range(3):
-            a = k * (math.pi / 2.0) + i * 2.094
-            ox = cx + math.cos(a) * 64
-            oy = cy + math.sin(a) * 20
-            d.ellipse((ox - 5, oy - 5, ox + 5, oy + 5), fill=(255, 255, 255, 250), outline=(217, 70, 239, 255), width=2)
+
+        # Twin spiral accretion arms curling into the event horizon
+        for arm in range(2):
+            a0 = ph + arm * math.pi
+            outer, inner = [], []
+            for st in range(15):
+                t = st / 14.0
+                th = a0 + t * 2.5
+                rx = 84.0 * (1.0 - t * 0.62)
+                ry = rx * 0.34
+                w_arm = math.sin(t * math.pi) * 5.0 + 1.2
+                ox = cx + math.cos(th) * rx
+                oy = cy + math.sin(th) * ry
+                outer.append((ox, oy - w_arm))
+                inner.append((ox, oy + w_arm))
+            d.polygon(outer + list(reversed(inner)), fill=(217, 70, 239, 195))
+
+        tilt = math.sin(ph) * 2.5
+        d.ellipse((16, sz * 0.36 + tilt, sz - 16, sz * 0.64 + tilt), outline=(232, 121, 249, 235), width=3)
+        d.ellipse((28, sz * 0.40 - tilt, sz - 28, sz * 0.60 - tilt), outline=(253, 244, 255, 220), width=2)
+        # Pitch-black event horizon + double photon ring
+        d.ellipse((cx - 32, cy - 32, cx + 32, cy + 32), fill=(5, 1, 15, 255), outline=(255, 255, 255, 255), width=3)
+        d.ellipse((cx - 37, cy - 37, cx + 37, cy + 37), outline=(217, 70, 239, 235), width=2)
+        for i in range(6):
+            a = ph + i * (math.pi / 3.0)
+            r_x = 64 + (i % 2) * 12
+            ox = cx + math.cos(a) * r_x
+            oy = cy + math.sin(a) * (r_x * 0.34)
+            rr = 3.5 + (i % 2) * 1.5
+            d.ellipse((ox - rr, oy - rr, ox + rr, oy + rr), fill=(255, 255, 255, 245), outline=(217, 70, 239, 250), width=1)
         frames.append(np.array(im, dtype=np.int16))
     return frames
 
 
 def _paint_void_rifts() -> list[np.ndarray]:
-    """Paint 4 jagged dimensional X-rift tear frames with white core fracture & amethyst lightning."""
-    sz = 200
+    """Paint 8 jagged curved dimensional fracture tear frames with starlit inner slit & shattered shards."""
+    sz = 216
     frames: list[np.ndarray] = []
-    for k in range(4):
-        sc = 0.86 + 0.14 * math.sin(k * math.pi / 2.0 + 0.4)
-        pad = int((1.0 - sc) * 45)
+    cx = cy = sz * 0.5
+
+    def curved_tear_poly(ang: float, sc: float, jag_seed: float) -> list[tuple[float, float]]:
+        ca, sa = math.cos(ang), math.sin(ang)
+        nx, ny = -sa, ca
+        top_pts, bot_pts = [], []
+        half_len = 94.0 * sc
+        for st in range(13):
+            u = (st / 12.0) * 2.0 - 1.0  # -1 .. +1
+            along = u * half_len
+            bend = math.sin(u * math.pi * 0.85) * 9.0 + math.sin(u * 6.5 + jag_seed) * 3.5
+            hw = max(0.8, (1.0 - u * u) ** 0.75 * 14.0 + math.cos(u * 9.0 + jag_seed) * 1.8)
+            mx = cx + ca * along + nx * bend
+            my = cy + sa * along + ny * bend
+            top_pts.append((mx + nx * hw, my + ny * hw))
+            bot_pts.append((mx - nx * hw, my - ny * hw))
+        return top_pts + list(reversed(bot_pts))
+
+    for k in range(8):
+        ph = k * (math.pi / 4.0)
+        sc = 0.80 + 0.20 * math.sin(k * math.pi / 7.0 + 0.35)
+        p_a = curved_tear_poly(math.pi * 0.24, sc, ph)
+        p_b = curved_tear_poly(-math.pi * 0.24, sc, ph + 1.7)
+
         glow = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
         gd = ImageDraw.Draw(glow)
-        gd.line([(16 + pad, 16 + pad), (sz - 16 - pad, sz - 16 - pad)], fill=(217, 70, 239, 170), width=24)
-        gd.line([(16 + pad, sz - 16 - pad), (sz - 16 - pad, 16 + pad)], fill=(192, 38, 211, 170), width=24)
-        im = glow.filter(ImageFilter.GaussianBlur(9))
+        gd.polygon(p_a, fill=(217, 70, 239, 175))
+        gd.polygon(p_b, fill=(192, 38, 211, 175))
+        im = glow.filter(ImageFilter.GaussianBlur(10))
         d = ImageDraw.Draw(im)
-        cx = cy = sz * 0.5
-        for p1, p2 in [
-            ((16 + pad, 16 + pad), (sz - 16 - pad, sz - 16 - pad)),
-            ((16 + pad, sz - 16 - pad), (sz - 16 - pad, 16 + pad)),
-        ]:
-            d.line([p1, p2], fill=(217, 70, 239, 245), width=10)
-            d.line([p1, p2], fill=(255, 255, 255, 255), width=4)
-        # Central dark dimensional slit & glowing fracture shards
-        d.polygon([(cx - 18, cy), (cx, cy - 28), (cx + 18, cy), (cx, cy + 28)], fill=(8, 2, 22, 250), outline=(245, 208, 254, 255))
-        for j in range(4):
-            a = k * 0.8 + j * 1.57
+
+        # Luminous magenta-white energy tear hulls + dark cosmic interior void
+        for poly in (p_a, p_b):
+            d.polygon(poly, fill=(232, 121, 249, 240), outline=(255, 255, 255, 250))
+        # Inner black void diamond slit studded with starlight specks
+        slit = [
+            (cx - 24 * sc, cy),
+            (cx - 8, cy - 12),
+            (cx, cy - 36 * sc),
+            (cx + 8, cy - 12),
+            (cx + 24 * sc, cy),
+            (cx + 8, cy + 12),
+            (cx, cy + 36 * sc),
+            (cx - 8, cy + 12),
+        ]
+        d.polygon(slit, fill=(7, 2, 18, 252), outline=(253, 244, 255, 255))
+        for st_i in range(6):
+            sa = st_i * 1.05 + k * 0.3
+            sx = cx + math.cos(sa) * (6 + (st_i % 3) * 4)
+            sy = cy + math.sin(sa) * (10 + (st_i % 2) * 8)
+            d.ellipse((sx - 1.2, sy - 1.2, sx + 1.2, sy + 1.2), fill=(255, 255, 255, 240))
+
+        # Jagged amethyst crackle arcs & floating space-mirror shards
+        for j in range(6):
+            a = ph * 0.5 + j * (math.pi / 3.0)
+            r1 = 22.0
+            r2 = 46.0 + (j % 2) * 14.0
+            r3 = 68.0 + (j % 3) * 10.0
             d.line(
-                [(cx + math.cos(a) * 18, cy + math.sin(a) * 18), (cx + math.cos(a + 0.25) * 62, cy + math.sin(a + 0.25) * 62)],
+                [
+                    (cx + math.cos(a) * r1, cy + math.sin(a) * r1),
+                    (cx + math.cos(a + 0.18) * r2, cy + math.sin(a + 0.18) * r2),
+                    (cx + math.cos(a - 0.08) * r3, cy + math.sin(a - 0.08) * r3),
+                ],
                 fill=(245, 208, 254, 235),
                 width=2,
             )
+            sx = cx + math.cos(a + 0.3) * (54 + (j % 2) * 18)
+            sy = cy + math.sin(a + 0.3) * (54 + (j % 2) * 18)
+            d.polygon([(sx, sy - 5), (sx + 4, sy), (sx - 1, sy + 6), (sx - 4, sy - 1)], fill=(36, 10, 66, 235), outline=(240, 171, 252, 245))
         frames.append(np.array(im, dtype=np.int16))
     return frames
 
 
 def build_skill_vfx(manifest: dict[str, dict]) -> None:
-    """Extract & synthesize multi-frame animated skill VFX sheets into sprites.json."""
-    # 1. Animated Slash Sequence (fx_slash_anim_1..6)
+    """Extract & synthesize 8-frame animated skill VFX sets into sprites.json."""
+    # 1. Animated Slash Sequence (fx_slash_anim_1..8)
     slash_sheet = load("effects/slash_effects_sheet.png")
     s1 = _to_luminous_tintable(trim(slash_sheet[0:124, 6:175, :], pad=2)[:, ::-1, :])
     s2 = _to_luminous_tintable(trim(slash_sheet[0:124, 160:332, :], pad=2))
@@ -1443,18 +1734,13 @@ def build_skill_vfx(manifest: dict[str, dict]) -> None:
     for s in (s1, s2, s3, s4):
         defringe(s)
     slash_base = _fit_union_canvas([s1, s2, s3, s4], 184, 164)
-    # Expand 4 distinctive keyframes + 2 intermediate motion blurs into 6 smooth frames
-    slash_6 = [
-        slash_base[0],
-        _bilinear_warp(slash_base[1], np.mgrid[0:164, 0:184][1].astype(np.float32) - 4.0, np.mgrid[0:164, 0:184][0].astype(np.float32), alpha_thresh=0.0),
-        slash_base[1],
-        slash_base[2],
-        _anim_variants_4(slash_base[2], "surge")[1],
-        slash_base[3],
-    ]
-    _save_fx_cycle(manifest, "fx_slash_anim", slash_6)
+    s0_v = _anim_variants_8(slash_base[0], "surge")
+    s1_v = _anim_variants_8(slash_base[1], "surge")
+    s2_v = _anim_variants_8(slash_base[2], "surge")
+    s3_v = _anim_variants_8(slash_base[3], "surge")
+    _save_fx_cycle(manifest, "fx_slash_anim", _fit_union_canvas([s0_v[0], s0_v[2], s1_v[0], s1_v[2], s2_v[0], s2_v[2], s3_v[0], s3_v[2]], 184, 164))
 
-    # 2. Animated Energy Blast Sequence (fx_blast_anim_1..6, facing RIGHT +1)
+    # 2. Animated Energy Blast Sequence (fx_blast_anim_1..8, facing RIGHT +1)
     blast_sheet = load("effects/energy_blasts_sheet.png")
     b_raw = [
         trim(blast_sheet[8:145, 0:60, :], pad=2)[:, ::-1, :],
@@ -1466,27 +1752,28 @@ def build_skill_vfx(manifest: dict[str, dict]) -> None:
     for b in b_norm:
         defringe(b)
     b_fitted = _fit_union_canvas(b_norm, 220, 148)
-    b_surge = _anim_variants_4(b_fitted[2], "surge")
-    b_fade = _fit_union_canvas([b_surge[2], b_surge[3]], 220, 148)
-    _save_fx_cycle(manifest, "fx_blast_anim", [b_fitted[0], b_fitted[1], b_fitted[2], b_fitted[3], b_fade[0], b_fade[1]])
+    b_s1 = _anim_variants_8(b_fitted[1], "surge")
+    b_s2 = _anim_variants_8(b_fitted[2], "surge")
+    b_s3 = _anim_variants_8(b_fitted[3], "surge")
+    _save_fx_cycle(manifest, "fx_blast_anim", _fit_union_canvas([b_fitted[0], b_s1[0], b_s1[2], b_s2[0], b_s2[2], b_s3[0], b_s3[2], b_s3[5]], 220, 148))
 
-    # 3. Animated Explosions: Warm Fireball (fx_boom_fire_1..6) & Tintable Crystalline Burst (fx_boom_energy_1..6)
+    # 3. Animated Explosions (fx_boom_fire_1..8 & fx_boom_energy_1..8)
     exp_sheet = load("effects/explosions_sheet.png")
     ex_fire_1 = trim(exp_sheet[22:155, 94:188, :], pad=2)
     ex_fire_2 = trim(exp_sheet[20:155, 194:324, :], pad=2)
     fire_fit = _fit_union_canvas([ex_fire_1, ex_fire_2], 196, 176)
-    fire_burst_a = _anim_variants_4(fire_fit[0], "burst")
-    fire_burst_b = _anim_variants_4(fire_fit[1], "burst")
-    _save_fx_cycle(manifest, "fx_boom_fire", [fire_burst_a[0], fire_burst_a[2], fire_fit[1], fire_burst_b[1], fire_burst_b[2], fire_burst_b[3]])
+    fb_a = _anim_variants_8(fire_fit[0], "burst")
+    fb_b = _anim_variants_8(fire_fit[1], "burst")
+    _save_fx_cycle(manifest, "fx_boom_fire", _fit_union_canvas([fb_a[0], fb_a[2], fb_a[4], fb_b[1], fb_b[3], fb_b[5], fb_b[6], fb_b[7]], 196, 176))
 
     ex_ice_1 = _to_luminous_tintable(trim(exp_sheet[22:155, 6:80, :], pad=2))
     ex_ice_2 = _to_luminous_tintable(trim(exp_sheet[20:155, 329:485, :], pad=2))
     ice_fit = _fit_union_canvas([ex_ice_1, ex_ice_2], 196, 176)
-    ice_burst_a = _anim_variants_4(ice_fit[0], "burst")
-    ice_burst_b = _anim_variants_4(ice_fit[1], "burst")
-    _save_fx_cycle(manifest, "fx_boom_energy", [ice_burst_a[0], ice_burst_a[2], ice_fit[1], ice_burst_b[1], ice_burst_b[2], ice_burst_b[3]])
+    ib_a = _anim_variants_8(ice_fit[0], "burst")
+    ib_b = _anim_variants_8(ice_fit[1], "burst")
+    _save_fx_cycle(manifest, "fx_boom_energy", _fit_union_canvas([ib_a[0], ib_a[2], ib_a[4], ib_b[1], ib_b[3], ib_b[5], ib_b[6], ib_b[7]], 196, 176))
 
-    # 4. Hit Spark Bursts (fx_hit_1..4, tintable)
+    # 4. Hit Spark Bursts (fx_hit_1..8, tintable)
     hit_sheet = load("effects/hit_sparks_sheet.png")
     h_raw = [
         _to_luminous_tintable(trim(hit_sheet[22:145, 0:64, :], pad=2)),
@@ -1496,41 +1783,55 @@ def build_skill_vfx(manifest: dict[str, dict]) -> None:
     ]
     for hc in h_raw:
         defringe(hc)
-    _save_fx_cycle(manifest, "fx_hit", _fit_union_canvas(h_raw, 136, 136))
+    h_fit = _fit_union_canvas(h_raw, 136, 136)
+    _save_fx_cycle(
+        manifest,
+        "fx_hit",
+        _fit_union_canvas(
+            [
+                h_fit[0],
+                _anim_variants_8(h_fit[0], "burst")[3],
+                h_fit[1],
+                _anim_variants_8(h_fit[1], "burst")[3],
+                h_fit[2],
+                _anim_variants_8(h_fit[2], "burst")[3],
+                h_fit[3],
+                _anim_variants_8(h_fit[3], "burst")[5],
+            ],
+            136,
+            136,
+        ),
+    )
 
-    # 5. Per-Hero Painted Signature Effects from detail/effects/*
+    # 5. Per-Hero Painted Signature Effects (8 frames each)
     nb = load("detail/effects/nova_blade_effects.png")
     nb_bg = np.median(nb[:4, :4, :3], axis=(0, 1))
-    _save_fx_cycle(manifest, "fx_nova_pillar", _anim_variants_4(_dark_bg_to_alpha(nb[0:84, 132:196, :], nb_bg, scale_h=200), "surge"))
-    _save_fx_cycle(manifest, "fx_nova_vortex", _anim_variants_4(_dark_bg_to_alpha(nb[0:84, 196:272, :], nb_bg, scale_h=180), "spin"))
+    _save_fx_cycle(manifest, "fx_nova_pillar", _anim_variants_8(_dark_bg_to_alpha(nb[0:84, 132:196, :], nb_bg, scale_h=200), "surge"))
+    _save_fx_cycle(manifest, "fx_nova_vortex", _anim_variants_8(_dark_bg_to_alpha(nb[0:84, 196:272, :], nb_bg, scale_h=180), "spin"))
 
     cf = load("detail/effects/crimson_flare_effects.png")
     cf_bg = np.median(cf[:4, :4, :3], axis=(0, 1))
-    _save_fx_cycle(manifest, "fx_meteor", _anim_variants_4(_dark_bg_to_alpha(cf[0:84, 4:74, :], cf_bg, scale_h=168), "surge"))
-    _save_fx_cycle(manifest, "fx_fire_vortex", _anim_variants_4(_dark_bg_to_alpha(cf[0:84, 74:154, :], cf_bg, scale_h=180), "spin"))
+    _save_fx_cycle(manifest, "fx_meteor", _anim_variants_8(_dark_bg_to_alpha(cf[0:84, 4:74, :], cf_bg, scale_h=168), "surge"))
+    _save_fx_cycle(manifest, "fx_fire_vortex", _anim_variants_8(_dark_bg_to_alpha(cf[0:84, 74:154, :], cf_bg, scale_h=180), "spin"))
 
     vs = load("detail/effects/volt_sentinel_effects.png")
     vs_bg = np.median(vs[:4, :4, :3], axis=(0, 1))
     vb1 = _dark_bg_to_alpha(vs[0:84, 0:65, :], vs_bg, scale_h=208)
     vb2 = _dark_bg_to_alpha(vs[0:84, 182:274, :], vs_bg, scale_h=208)
     vb_pair = _fit_union_canvas([vb1, vb2], 140, 208)
-    _save_fx_cycle(
-        manifest,
-        "fx_volt_bolt",
-        [vb_pair[0], _anim_variants_4(vb_pair[0], "crackle")[1], vb_pair[1], _anim_variants_4(vb_pair[1], "crackle")[2]],
-    )
-    _save_fx_cycle(manifest, "fx_volt_dome", _anim_variants_4(_dark_bg_to_alpha(vs[0:84, 68:180, :], vs_bg, scale_h=180), "crackle"))
+    vb_a = _anim_variants_8(vb_pair[0], "crackle")
+    vb_b = _anim_variants_8(vb_pair[1], "crackle")
+    _save_fx_cycle(manifest, "fx_volt_bolt", _fit_union_canvas([vb_a[0], vb_a[1], vb_a[2], vb_a[3], vb_b[0], vb_b[1], vb_b[2], vb_b[3]], 140, 208))
+    _save_fx_cycle(manifest, "fx_volt_dome", _anim_variants_8(_dark_bg_to_alpha(vs[0:84, 68:180, :], vs_bg, scale_h=180), "crackle"))
 
     ep = load("detail/effects/emerald_phantom_effects.png")
     ep_bg = np.median(ep[:4, :4, :3], axis=(0, 1))
     tw1 = _dark_bg_to_alpha(ep[0:84, 4:88, :], ep_bg, scale_h=190)
     tw2 = _dark_bg_to_alpha(ep[0:84, 90:166, :], ep_bg, scale_h=190)
     tw_pair = _fit_union_canvas([tw1, tw2], 180, 190)
-    _save_fx_cycle(
-        manifest,
-        "fx_wind_tornado",
-        [tw_pair[0], _anim_variants_4(tw_pair[0], "spin")[1], tw_pair[1], _anim_variants_4(tw_pair[1], "spin")[2]],
-    )
+    tw_a = _anim_variants_8(tw_pair[0], "spin")
+    tw_b = _anim_variants_8(tw_pair[1], "spin")
+    _save_fx_cycle(manifest, "fx_wind_tornado", _fit_union_canvas([tw_a[0], tw_a[1], tw_a[2], tw_a[3], tw_b[0], tw_b[1], tw_b[2], tw_b[3]], 180, 190))
 
     ce = load("detail/effects/common_effects.png")
     ce_bg = np.median(ce[12:18, 2:8, :3], axis=(0, 1))
@@ -1539,7 +1840,7 @@ def build_skill_vfx(manifest: dict[str, dict]) -> None:
     ce_entry["ax"] = 0.5
     manifest["fx_ground_crack"] = ce_entry
 
-    # 6. High-Res Procedural Element Signature Sets (Obsidian Warden, Cryo Archon, Void Reaper)
+    # 6. High-Res Procedural Element Signature Sets (8 frames each)
     _save_fx_cycle(manifest, "fx_earth_spire", _paint_earth_spires())
     _save_fx_cycle(manifest, "fx_ice_monolith", _paint_ice_monoliths())
     _save_fx_cycle(manifest, "fx_cryo_blizzard", _paint_cryo_blizzard())
@@ -1568,27 +1869,28 @@ def main() -> None:
             entry["ax"] = body_anchor(trimmed, pose)
             manifest[f"{hero}_{pose}"] = entry
 
-        # Synthesize articulated 12-frame run cycle (walk_1..walk_12) with leg-passing crossovers
-        run12 = synthesize_12frame_run([cleaned_heroes[hero][f"walk_{k}"] for k in range(1, 5)])
-        run12_cropped, run12_ax = _crop_union_frames(run12, float(run12[0].shape[1] // 2), pad=2)
-        for k, fr in enumerate(run12_cropped, 1):
+        # Synthesize articulated 16-frame run cycle (walk_1..walk_16) with bilinear upper warp
+        run16 = synthesize_16frame_run([cleaned_heroes[hero][f"walk_{k}"] for k in range(1, 5)])
+        run16_cropped, run16_ax = _crop_union_frames(run16, float(run16[0].shape[1] // 2), pad=2)
+        for k, fr in enumerate(run16_cropped, 1):
             pose_name = f"walk_{k}"
             cleaned_heroes[hero][pose_name] = fr
             entry = save(fr, f"{hero}_{pose_name}")
-            entry["ax"] = run12_ax
+            entry["ax"] = run16_ax
             manifest[f"{hero}_{pose_name}"] = entry
 
-        # Synthesize 4-frame breathing idle & 3-phase jump arc
-        idle4, idle_ax = synthesize_hero_idle4(cleaned_heroes[hero]["idle"])
-        for k, fr in enumerate(idle4, 1):
+        # Synthesize 8-frame breathing idle & 6-phase continuous jump arc
+        idle8, idle_ax = synthesize_hero_idle8(cleaned_heroes[hero]["idle"])
+        for k, fr in enumerate(idle8, 1):
             iname = f"idle_{k}"
             cleaned_heroes[hero][iname] = fr
             entry = save(fr, f"{hero}_{iname}")
             entry["ax"] = idle_ax
             manifest[f"{hero}_{iname}"] = entry
 
-        jump3, jump_ax = synthesize_hero_jump3(cleaned_heroes[hero]["jump"])
-        for jname, fr in zip(("jump_rise", "jump_apex", "jump_fall"), jump3):
+        jump6, jump_ax = synthesize_hero_jump6(cleaned_heroes[hero]["jump"])
+        for k, fr in enumerate(jump6, 1):
+            jname = f"jump_{k}"
             cleaned_heroes[hero][jname] = fr
             entry = save(fr, f"{hero}_{jname}")
             entry["ax"] = jump_ax
@@ -1613,38 +1915,50 @@ def main() -> None:
             entry["ax"] = body_anchor(trimmed, pose)
             manifest[f"{hero}_{pose}"] = entry
 
-        # Synthesize 3-hit melee combo variants & 2-phase dash
-        combo3, combo_ax = synthesize_hero_combo3(cleaned_heroes[hero]["attack_slash"])
-        for k, fr in enumerate(combo3, 1):
-            cname = f"attack_slash_{k}"
-            cleaned_heroes[hero][cname] = fr
-            entry = save(fr, f"{hero}_{cname}")
-            entry["ax"] = combo_ax
-            manifest[f"{hero}_{cname}"] = entry
+        # Synthesize 3x4 = 12-frame combo swings, 6-phase dash, 8-frame blast/ult & 4-frame hurt
+        combo12, combo_ax = synthesize_hero_combo12(cleaned_heroes[hero]["attack_slash"])
+        for c_idx in range(3):
+            for f_idx in range(4):
+                cname = f"attack_c{c_idx + 1}_{f_idx + 1}"
+                fr = combo12[c_idx * 4 + f_idx]
+                cleaned_heroes[hero][cname] = fr
+                entry = save(fr, f"{hero}_{cname}")
+                entry["ax"] = combo_ax
+                manifest[f"{hero}_{cname}"] = entry
 
-        dash2, dash_ax = synthesize_hero_dash2(cleaned_heroes[hero]["dash"])
-        for k, fr in enumerate(dash2, 1):
+        dash6, dash_ax = synthesize_hero_dash6(cleaned_heroes[hero]["dash"])
+        for k, fr in enumerate(dash6, 1):
             dname = f"dash_{k}"
             cleaned_heroes[hero][dname] = fr
             entry = save(fr, f"{hero}_{dname}")
             entry["ax"] = dash_ax
             manifest[f"{hero}_{dname}"] = entry
 
-        blast4, blast_ax = synthesize_hero_blast4(cleaned_heroes[hero]["attack_blast"])
-        for k, fr in enumerate(blast4, 1):
+        blast8, blast_ax = synthesize_hero_blast8(cleaned_heroes[hero]["attack_blast"])
+        for k, fr in enumerate(blast8, 1):
             bname = f"attack_blast_{k}"
             cleaned_heroes[hero][bname] = fr
             entry = save(fr, f"{hero}_{bname}")
             entry["ax"] = blast_ax
             manifest[f"{hero}_{bname}"] = entry
 
-        ult4, ult_ax = synthesize_hero_ult4(cleaned_heroes[hero]["attack_slash"])
-        for k, fr in enumerate(ult4, 1):
+        ult8, ult_ax = synthesize_hero_ult8(cleaned_heroes[hero]["attack_slash"])
+        for k, fr in enumerate(ult8, 1):
             uname = f"cast_ult_{k}"
             cleaned_heroes[hero][uname] = fr
             entry = save(fr, f"{hero}_{uname}")
             entry["ax"] = ult_ax
             manifest[f"{hero}_{uname}"] = entry
+
+        hurt4, hurt_ax = synthesize_hero_hurt4(cleaned_heroes[hero]["hit_reaction"])
+        for k, fr in enumerate(hurt4, 1):
+            hname = f"hit_reaction_{k}"
+            cleaned_heroes[hero][hname] = fr
+            entry = save(fr, f"{hero}_{hname}")
+            entry["ax"] = hurt_ax
+            manifest[f"{hero}_{hname}"] = entry
+
+        _emit_hero_aliases(manifest, hero)
 
         art_cell = clean_master_cell(sheet[56:546, 740:1446], bg, shadow_px=0, ratio=0.02, halo_depth=18)
         cleaned_heroes[hero]["art"] = art_cell
@@ -1661,7 +1975,7 @@ def main() -> None:
     generate_variant_hero("cryo_archon", "volt_sentinel", cleaned_heroes["volt_sentinel"], recolor_to_cryo_archon, manifest)
     generate_variant_hero("void_reaper", "emerald_phantom", cleaned_heroes["emerald_phantom"], recolor_to_void_reaper, manifest)
 
-    # 3. Extract all 25 enemy sprites/poses from uncut enemy master sheet + aliases + high-res 4-frame runs
+    # 3. Extract all 25 enemy sprites/poses from uncut enemy master sheet + multi-frame run, idle & attack cycles
     enemy_sheet = load(ENEMY_MASTER_SHEET)
     enemy_bg = estimate_sheet_bg(enemy_sheet)
     cleaned_enemies: dict[str, np.ndarray] = {}
@@ -1678,16 +1992,19 @@ def main() -> None:
     for old_b in OUT.glob("bomber_run_*.png"):
         old_b.unlink()
 
-    for ename in ("crawler", "mutant", "aegis", "boss"):
-        base_e = cleaned_enemies[ename]
-        if ename == "boss" and base_e.shape[0] > 320:
-            nw = round(base_e.shape[1] * 320 / base_e.shape[0])
-            base_e = np.array(
-                Image.fromarray(base_e.clip(0, 255).astype(np.uint8), "RGBA").resize((nw, 320), Image.Resampling.LANCZOS),
-                dtype=base_e.dtype,
+    def _cap_boss(arr: np.ndarray, ename: str) -> np.ndarray:
+        if ename.startswith("boss") and arr.shape[0] > 320:
+            nw = round(arr.shape[1] * 320 / arr.shape[0])
+            return np.array(
+                Image.fromarray(arr.clip(0, 255).astype(np.uint8), "RGBA").resize((nw, 320), Image.Resampling.LANCZOS),
+                dtype=arr.dtype,
             )
+        return arr
+
+    for ename in ("crawler", "mutant", "aegis", "boss"):
+        base_e = _cap_boss(cleaned_enemies[ename], ename)
         base_ax_px = foot_anchor(base_e) * base_e.shape[1] + 8.0
-        eruns = synthesize_enemy_run8(base_e, ename)
+        eruns = synthesize_enemy_run12(base_e, ename)
         eruns_cropped, erun_ax = _crop_union_frames(eruns, base_ax_px, pad=2)
         for k, fr in enumerate(eruns_cropped, 1):
             rname = f"{ename}_run_{k}"
@@ -1696,6 +2013,35 @@ def main() -> None:
             manifest[rname] = entry
             if ename == "crawler":
                 manifest[f"bomber_run_{k}"] = dict(entry)
+
+    for ename in ("crawler", "mutant", "aegis", "boss", "hunter"):
+        base_e = _cap_boss(cleaned_enemies[ename], ename)
+        base_ax_px = foot_anchor(base_e) * base_e.shape[1] + 8.0
+        eidles = synthesize_enemy_idle6(base_e, ename)
+        eidles_cropped, eidle_ax = _crop_union_frames(eidles, base_ax_px, pad=2)
+        for k, fr in enumerate(eidles_cropped, 1):
+            iname = f"{ename}_idle_{k}"
+            entry = save(fr, iname)
+            entry["ax"] = eidle_ax
+            manifest[iname] = entry
+            if ename == "crawler":
+                manifest[f"bomber_idle_{k}"] = dict(entry)
+
+    for aname, face_dir in (
+        ("crawler_leap", -1),
+        ("mutant_punch", 1),
+        ("aegis_bash", 1),
+        ("boss_slam", -1),
+        ("boss_whip", -1),
+        ("boss_beam", -1),
+    ):
+        base_a = _cap_boss(cleaned_enemies[aname], aname)
+        a_frames, a_ax = synthesize_enemy_attack4(base_a, face_dir=face_dir)
+        for k, fr in enumerate(a_frames, 1):
+            key = f"{aname}_{k}"
+            entry = save(fr, key)
+            entry["ax"] = a_ax
+            manifest[key] = entry
 
     for alias, src_name in ENEMY_ALIASES.items():
         trimmed = cleaned_enemies[src_name]

@@ -30,6 +30,9 @@ const alignToVelocity = {
   onUpdate: (p: Phaser.GameObjects.Particles.Particle) => Math.atan2(p.velocityY, p.velocityX) * toDeg,
 };
 
+/** Build a numbered animation key sequence [`prefix_1` .. `prefix_count`]. */
+export const fxSeq = (prefix: string, count = 8) => Array.from({ length: count }, (_, i) => `${prefix}_${i + 1}`);
+
 export class Fx {
   private dim?: Phaser.GameObjects.Image;
   private textPool: Phaser.GameObjects.Text[] = [];
@@ -369,7 +372,7 @@ export class Fx {
     const endRot = (tilt + sweep * 0.32) * dir;
     const sx = scale * 0.85;
     const sy = scale * (opts.thin ? 0.65 : 0.9);
-    const slashFrames = ["fx_slash_anim_1", "fx_slash_anim_2", "fx_slash_anim_3", "fx_slash_anim_4", "fx_slash_anim_5", "fx_slash_anim_6"];
+    const slashFrames = fxSeq("fx_slash_anim", 8);
 
     this.playAnim(x + dir * 24 * scale, y, slashFrames, {
       scale: sx,
@@ -383,7 +386,7 @@ export class Fx {
       depth: DEPTH.fx + 1,
       alpha: 0.86,
     });
-    this.playAnim(x + dir * 28 * scale, y, slashFrames.slice(1, 5), {
+    this.playAnim(x + dir * 28 * scale, y, slashFrames.slice(1, 7), {
       scale: sx * 0.86,
       endScale: sx * 1.02,
       scaleY: (sy / sx) * 0.88,
@@ -410,7 +413,7 @@ export class Fx {
   }
 
   hit(x: number, y: number, dir: number, palette: Palette, heavy = false) {
-    this.playAnim(x, y, ["fx_hit_1", "fx_hit_2", "fx_hit_3", "fx_hit_4"], {
+    this.playAnim(x, y, fxSeq("fx_hit", 8), {
       scale: heavy ? 1.1 : 0.72,
       endScale: heavy ? 1.42 : 0.96,
       rotation: (Math.random() - 0.5) * 0.6,
@@ -426,9 +429,7 @@ export class Fx {
 
   explosion(x: number, y: number, palette: Palette, radius = 120, smoky = true) {
     const warm = palette === PALETTE.fire || palette === PALETTE.earth || palette === PALETTE.enemy;
-    const boomKeys = warm
-      ? ["fx_boom_fire_1", "fx_boom_fire_2", "fx_boom_fire_3", "fx_boom_fire_4", "fx_boom_fire_5", "fx_boom_fire_6"]
-      : ["fx_boom_energy_1", "fx_boom_energy_2", "fx_boom_energy_3", "fx_boom_energy_4", "fx_boom_energy_5", "fx_boom_energy_6"];
+    const boomKeys = warm ? fxSeq("fx_boom_fire", 8) : fxSeq("fx_boom_energy", 8);
     this.playAnim(x, y - 12, boomKeys, {
       scale: (radius / 110) * 1.1,
       endScale: (radius / 110) * 1.42,

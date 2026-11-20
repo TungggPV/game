@@ -193,6 +193,9 @@ export class Hero extends Actor {
         this.sprite.scaleY,
         this.sprite.rotation,
         3,
+        this.sprite.flipX,
+        this.sprite.originX,
+        this.sprite.originY,
       );
     }
 
@@ -459,18 +462,49 @@ export class Hero extends Actor {
     }
   }
 
-  private pose(): HeroPose {
-    if (this.dead || this.state === "hurt") return "hit_reaction";
-    if (this.state === "dash" || this.state === "sweep") return this.stateTime < 0.08 ? "dash_1" : "dash_2";
-    if (this.state === "attack") return `attack_slash_${Math.min(3, Math.max(1, this.comboStep))}` as HeroPose;
-    if (this.state === "cast") {
-      const p = Phaser.Math.Clamp(this.stateTime / Math.max(0.05, this.stateDuration), 0, 0.999);
-      const step = Math.floor(p * 4) + 1;
-      return `${this.castAnim === "ult" ? "cast_ult" : "attack_blast"}_${step}` as HeroPose;
+  private resolveFrame(): { pose: HeroPose; nextPose: HeroPose; frac: number } {
+    const pState = Phaser.Math.Clamp(this.stateTime / Math.max(0.05, this.stateDuration), 0, 0.999);
+    const stepFrac = (prefix: string, count: number, u: number) => {
+      const f = u * Math.max(1, count - 1);
+      const i = Math.min(count - 1, Math.floor(f));
+      const j = Math.min(count - 1, i + 1);
+      return {
+        pose: `${prefix}_${i + 1}` as HeroPose,
+        nextPose: `${prefix}_${j + 1}` as HeroPose,
+        frac: f - i,
+      };
+    };
+    const loopFrac = (prefix: string, count: number, phase: number) => {
+      const i = ((Math.floor(phase) % count) + count) % count;
+      const j = (i + 1) % count;
+      return {
+        pose: `${prefix}_${i + 1}` as HeroPose,
+        nextPose: `${prefix}_${j + 1}` as HeroPose,
+        frac: phase - Math.floor(phase),
+      };
+    };
+
+    if (this.dead || this.state === "hurt") return stepFrac("hit_reaction", 4, pState);
+    if (this.state === "dash") return stepFrac("dash", 6, pState);
+    if (this.state === "sweep") return loopFrac("dash", 6, (this.stateTime / 0.24) * 6);
+    if (this.state === "attack") {
+      const c = Math.min(3, Math.max(1, this.comboStep));
+      return stepFrac(`attack_c${c}`, 4, pState);
     }
-    if (!this.onGround) return this.vy < -180 ? "jump_rise" : this.vy > 180 ? "jump_fall" : "jump_apex";
-    if (this.hasWalk && Math.abs(this.vx) > 35) return `walk_${(Math.floor(this.anim.stride) % 12) + 1}` as HeroPose;
-    return `idle_${(Math.floor(this.scene.time.now / 180) % 4) + 1}` as HeroPose;
+    if (this.state === "cast") {
+      const prefix = this.castAnim === "ult" ? "cast_ult" : "attack_blast";
+      return stepFrac(prefix, 8, pState);
+    }
+    if (!this.onGround) {
+      const u = Phaser.Math.Clamp((this.vy + 700) / 1450, 0, 0.999);
+      return stepFrac("jump", 6, u);
+    }
+    if (this.hasWalk && Math.abs(this.vx) > 35) return loopFrac("walk", 16, this.anim.stride);
+    return loopFrac("idle", 8, this.scene.time.now / 95);
+  }
+
+  private pose(): HeroPose {
+    return this.resolveFrame().pose;
   }
 
   /** Kick the squash/stretch spring; it settles back to 1 on its own. */
@@ -504,15 +538,18 @@ export class Hero extends Actor {
     a.sx += a.vx * dt;
     a.sy += a.vy * dt;
 
-    // Stride advances at smooth 12-frame sprint cadence proportional to distance covered.
-    if (running) a.stride += (speed * dt) / 13.5;
+    // Stride advances at smooth 16-frame sprint cadence proportional to distance covered.
+    if (running) a.stride += (speed * dt) / 10.5;
     else a.stride = 0;
 
-    const pose = this.pose();
+    const { pose, nextPose, frac } = this.resolveFrame();
     const key = heroKey(this.def.id, pose);
+    const nextKey = heroKey(this.def.id, nextPose);
     if (key !== a.lastKey) {
       this.sprite.setTexture(key);
-      if (!pose.startsWith("walk") && !a.lastKey.includes("walk") && !pose.startsWith("idle")) {
+      const prevGroup = a.lastKey.replace(/_\d+$/, "");
+      const curGroup = key.replace(/_\d+$/, "");
+      if (prevGroup !== curGroup && !pose.startsWith("walk") && !pose.startsWith("idle")) {
         this.impulse(a.sx * 1.04, a.sy * 0.97);
       }
       a.lastKey = key;
@@ -528,15 +565,15 @@ export class Hero extends Actor {
     this.sprite.setFlipX(flip).setOrigin(flip ? 1 - ax : ax, 1);
 
     const t = this.scene.time.now / 1000;
-    const walkCycle = (a.stride / 12) * Math.PI * 2;
-    const targetBob = running ? -Math.abs(Math.sin(walkCycle)) * 4.5 : 0;
+    const walkCycle = (a.stride / 16) * Math.PI * 2;
+    const targetBob = running ? -Math.abs(Math.sin(walkCycle)) * 4.2 : 0;
     a.bob = expDecay(a.bob, targetBob, 22, dt);
     const yOff = a.bob;
 
     let leanTarget = 0;
     let breathe = 0;
     if (running) {
-      leanTarget = (this.vx / (this.def.speed * 1.15)) * 0.13 + Math.sin(walkCycle) * 0.022 * this.facing;
+      leanTarget = (this.vx / (this.def.speed * 1.15)) * 0.13 + Math.sin(walkCycle) * 0.02 * this.facing;
       breathe = Math.cos(walkCycle * 2) * 0.022;
       a.dust -= dt;
       if (a.dust <= 0) {
@@ -564,14 +601,17 @@ export class Hero extends Actor {
     this.sprite.setPosition(this.x, this.y + yOff).setScale(sx, sy).setRotation(a.lean);
     this.renderCommon();
 
-    if (this.invuln > 0 && !this.dead && this.state !== "dash" && this.state !== "sweep" && this.state !== "cast") {
-      this.sprite.setAlpha(0.55 + Math.sin(this.scene.time.now / 35) * 0.35);
-    } else {
-      this.sprite.setAlpha(this.dead ? 0.55 : 1);
-    }
+    const baseAlpha =
+      this.invuln > 0 && !this.dead && this.state !== "dash" && this.state !== "sweep" && this.state !== "cast"
+        ? 0.55 + Math.sin(this.scene.time.now / 35) * 0.35
+        : this.dead
+        ? 0.55
+        : 1;
 
-    // 60 FPS Sub-Frame Cross-Blend Interpolation across 12-frame run, 4-frame idle, 4-frame cast & dash/attack
-    const applyBlend = (nextKey: string, alpha: number) => {
+    // 60 FPS Monotonic Energy-Preserving Cross-Fade Interpolation across all action/locomotion cycles
+    const sm = frac * frac * (3 - 2 * frac);
+    if (nextPose !== pose && sm > 0.01 && !this.dead && this.scene.textures.exists(nextKey)) {
+      this.sprite.setAlpha(baseAlpha * Math.sqrt(1 - sm));
       const nextAx = anchorX(nextKey);
       this.blendSprite
         .setTexture(nextKey)
@@ -580,31 +620,13 @@ export class Hero extends Actor {
         .setPosition(this.x, this.y + yOff)
         .setScale(sx, sy)
         .setRotation(a.lean)
-        .setAlpha(alpha * this.sprite.alpha)
+        .setAlpha(baseAlpha * Math.sqrt(sm))
         .setVisible(true);
-    };
-
-    if (running && this.hasWalk && !this.dead) {
-      const frameIdx = Math.floor(a.stride) % 12;
-      const frac = a.stride - Math.floor(a.stride);
-      applyBlend(heroKey(this.def.id, `walk_${((frameIdx + 1) % 12) + 1}` as HeroPose), Math.sin(frac * Math.PI) * 0.36);
-    } else if (this.state === "cast" && !this.dead) {
-      const p = Phaser.Math.Clamp(this.stateTime / Math.max(0.05, this.stateDuration), 0, 0.999) * 4;
-      const step = Math.floor(p) + 1;
-      const frac = p - Math.floor(p);
-      const nextStep = Math.min(4, step + 1);
-      const prefix = this.castAnim === "ult" ? "cast_ult" : "attack_blast";
-      applyBlend(heroKey(this.def.id, `${prefix}_${nextStep}` as HeroPose), Math.sin(frac * Math.PI) * 0.36);
-    } else if (this.state === "attack" && !this.dead) {
-      applyBlend(key, 0.24);
-    } else if (grounded && !running && this.state === "free" && !this.dead) {
-      const idlePhase = this.scene.time.now / 180;
-      const frameIdx = Math.floor(idlePhase) % 4;
-      const frac = idlePhase - Math.floor(idlePhase);
-      applyBlend(heroKey(this.def.id, `idle_${((frameIdx + 1) % 4) + 1}` as HeroPose), Math.sin(frac * Math.PI) * 0.3);
-    } else if ((this.state === "dash" || this.state === "sweep") && !this.dead) {
-      applyBlend(heroKey(this.def.id, "dash_2"), 0.28);
+      if (this.flashTime > 0) this.blendSprite.setTintFill(0xffffff);
+      else if (this.sprite.isTinted) this.blendSprite.setTint(this.sprite.tintTopLeft);
+      else this.blendSprite.clearTint();
     } else {
+      this.sprite.setAlpha(baseAlpha);
       this.blendSprite.setVisible(false);
     }
 

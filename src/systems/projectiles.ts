@@ -3,7 +3,7 @@ import { DEPTH, GROUND_Y } from "../config/constants";
 import type { Actor, Hit } from "../entities/Actor";
 import { Hero } from "../entities/Hero";
 import type { GameScene } from "../scenes/GameScene";
-import { PALETTE } from "./Fx";
+import { fxSeq, PALETTE } from "./Fx";
 
 export type ProjectileStyle = "plasma" | "fire" | "volt" | "wind" | "earth" | "cryo" | "void" | "enemy";
 
@@ -153,10 +153,10 @@ export class ProjectileSystem {
     switch (spec.style) {
       case "plasma":
         parts.push(
-          add(pickTex(["fx_blast_anim_1", "fx_blast_anim_2", "fx_blast_anim_3", "fx_blast_anim_4"]), pal.main, 0.44 * s, 0.36 * s, DEPTH.projectile + 1),
+          add(pickTex(fxSeq("fx_blast_anim", 8)), pal.main, 0.44 * s, 0.36 * s, DEPTH.projectile + 1),
           add("glow", pal.main, 1.3 * s, 0.9 * s),
         );
-        animFps = 22;
+        animFps = 28;
         trail = this.scene.fx.trail(p, "streak", {
           speed: 0, lifespan: 260, frequency: 12, scale: { start: 0.9 * s, end: 0 }, alpha: { start: 0.8, end: 0 },
           color: [pal.light, pal.main, pal.dark], blendMode: Phaser.BlendModes.ADD, rotate: Math.atan2(spec.vy, spec.vx) * (180 / Math.PI),
@@ -164,10 +164,10 @@ export class ProjectileSystem {
         break;
       case "fire":
         parts.push(
-          add(pickTex(["fx_meteor_1", "fx_meteor_2", "fx_meteor_3", "fx_meteor_4"]), 0xffffff, 0.48 * s, 0.48 * s, DEPTH.projectile + 1),
+          add(pickTex(fxSeq("fx_meteor", 8)), 0xffffff, 0.48 * s, 0.48 * s, DEPTH.projectile + 1),
           add("glow", pal.main, 1.7 * s, 1.7 * s),
         );
-        animFps = 20;
+        animFps = 28;
         trail = this.scene.fx.trail(p, "flame", {
           speedX: { min: -spec.vx * 0.15, max: -spec.vx * 0.05 }, speedY: { min: -90, max: -20 },
           lifespan: { min: 220, max: 420 }, frequency: 14, quantity: 2,
@@ -177,10 +177,10 @@ export class ProjectileSystem {
         break;
       case "volt":
         parts.push(
-          add(pickTex(["fx_volt_bolt_1", "fx_volt_bolt_2", "fx_volt_bolt_3", "fx_volt_bolt_4"]), pal.light, 0.36 * s, 0.46 * s, DEPTH.projectile + 1),
+          add(pickTex(fxSeq("fx_volt_bolt", 8)), pal.light, 0.36 * s, 0.46 * s, DEPTH.projectile + 1),
           add("glow", pal.main, 1.15 * s, 0.8 * s),
         );
-        animFps = 24;
+        animFps = 30;
         crackle = this.scene.add.graphics().setDepth(DEPTH.projectile).setBlendMode(Phaser.BlendModes.ADD);
         trail = this.scene.fx.trail(p, "dot", {
           speed: { min: 40, max: 160 }, lifespan: { min: 120, max: 260 }, frequency: 10,
@@ -189,10 +189,10 @@ export class ProjectileSystem {
         break;
       case "wind":
         parts.push(
-          add(pickTex(["fx_slash_anim_2", "fx_slash_anim_3", "fx_slash_anim_4", "fx_slash_anim_5"]), pal.main, 0.48 * s, 0.62 * s, DEPTH.projectile + 1),
+          add(pickTex(fxSeq("fx_slash_anim", 8)), pal.main, 0.48 * s, 0.62 * s, DEPTH.projectile + 1),
           add("glow", pal.main, 1.2 * s, 1.6 * s),
         );
-        animFps = 18;
+        animFps = 26;
         trail = this.scene.fx.trail(p, "leaf", {
           speedX: { min: -spec.vx * 0.2, max: -spec.vx * 0.05 }, speedY: { min: -120, max: 120 },
           lifespan: { min: 300, max: 600 }, frequency: 25, scale: { start: 0.8, end: 0.2 },
@@ -201,10 +201,10 @@ export class ProjectileSystem {
         break;
       case "earth":
         parts.push(
-          add(pickTex(["fx_earth_spire_1", "fx_earth_spire_2", "fx_earth_spire_3", "fx_earth_spire_4"]), 0xffffff, 0.45 * s, 0.45 * s, DEPTH.projectile + 1),
+          add(pickTex(fxSeq("fx_earth_spire", 8)), 0xffffff, 0.45 * s, 0.45 * s, DEPTH.projectile + 1).setBlendMode(Phaser.BlendModes.NORMAL),
           add("glow", pal.main, 1.2 * s, 1.2 * s),
         );
-        animFps = 18;
+        animFps = 26;
         trail = this.scene.fx.trail(p, "shard", {
           speed: { min: 30, max: 120 }, lifespan: { min: 180, max: 320 }, frequency: 12,
           scale: { start: 0.6 * s, end: 0 }, color: [pal.light, pal.main], blendMode: Phaser.BlendModes.ADD,
@@ -212,10 +212,10 @@ export class ProjectileSystem {
         break;
       case "cryo":
         parts.push(
-          add(pickTex(["fx_ice_monolith_1", "fx_ice_monolith_2", "fx_ice_monolith_3", "fx_ice_monolith_4"]), 0xffffff, 0.45 * s, 0.5 * s, DEPTH.projectile + 1),
+          add(pickTex(fxSeq("fx_ice_monolith", 8)), 0xffffff, 0.45 * s, 0.5 * s, DEPTH.projectile + 1).setBlendMode(Phaser.BlendModes.NORMAL),
           add("glow", pal.main, 1.5 * s, 1.1 * s),
         );
-        animFps = 18;
+        animFps = 26;
         trail = this.scene.fx.trail(p, "shard", {
           speed: { min: 30, max: 140 }, lifespan: { min: 200, max: 380 }, frequency: 12,
           scale: { start: 0.7 * s, end: 0.05 }, rotate: { min: 0, max: 360 }, color: [0xffffff, pal.light, pal.main], blendMode: Phaser.BlendModes.ADD,
@@ -223,10 +223,10 @@ export class ProjectileSystem {
         break;
       case "void":
         parts.push(
-          add(pickTex(["fx_void_orb_1", "fx_void_orb_2", "fx_void_orb_3", "fx_void_orb_4"]), 0xffffff, 0.52 * s, 0.52 * s, DEPTH.projectile + 1),
+          add(pickTex(fxSeq("fx_void_orb", 8)), 0xffffff, 0.52 * s, 0.52 * s, DEPTH.projectile + 1),
           add("glow", pal.main, 1.7 * s, 1.7 * s),
         );
-        animFps = 20;
+        animFps = 28;
         trail = this.scene.fx.trail(p, "dot", {
           speed: { min: 20, max: 120 }, lifespan: { min: 200, max: 360 }, frequency: 12,
           scale: { start: 0.75 * s, end: 0 }, color: [pal.light, pal.main, 0x3b0764], blendMode: Phaser.BlendModes.ADD,

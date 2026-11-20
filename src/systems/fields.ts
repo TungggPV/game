@@ -3,7 +3,7 @@ import { DEPTH, GROUND_Y } from "../config/constants";
 import type { Hit } from "../entities/Actor";
 import type { Hero } from "../entities/Hero";
 import type { GameScene } from "../scenes/GameScene";
-import { PALETTE } from "./Fx";
+import { fxSeq, PALETTE } from "./Fx";
 
 export type FieldStyle = "cage" | "spiral" | "blizzard";
 
@@ -88,11 +88,11 @@ export class FieldSystem {
     const g = this.scene.add.graphics().setDepth(DEPTH.fx - 1);
     const animKeys =
       spec.style === "cage"
-        ? ["fx_volt_dome_1", "fx_volt_dome_2", "fx_volt_dome_3", "fx_volt_dome_4"]
+        ? fxSeq("fx_volt_dome", 8)
         : spec.style === "blizzard"
-        ? ["fx_cryo_blizzard_1", "fx_cryo_blizzard_2", "fx_cryo_blizzard_3", "fx_cryo_blizzard_4"]
-        : ["fx_wind_tornado_1", "fx_wind_tornado_2", "fx_wind_tornado_3", "fx_wind_tornado_4"];
-    const animFps = spec.style === "spiral" ? 16 : 14;
+        ? fxSeq("fx_cryo_blizzard", 8)
+        : fxSeq("fx_wind_tornado", 8);
+    const animFps = spec.style === "spiral" ? 22 : 20;
     const isBliz = spec.style === "blizzard";
     const mk = (depth: number) =>
       this.scene.textures.exists(animKeys[0])
@@ -162,12 +162,12 @@ export class FieldSystem {
       const baseSc = f.style === "blizzard" ? (f.radius * 2.1) / 196 : Math.max(0.85, (f.radius * 1.4) / 180);
       f.sprite
         .setScale(baseSc * pulse, (f.style === "blizzard" ? baseSc * 0.42 : baseSc) * pulse)
-        .setAlpha(0.92 * fade);
+        .setAlpha(0.92 * fade * (1 - frac));
       if (f.blendSprite) {
         if (f.blendSprite.texture.key !== kNext && this.scene.textures.exists(kNext)) f.blendSprite.setTexture(kNext);
         f.blendSprite
           .setScale(f.sprite.scaleX, f.sprite.scaleY)
-          .setAlpha(Math.sin(frac * Math.PI) * 0.48 * fade);
+          .setAlpha(0.92 * fade * frac);
       }
     }
 

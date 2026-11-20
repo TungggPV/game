@@ -23,6 +23,9 @@ export type AfterimageSnapshot = {
   alpha: number;
   life: number;
   maxLife: number;
+  flipX: boolean;
+  originX: number;
+  originY: number;
   active: boolean;
 };
 
@@ -46,6 +49,9 @@ export class AfterimageRingBuffer {
         alpha: 0,
         life: 0,
         maxLife: 0.18,
+        flipX: false,
+        originX: 0.5,
+        originY: 1,
         active: false,
       });
       const img = this.scene.add.image(0, 0, "__WHITE").setVisible(false).setDepth(this.depth);
@@ -65,12 +71,15 @@ export class AfterimageRingBuffer {
     scaleY: number,
     rotation: number,
     steps = 2,
+    flipX = false,
+    originX = 0.5,
+    originY = 1,
   ) {
     for (let s = 1; s <= steps; s += 1) {
       const t = s / (steps + 1);
       const ix = fromX + (toX - fromX) * t;
       const iy = fromY + (toY - fromY) * t;
-      this.push(ix, iy, texture, tint, scaleX, scaleY, rotation, 0.45);
+      this.push(ix, iy, texture, tint, scaleX, scaleY, rotation, 0.45, flipX, originX, originY);
     }
   }
 
@@ -83,6 +92,9 @@ export class AfterimageRingBuffer {
     scaleY: number,
     rotation: number,
     startAlpha = 0.5,
+    flipX = false,
+    originX = 0.5,
+    originY = 1,
   ) {
     const snap = this.pool[this.head];
     snap.x = x;
@@ -94,6 +106,9 @@ export class AfterimageRingBuffer {
     snap.rotation = rotation;
     snap.alpha = startAlpha;
     snap.life = snap.maxLife;
+    snap.flipX = flipX;
+    snap.originX = originX;
+    snap.originY = originY;
     snap.active = true;
 
     this.head = (this.head + 1) % this.poolSize;
@@ -118,6 +133,8 @@ export class AfterimageRingBuffer {
       if (ghost.texture.key !== snap.texture && this.scene.textures.exists(snap.texture)) {
         ghost.setTexture(snap.texture);
       }
+      ghost.setFlipX(snap.flipX);
+      ghost.setOrigin(snap.originX, snap.originY);
       ghost.setPosition(snap.x, snap.y);
       ghost.setScale(snap.scaleX, snap.scaleY);
       ghost.setRotation(snap.rotation);
