@@ -42,6 +42,7 @@ export class MenuScene extends Phaser.Scene {
   private bg!: Phaser.GameObjects.TileSprite;
   private modal?: Phaser.GameObjects.Container;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
+  private transitioning = false;
 
   // PK & Difficulty options
   private pkBotLevel: "none" | "easy" | "normal" | "hard" = "none";
@@ -54,10 +55,12 @@ export class MenuScene extends Phaser.Scene {
 
   create() {
     setSceneFlag("menu");
+    this.transitioning = false;
     this.cards = [];
     this.modeButtons = [];
     this.diffButtons = [];
     this.modal = undefined;
+    this.cameras.main.fadeIn(180, 2, 7, 13);
 
     const src = this.textures.get("bg_city_neon").getSourceImage();
     this.bg = this.add.tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, "bg_city_neon").setOrigin(0).setTileScale(GAME_HEIGHT / src.height);
@@ -395,6 +398,8 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private start() {
+    if (this.transitioning) return;
+    this.transitioning = true;
     sfx.unlock();
     sfx.confirm();
     const mode = MODES[this.mode].id;

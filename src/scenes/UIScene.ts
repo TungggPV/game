@@ -52,6 +52,7 @@ export class UIScene extends Phaser.Scene {
   private coopIndicators: Phaser.GameObjects.Container[] = [];
   private overlay?: { root: Phaser.GameObjects.Container; group: ButtonGroup; extraKeys?: Phaser.Input.Keyboard.Key[] };
   private pauseKeys: Phaser.Input.Keyboard.Key[] = [];
+  private switchingScene = false;
 
   constructor() {
     super("ui");
@@ -62,6 +63,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   create() {
+    this.switchingScene = false;
     this.game_ = this.scene.get(this.targetScene) as GameScene;
     this.panels = [];
     this.overlay = undefined;
@@ -587,22 +589,29 @@ export class UIScene extends Phaser.Scene {
     this.overlay = { root, group };
   }
 
+  private switchScene(next: string, data?: object) {
+    if (this.switchingScene) return;
+    this.switchingScene = true;
+    const target = this.targetScene;
+    this.cameras.main.fadeOut(150, 2, 7, 13);
+    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+      this.closeOverlay();
+      this.scene.stop(target);
+      setSceneFlag(next === "menu" ? "menu" : "game");
+      this.scene.start(next, data);
+    });
+  }
+
   private restart() {
-    const data = {
+    this.switchScene(this.targetScene, {
       mode: this.game_.mode,
       heroes: this.game_.heroIds,
       botDifficulty: this.game_.botDifficulty,
       handicaps: this.game_.handicaps,
-    };
-    this.closeOverlay();
-    this.scene.stop(this.targetScene);
-    this.scene.start(this.targetScene, data);
+    });
   }
 
   private toMenu() {
-    this.closeOverlay();
-    this.scene.stop(this.targetScene);
-    setSceneFlag("menu");
-    this.scene.start("menu");
+    this.switchScene("menu");
   }
 }

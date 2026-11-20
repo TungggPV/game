@@ -29,6 +29,7 @@ export class CodexScene extends Phaser.Scene {
   create() {
     this.scrollY = 0;
     this.maxScroll = 0;
+    this.cameras.main.fadeIn(180, 2, 7, 13);
     const src = this.textures.get("bg_city_neon").getSourceImage();
     this.add.tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, "bg_city_neon").setOrigin(0).setTileScale(GAME_HEIGHT / src.height);
     this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.85).setOrigin(0);

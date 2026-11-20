@@ -68,6 +68,7 @@ export class TrainingScene extends GameScene {
     this.bindShortcuts();
     this.setPhase("fight", 0);
     this.lockHeroes(false);
+    this.cameras.main.fadeIn(180, 2, 7, 13);
 
     music.start("menu");
     this.events.once("shutdown", () => {

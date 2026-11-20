@@ -57,6 +57,7 @@ export class WorkshopScene extends Phaser.Scene {
 
   create() {
     this.cards = [];
+    this.cameras.main.fadeIn(180, 2, 7, 13);
     const src = this.textures.get("bg_lab_sewer").getSourceImage();
     this.add.tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, "bg_lab_sewer").setOrigin(0).setTileScale(GAME_HEIGHT / src.height);
     this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02070d, 0.75).setOrigin(0);

@@ -660,12 +660,13 @@ def generate_variant_hero(
     recolor_fn,
     manifest: dict[str, dict],
 ) -> None:
-    """Create a complete 10-pose + art + 4-icon hero variant via recolor helper."""
+    """Create a complete expanded-pose + art + 4-icon hero variant via recolor helper."""
+    cycle_prefixes = ("walk_", "idle_", "jump_", "attack_slash_", "dash_")
     for pose, src_arr in src_poses.items():
         recolored = recolor_fn(src_arr)
         if pose == "art":
             manifest[f"{target_id}_art"] = save(trim(recolored, pad=2), f"{target_id}_art", 420)
-        elif pose.startswith("walk_"):
+        elif pose.startswith(cycle_prefixes):
             entry = save(recolored, f"{target_id}_{pose}")
             entry["ax"] = manifest[f"{src_hero}_{pose}"]["ax"]
             manifest[f"{target_id}_{pose}"] = entry
@@ -780,8 +781,39 @@ def _warp_continuous_leg(
     return out
 
 
-def synthesize_8frame_run(base_frames: list[np.ndarray]) -> list[np.ndarray]:
-    """Articulate 4 cleaned base walk poses into 8 distinct full-gait run phases with passing crossovers."""
+def _bilinear_warp(
+    padded: np.ndarray, sx: np.ndarray, sy: np.ndarray, alpha_thresh: float = 100.0
+) -> np.ndarray:
+    """Sample padded RGBA array at sub-pixel coords (sx, sy) with optional silhouette alpha sharpening."""
+    h, w = padded.shape[:2]
+    x0 = np.floor(sx).astype(np.int32)
+    y0 = np.floor(sy).astype(np.int32)
+    x1 = x0 + 1
+    y1 = y0 + 1
+    valid = (x0 >= 0) & (x1 < w) & (y0 >= 0) & (y1 < h)
+    wx = sx - x0
+    wy = sy - y0
+
+    out = np.zeros_like(padded)
+    for ch_i in range(4):
+        ch = padded[..., ch_i].astype(np.float32)
+        v00 = np.where(valid, ch[np.clip(y0, 0, h - 1), np.clip(x0, 0, w - 1)], 0.0)
+        v10 = np.where(valid, ch[np.clip(y0, 0, h - 1), np.clip(x1, 0, w - 1)], 0.0)
+        v01 = np.where(valid, ch[np.clip(y1, 0, h - 1), np.clip(x0, 0, w - 1)], 0.0)
+        v11 = np.where(valid, ch[np.clip(y1, 0, h - 1), np.clip(x1, 0, w - 1)], 0.0)
+        val = (v00 * (1.0 - wx) + v10 * wx) * (1.0 - wy) + (v01 * (1.0 - wx) + v11 * wx) * wy
+        if ch_i == 3 and alpha_thresh > 0.0:
+            val = np.where(
+                val > alpha_thresh,
+                np.clip((val - alpha_thresh) * 2.3 + alpha_thresh + 30.0, 0.0, 255.0),
+                0.0,
+            )
+        out[..., ch_i] = np.clip(val, 0, 255).astype(padded.dtype)
+    return out
+
+
+def synthesize_12frame_run(base_frames: list[np.ndarray]) -> list[np.ndarray]:
+    """Articulate 4 cleaned base walk poses into 12 smooth gait phases (6 per half-stride)."""
     max_h = max(f.shape[0] for f in base_frames) + 14
     max_w = max(f.shape[1] for f in base_frames) + 28
     cx_target = max_w // 2
@@ -799,22 +831,20 @@ def synthesize_8frame_run(base_frames: list[np.ndarray]) -> list[np.ndarray]:
         aligned.append(can)
 
     gait = [
-        # 1. Contact A: wide forward stride
-        (0, +4.0, +4.0, -1.0, 0.0, -4.0, -2.0, +1.0, 0.0, True, +1.0, +4.0, 0),
-        # 2. Recoil A: knee absorbs impact, rear heel lifts
-        (1, -8.0, +22.0, +2.0, -3.0, +6.0, +9.0, -1.0, 0.0, True, +2.5, +2.0, 0),
-        # 3. Passing A: legs cross under hip, rear knee tucked forward
-        (2, -24.0, +28.0, +7.0, -5.5, +17.0, +3.0, -4.5, 0.0, False, -1.0, -2.0, 0),
-        # 4. High Point / Drive A: full push-off, rear leg reaches ahead
-        (3, -34.0, +12.0, +9.5, -4.5, +25.0, +10.0, -6.0, -1.0, False, -2.5, -4.5, 2),
-        # 5. Contact B: opposite stride extension
-        (3, +2.0, +8.0, 0.0, -1.0, -2.0, +3.0, +1.0, 0.0, True, +1.0, -3.5, 0),
-        # 6. Recoil B: weight settles, recovery leg lifts
-        (0, -12.0, +25.0, +3.5, -4.0, +8.0, +7.0, -2.0, 0.0, True, +2.5, -1.0, 0),
-        # 7. Passing B: second leg crossover under hip
-        (1, -27.0, +30.0, +8.0, -6.0, +19.0, +2.0, -5.5, 0.0, True, -1.0, +2.0, 0),
-        # 8. High Point / Drive B: front leg extends toward Contact A
-        (2, -14.0, +16.0, +3.0, -2.5, +6.0, -5.0, -1.0, -3.0, True, -2.5, +4.0, 2),
+        # Half-stride A: Contact -> Recoil -> Pass-In -> Pass-Cross -> Drive -> Reach
+        (0, +5.0, +4.0, -1.0, 0.0, -5.0, -2.0, +1.0, 0.0, True, +1.0, +4.5, 0),
+        (0, -4.0, +18.0, +1.5, -2.0, +4.0, +7.0, -0.5, 0.0, True, +2.8, +2.5, 0),
+        (1, -14.0, +27.0, +4.5, -4.5, +12.0, +5.0, -3.0, 0.0, True, +0.8, 0.0, 0),
+        (2, -25.0, +28.0, +7.5, -5.5, +18.0, +3.0, -4.8, 0.0, False, -1.2, -2.2, 0),
+        (3, -34.0, +14.0, +9.5, -4.5, +24.0, +9.0, -6.0, -1.0, False, -2.6, -4.2, 2),
+        (3, -18.0, +6.0, +4.5, -2.5, +12.0, +6.0, -2.5, -1.5, False, -1.8, -4.8, 3),
+        # Half-stride B: Contact -> Recoil -> Pass-In -> Pass-Cross -> Drive -> Reach
+        (3, +3.0, +7.0, 0.0, -1.0, -3.0, +3.0, +1.0, 0.0, True, +1.0, -3.5, 0),
+        (0, -6.0, +20.0, +2.0, -2.8, +5.0, +8.0, -1.0, 0.0, True, +2.8, -1.5, 0),
+        (1, -17.0, +29.0, +5.5, -5.0, +14.0, +4.0, -3.5, 0.0, True, +0.6, +0.5, 0),
+        (1, -27.0, +30.0, +8.0, -6.0, +19.0, +2.0, -5.5, 0.0, True, -1.2, +2.4, 0),
+        (2, -22.0, +19.0, +5.5, -3.8, +12.0, -3.0, -3.0, -2.5, True, -2.5, +4.2, 2),
+        (2, -8.0, +11.0, +2.0, -1.8, +2.0, -4.0, 0.0, -2.0, True, -1.5, +4.8, 3),
     ]
 
     out_frames: list[np.ndarray] = []
@@ -876,16 +906,123 @@ def synthesize_8frame_run(base_frames: list[np.ndarray]) -> list[np.ndarray]:
     return out_frames
 
 
-def synthesize_enemy_run4(base: np.ndarray, kind: str) -> list[np.ndarray]:
-    """Synthesize a smooth 4-frame high-res walk cycle from an enemy's main portrait."""
+def synthesize_hero_idle4(base_idle: np.ndarray) -> tuple[list[np.ndarray], float]:
+    """Synthesize 4-frame idle breathing/visor/arm combat stance with planted boots and locked torso ax."""
+    pivot_x = body_anchor(base_idle, "idle") * base_idle.shape[1] + 8.0
+    padded = np.pad(base_idle, ((8, 8), (8, 8), (0, 0)), mode="constant", constant_values=0)
+    h, w = padded.shape[:2]
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+
+    w_up = 1.0 - _smoothstep(h * 0.56, h * 0.72, yy)
+    w_arm = _smoothstep(w * 0.16, w * 0.30, np.abs(xx - pivot_x)) * w_up
+
+    frames: list[np.ndarray] = []
+    for k in range(4):
+        ph = k * (math.pi / 2.0)
+        s = math.sin(ph)
+        c = math.cos(ph)
+        dy = -s * 2.3 * w_up + c * 1.6 * w_arm
+        dx = c * 0.9 * w_up + s * 1.1 * w_arm
+        frames.append(_bilinear_warp(padded, xx - dx, yy - dy, alpha_thresh=0.0))
+    return _crop_union_frames(frames, pivot_x, pad=2)
+
+
+def synthesize_hero_jump3(base_jump: np.ndarray) -> tuple[list[np.ndarray], float]:
+    """Synthesize 3-phase jump arc (rise, apex, fall) with locked union bounds."""
+    pivot_x = body_anchor(base_jump, "jump") * base_jump.shape[1] + 14.0
+    padded = np.pad(base_jump, ((14, 14), (14, 14), (0, 0)), mode="constant", constant_values=0)
+    h, w = padded.shape[:2]
+    pivot_y = h * 0.5
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    dx0 = xx - pivot_x
+    dy0 = yy - pivot_y
+    w_leg = _smoothstep(h * 0.55, h * 0.75, yy)
+    w_arm = _smoothstep(h * 0.50, h * 0.30, yy)
+
+    # Rise: -5.5 deg tilt, 1.04 vertical stretch, leg tuck
+    th_r = math.radians(-5.5)
+    c_r, s_r = math.cos(th_r), math.sin(th_r)
+    sx_r = pivot_x + dx0 * c_r + (dy0 / 1.04) * s_r
+    sy_r = pivot_y - dx0 * s_r + (dy0 / 1.04) * c_r - (-4.5 * w_leg)
+    rise = _bilinear_warp(padded, sx_r, sy_r, alpha_thresh=0.0)
+
+    # Apex: neutral hover
+    apex = padded.copy()
+
+    # Fall: +7.0 deg pitch forward, braced descending legs, raised balance arms
+    th_f = math.radians(7.0)
+    c_f, s_f = math.cos(th_f), math.sin(th_f)
+    dy_off = 4.5 * w_leg - 3.0 * w_arm
+    sx_f = pivot_x + dx0 * c_f + dy0 * s_f
+    sy_f = pivot_y - dx0 * s_f + dy0 * c_f - dy_off
+    fall = _bilinear_warp(padded, sx_f, sy_f, alpha_thresh=0.0)
+
+    return _crop_union_frames([rise, apex, fall], pivot_x, pad=2)
+
+
+def synthesize_hero_combo3(base_slash: np.ndarray) -> tuple[list[np.ndarray], float]:
+    """Synthesize 3-hit melee combo variants (cut, uppercut, heavy finisher) preserving translucent arcs."""
+    pivot_x = body_anchor(base_slash, "attack_slash") * base_slash.shape[1] + 26.0
+    padded = np.pad(base_slash, ((26, 26), (26, 26), (0, 0)), mode="constant", constant_values=0)
+    h, w = padded.shape[:2]
+    pivot_y = h * 0.56
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    dx0 = xx - pivot_x
+    dy0 = yy - pivot_y
+
+    # Combo 1: horizontal cut
+    s1 = padded.copy()
+
+    # Combo 2: rising uppercut (-10.5 deg weapon tilt + -3 deg body tilt + upward blade lift)
+    w_blade = _smoothstep(pivot_x - 16.0, pivot_x + 12.0, xx)
+    th_2 = np.radians(-3.0 - 10.5 * w_blade)
+    c2, s2_sin = np.cos(th_2), np.sin(th_2)
+    sx2 = pivot_x + dx0 * c2 + dy0 * s2_sin
+    sy2 = pivot_y - dx0 * s2_sin + dy0 * c2 - (-4.0 * w_blade)
+    s2 = _bilinear_warp(padded, sx2, sy2, alpha_thresh=0.0)
+
+    # Combo 3: heavy overhead finisher (+8.5 deg downward smash + forward lunge + 1.04x arc punch)
+    w_lunge = _smoothstep(pivot_x - 12.0, pivot_x + 28.0, xx)
+    arc_scale = 1.0 + 0.04 * w_lunge
+    th_3 = math.radians(8.5)
+    c3, s3_sin = math.cos(th_3), math.sin(th_3)
+    dx3 = (dx0 - 5.5 * w_lunge) / arc_scale
+    dy3 = dy0 / arc_scale
+    sx3 = pivot_x + dx3 * c3 + dy3 * s3_sin
+    sy3 = pivot_y - dx3 * s3_sin + dy3 * c3
+    s3 = _bilinear_warp(padded, sx3, sy3, alpha_thresh=0.0)
+
+    return _crop_union_frames([s1, s2, s3], pivot_x, pad=2)
+
+
+def synthesize_hero_dash2(base_dash: np.ndarray) -> tuple[list[np.ndarray], float]:
+    """Synthesize 2-phase dash (coiled launch -> stretched horizontal glide)."""
+    pivot_x = body_anchor(base_dash, "dash") * base_dash.shape[1] + 14.0
+    padded = np.pad(base_dash, ((10, 10), (14, 14), (0, 0)), mode="constant", constant_values=0)
+    h, w = padded.shape[:2]
+    pivot_y = h * 0.55
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    dx0 = xx - pivot_x
+    dy0 = yy - pivot_y
+
+    th_1 = math.radians(4.0)
+    c1, s1 = math.cos(th_1), math.sin(th_1)
+    d1 = _bilinear_warp(padded, pivot_x + (dx0 / 0.96) * c1 + dy0 * s1, pivot_y - (dx0 / 0.96) * s1 + dy0 * c1, alpha_thresh=0.0)
+
+    d2 = _bilinear_warp(padded, pivot_x + dx0 / 1.05, pivot_y + dy0 / 0.96, alpha_thresh=0.0)
+    return _crop_union_frames([d1, d2], pivot_x, pad=2)
+
+
+def synthesize_enemy_run8(base: np.ndarray, kind: str) -> list[np.ndarray]:
+    """Synthesize a smooth 8-frame high-res walk cycle from an enemy's main portrait."""
     padded = np.pad(base, ((8, 8), (8, 8), (0, 0)), mode="constant", constant_values=0)
     h, w = padded.shape[:2]
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
     cx = w * 0.5
     frames: list[np.ndarray] = []
 
-    for k in range(4):
-        ph = k * (math.pi / 2.0)
+    for k in range(8):
+        ph = k * (math.pi / 4.0)
         s = math.sin(ph)
         c = math.cos(ph)
 
@@ -923,28 +1060,7 @@ def synthesize_enemy_run4(base: np.ndarray, kind: str) -> list[np.ndarray]:
             dy = leg_dy + arm_dy + body_bob
             dx = leg_dx + arm_dx
 
-        sx = xx - dx
-        sy = yy - dy
-        x0 = np.floor(sx).astype(np.int32)
-        y0 = np.floor(sy).astype(np.int32)
-        x1 = x0 + 1
-        y1 = y0 + 1
-        valid = (x0 >= 0) & (x1 < w) & (y0 >= 0) & (y1 < h)
-        wx = sx - x0
-        wy = sy - y0
-
-        out = np.zeros_like(padded)
-        for ch_i in range(4):
-            ch = padded[..., ch_i].astype(np.float32)
-            v00 = np.where(valid, ch[np.clip(y0, 0, h - 1), np.clip(x0, 0, w - 1)], 0.0)
-            v10 = np.where(valid, ch[np.clip(y0, 0, h - 1), np.clip(x1, 0, w - 1)], 0.0)
-            v01 = np.where(valid, ch[np.clip(y1, 0, h - 1), np.clip(x0, 0, w - 1)], 0.0)
-            v11 = np.where(valid, ch[np.clip(y1, 0, h - 1), np.clip(x1, 0, w - 1)], 0.0)
-            val = (v00 * (1 - wx) + v10 * wx) * (1 - wy) + (v01 * (1 - wx) + v11 * wx) * wy
-            if ch_i == 3:
-                val = np.where(val > 100.0, np.clip((val - 100.0) * 2.3 + 130.0, 0.0, 255.0), 0.0)
-            out[..., ch_i] = np.clip(val, 0, 255).astype(padded.dtype)
-        frames.append(out)
+        frames.append(_bilinear_warp(padded, xx - dx, yy - dy, alpha_thresh=100.0))
     return frames
 
 
@@ -953,7 +1069,7 @@ def _crop_union_frames(frames: list[np.ndarray], pivot_x: float, pad: int = 2) -
     h, w = frames[0].shape[:2]
     union = np.zeros((h, w), dtype=bool)
     for fr in frames:
-        union |= fr[..., 3] > 0
+        union |= fr[..., 3] > 8
     ys, xs = np.nonzero(union)
     if ys.size == 0:
         return frames, 0.5
@@ -987,15 +1103,31 @@ def main() -> None:
             entry["ax"] = body_anchor(trimmed, pose)
             manifest[f"{hero}_{pose}"] = entry
 
-        # Synthesize articulated 8-frame run cycle (walk_1..walk_8) with leg-passing crossovers
-        run8 = synthesize_8frame_run([cleaned_heroes[hero][f"walk_{k}"] for k in range(1, 5)])
-        run8_cropped, run8_ax = _crop_union_frames(run8, float(run8[0].shape[1] // 2), pad=2)
-        for k, fr in enumerate(run8_cropped, 1):
+        # Synthesize articulated 12-frame run cycle (walk_1..walk_12) with leg-passing crossovers
+        run12 = synthesize_12frame_run([cleaned_heroes[hero][f"walk_{k}"] for k in range(1, 5)])
+        run12_cropped, run12_ax = _crop_union_frames(run12, float(run12[0].shape[1] // 2), pad=2)
+        for k, fr in enumerate(run12_cropped, 1):
             pose_name = f"walk_{k}"
             cleaned_heroes[hero][pose_name] = fr
             entry = save(fr, f"{hero}_{pose_name}")
-            entry["ax"] = run8_ax
+            entry["ax"] = run12_ax
             manifest[f"{hero}_{pose_name}"] = entry
+
+        # Synthesize 4-frame breathing idle & 3-phase jump arc
+        idle4, idle_ax = synthesize_hero_idle4(cleaned_heroes[hero]["idle"])
+        for k, fr in enumerate(idle4, 1):
+            iname = f"idle_{k}"
+            cleaned_heroes[hero][iname] = fr
+            entry = save(fr, f"{hero}_{iname}")
+            entry["ax"] = idle_ax
+            manifest[f"{hero}_{iname}"] = entry
+
+        jump3, jump_ax = synthesize_hero_jump3(cleaned_heroes[hero]["jump"])
+        for jname, fr in zip(("jump_rise", "jump_apex", "jump_fall"), jump3):
+            cleaned_heroes[hero][jname] = fr
+            entry = save(fr, f"{hero}_{jname}")
+            entry["ax"] = jump_ax
+            manifest[f"{hero}_{jname}"] = entry
 
         for pose, (x0, x1) in ROW2_POSES:
             x1_eff = 948 if (hero == "emerald_phantom" and pose == "hit_reaction") else x1
@@ -1015,6 +1147,23 @@ def main() -> None:
             entry = save(trimmed, f"{hero}_{pose}")
             entry["ax"] = body_anchor(trimmed, pose)
             manifest[f"{hero}_{pose}"] = entry
+
+        # Synthesize 3-hit melee combo variants & 2-phase dash
+        combo3, combo_ax = synthesize_hero_combo3(cleaned_heroes[hero]["attack_slash"])
+        for k, fr in enumerate(combo3, 1):
+            cname = f"attack_slash_{k}"
+            cleaned_heroes[hero][cname] = fr
+            entry = save(fr, f"{hero}_{cname}")
+            entry["ax"] = combo_ax
+            manifest[f"{hero}_{cname}"] = entry
+
+        dash2, dash_ax = synthesize_hero_dash2(cleaned_heroes[hero]["dash"])
+        for k, fr in enumerate(dash2, 1):
+            dname = f"dash_{k}"
+            cleaned_heroes[hero][dname] = fr
+            entry = save(fr, f"{hero}_{dname}")
+            entry["ax"] = dash_ax
+            manifest[f"{hero}_{dname}"] = entry
 
         art_cell = clean_master_cell(sheet[56:546, 740:1446], bg, shadow_px=0, ratio=0.02, halo_depth=18)
         cleaned_heroes[hero]["art"] = art_cell
@@ -1045,10 +1194,19 @@ def main() -> None:
         entry["ax"] = foot_anchor(trimmed)
         manifest[name] = entry
 
+    for old_b in OUT.glob("bomber_run_*.png"):
+        old_b.unlink()
+
     for ename in ("crawler", "mutant", "aegis", "boss"):
         base_e = cleaned_enemies[ename]
+        if ename == "boss" and base_e.shape[0] > 320:
+            nw = round(base_e.shape[1] * 320 / base_e.shape[0])
+            base_e = np.array(
+                Image.fromarray(base_e.clip(0, 255).astype(np.uint8), "RGBA").resize((nw, 320), Image.Resampling.LANCZOS),
+                dtype=base_e.dtype,
+            )
         base_ax_px = foot_anchor(base_e) * base_e.shape[1] + 8.0
-        eruns = synthesize_enemy_run4(base_e, ename)
+        eruns = synthesize_enemy_run8(base_e, ename)
         eruns_cropped, erun_ax = _crop_union_frames(eruns, base_ax_px, pad=2)
         for k, fr in enumerate(eruns_cropped, 1):
             rname = f"{ename}_run_{k}"
@@ -1056,10 +1214,7 @@ def main() -> None:
             entry["ax"] = erun_ax
             manifest[rname] = entry
             if ename == "crawler":
-                bname = f"bomber_run_{k}"
-                bentry = save(fr, bname)
-                bentry["ax"] = erun_ax
-                manifest[bname] = bentry
+                manifest[f"bomber_run_{k}"] = dict(entry)
 
     for alias, src_name in ENEMY_ALIASES.items():
         trimmed = cleaned_enemies[src_name]

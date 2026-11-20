@@ -70,8 +70,6 @@ export class GameScene extends Phaser.Scene {
   pickupSys!: PickupSystem;
   callbacks!: EventCallbacks;
 
-  private bgFar?: Phaser.GameObjects.TileSprite;
-  private bgFarScale = 1;
   private geyserTimer = 4;
   private voidPullTimer = 11;
   private stormTimer = 9;
@@ -86,16 +84,20 @@ export class GameScene extends Phaser.Scene {
     timerText: Phaser.GameObjects.Text;
   };
   private props: EnvironmentProp[] = [];
-  private bg!: Phaser.GameObjects.TileSprite;
+  private bg?: Phaser.GameObjects.TileSprite;
   private bgScale = 1;
   private dustEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
   private dustFgEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
   private lampCones: Phaser.GameObjects.Image[] = [];
   private neonGlows: { img: Phaser.GameObjects.Image; baseAlpha: number; speed: number; seed: number }[] = [];
+  private weatherSprites: Array<{ img: Phaser.GameObjects.Image; speed: number; seed: number; kind: string }> = [];
+  private reflectionSprites: Phaser.GameObjects.Image[] = [];
+  private stageOrbitSprites: Phaser.GameObjects.Image[] = [];
+  private advanceStreaks: Phaser.GameObjects.Image[] = [];
   private groundVignette?: Phaser.GameObjects.Rectangle;
-  private stageFxGfx?: Phaser.GameObjects.Graphics;
   private pauseKeys: Phaser.Input.Keyboard.Key[] = [];
   private camLookAhead = 90;
+  private stageTransitioning = false;
 
   constructor(key = "game") {
     super(key);
@@ -133,6 +135,8 @@ export class GameScene extends Phaser.Scene {
     this.pendingCoins = 0;
     this.gameStartTime = Date.now();
     this.bossStartTime = 0;
+    this.camLookAhead = 90;
+    this.stageTransitioning = false;
   }
 
   create() {
@@ -147,7 +151,7 @@ export class GameScene extends Phaser.Scene {
     this.callbacks = new EventCallbacks(this);
 
     if (this.mode === "coop") this.cameras.main.setZoom(0.9);
-    this.buildWorld();
+    if (this.mode === "pk" || this.mode === "training") this.buildWorld();
 
     const count =
       this.mode === "solo" ||
@@ -184,19 +188,36 @@ export class GameScene extends Phaser.Scene {
     this.events.once("shutdown", () => {
       music.stop();
       this.scene.stop("ui");
-      this.props.forEach((p) => p.destroy());
-      this.props = [];
-      this.dustEmitter?.destroy();
-      this.dustFgEmitter?.destroy();
-      this.lampCones.forEach((c) => c.destroy());
-      this.lampCones = [];
-      this.neonGlows.forEach((n) => n.img.destroy());
-      this.neonGlows = [];
-      this.groundVignette?.destroy();
-      this.stageFxGfx?.destroy();
+      this.clearWorldFX();
     });
     if (this.mode === "pk") this.startPkRound();
     else if (this.mode !== "training") this.startStage();
+    if (this.scene.key === "game") this.cameras.main.fadeIn(220, 2, 7, 13);
+  }
+
+  private clearWorldFX() {
+    this.props.forEach((p) => p.destroy());
+    this.props = [];
+    this.bg?.destroy();
+    this.bg = undefined;
+    this.dustEmitter?.destroy();
+    this.dustEmitter = undefined;
+    this.dustFgEmitter?.destroy();
+    this.dustFgEmitter = undefined;
+    this.lampCones.forEach((c) => c.destroy());
+    this.lampCones = [];
+    this.neonGlows.forEach((n) => n.img.destroy());
+    this.neonGlows = [];
+    this.weatherSprites.forEach((w) => w.img.destroy());
+    this.weatherSprites = [];
+    this.reflectionSprites.forEach((r) => r.destroy());
+    this.reflectionSprites = [];
+    this.stageOrbitSprites.forEach((o) => o.destroy());
+    this.stageOrbitSprites = [];
+    this.advanceStreaks.forEach((a) => a.destroy());
+    this.advanceStreaks = [];
+    this.groundVignette?.destroy();
+    this.groundVignette = undefined;
   }
 
   private phaseTimer = 0;
@@ -207,35 +228,9 @@ export class GameScene extends Phaser.Scene {
     const bgKey = this.textures.exists(mirKey) ? mirKey : stage.background;
     const tex = this.textures.get(bgKey).getSourceImage();
     this.bgScale = GAME_HEIGHT / tex.height;
-    this.bgFarScale = this.bgScale * 0.9;
-    this.bgFar?.destroy();
-    this.bg?.destroy();
-    this.dustEmitter?.destroy();
-    this.dustFgEmitter?.destroy();
-    this.lampCones.forEach((c) => c.destroy());
-    this.lampCones = [];
-    this.groundVignette?.destroy();
-    this.stageFxGfx?.destroy();
-    this.neonGlows.forEach((n) => n.img.destroy());
-    this.neonGlows = [];
+    this.clearWorldFX();
 
-    // 1. Far background layer (bgFar): Far cyberpunk city skyline, scrolling slow at 0.15x
-    // Has a cool cyan-purple atmospheric fog tint
-    const farTexKey = this.stageIndex === 3
-      ? (this.textures.exists("bg_orbit_mirrored") ? "bg_orbit_mirrored" : "bg_orbit")
-      : this.stageIndex === 4
-      ? (this.textures.exists("bg_void_singularity_mirrored") ? "bg_void_singularity_mirrored" : "bg_void_singularity")
-      : bgKey;
-    this.bgFar = this.add
-      .tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, farTexKey)
-      .setOrigin(0)
-      .setScrollFactor(0)
-      .setTileScale(this.bgFarScale)
-      .setTint(0x5b5490)
-      .setAlpha(0.48)
-      .setDepth(DEPTH.bg - 1);
-
-    // 2. Midground street layer (bg): Full 720px height with Mirrored Horizontal Tiling (zero vertical seams)
+    // 1. Midground/Backdrop street layer: Full 720px height with Mirrored Horizontal Tiling (zero vertical seams, single overdraw pass)
     this.bg = this.add
       .tileSprite(0, 0, GAME_WIDTH, GAME_HEIGHT, bgKey)
       .setOrigin(0)
@@ -250,18 +245,13 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(DEPTH.floor);
 
-    this.stageFxGfx = this.add
-      .graphics()
-      .setDepth(DEPTH.floor + 1)
-      .setBlendMode(Phaser.BlendModes.ADD);
-
     this.cameras.main.setBounds(0, 0, this.worldWidth, GAME_HEIGHT);
     this.cameras.main.setBackgroundColor(stage.floor);
 
-    // 3. Per-stage atmospheric VFX & lighting
+    // 2. Per-stage atmospheric VFX & GPU-batched sprite pools
     this.buildStageVFX(stage);
 
-    // 4. Dual-layer atmospheric particles — colors & behavior tuned per stage
+    // 3. Camera-locked atmospheric particles — zero off-screen particles wasted across wide arenas
     const dustColors = [
       [0x18e6ff, 0xa855f7],     // Stage 1: Neon city cyan/purple
       [0x37ffb0, 0x22dd88],     // Stage 2: Lab sewer green/teal
@@ -279,39 +269,41 @@ export class GameScene extends Phaser.Scene {
     const si = Math.min(this.stageIndex, 4);
     this.dustEmitter = this.add
       .particles(0, 0, "dot", {
-        x: { min: 0, max: this.worldWidth },
+        x: { min: 0, max: GAME_WIDTH },
         y: { min: 80, max: GROUND_Y },
-        lifespan: { min: 4000, max: 8000 },
+        lifespan: { min: 3800, max: 6500 },
         speedX: { min: -10, max: 15 },
         speedY: { min: -8, max: -22 },
         scale: { start: 0.4, end: 0.1 },
         alpha: { start: 0, end: 0.22 },
         tint: dustColors[si],
         blendMode: Phaser.BlendModes.ADD,
-        frequency: 220,
+        frequency: 320,
+        maxAliveParticles: 16,
         quantity: 1,
       })
+      .setScrollFactor(0)
       .setDepth(DEPTH.bg + 2);
 
     this.dustFgEmitter = this.add
       .particles(0, 0, "dot", {
-        x: { min: 0, max: this.worldWidth },
+        x: { min: 0, max: GAME_WIDTH },
         y: { min: 100, max: GROUND_Y },
-        lifespan: { min: 3000, max: 6000 },
+        lifespan: { min: 2800, max: 5200 },
         speedX: { min: -22, max: 30 },
         speedY: { min: -16, max: -38 },
         scale: { start: 0.65, end: 0.18 },
-        alpha: { start: 0, end: 0.32 },
+        alpha: { start: 0, end: 0.3 },
         tint: fgDustColors[si],
         blendMode: Phaser.BlendModes.ADD,
-        frequency: 240,
+        frequency: 340,
+        maxAliveParticles: 16,
         quantity: 1,
       })
+      .setScrollFactor(0)
       .setDepth(DEPTH.fx + 10);
 
-    // 5. Spawn environment props (Crate, Barrel, Supply Chest)
-    this.props.forEach((p) => p.destroy());
-    this.props = [];
+    // 4. Spawn environment props (Crate, Barrel, Supply Chest)
     if (this.mode !== "training") {
       const propPatterns: Array<{ offset: number; type: PropType }> = [
         { offset: 420, type: "crate_energy" },
@@ -464,6 +456,134 @@ export class GameScene extends Phaser.Scene {
           .setDepth(DEPTH.bg + 1);
         this.neonGlows.push({ img: voidCrackle, baseAlpha: 0.35, speed: 12.0, seed: vx * 7.7 });
       }
+    }
+
+    // 60 FPS GPU-Batched Weather, Floor Reflection, Orbit Reticle & Advance Momentum Sprite Pools
+    const si = Math.min(this.stageIndex, 4);
+    if (si === 0) {
+      for (let i = 0; i < 22; i += 1) {
+        const col = i % 3 === 0 ? 0xd946ef : 0x18e6ff;
+        const img = this.add
+          .image(0, 0, "streak")
+          .setScrollFactor(0)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setTint(col)
+          .setRotation(1.9)
+          .setScale(0.32, 0.38)
+          .setDepth(DEPTH.floor + 1);
+        this.weatherSprites.push({ img, speed: 1.3 + (i % 5) * 0.18, seed: i * 97.31, kind: "rain" });
+      }
+    } else if (si === 1) {
+      for (let i = 0; i < 20; i += 1) {
+        const img = this.add
+          .image(0, 0, "bubble")
+          .setScrollFactor(0)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setTint(0x37ffb0)
+          .setScale(0.16 + (i % 4) * 0.07)
+          .setDepth(DEPTH.floor + 1);
+        this.weatherSprites.push({ img, speed: 0.28 + (i % 4) * 0.08, seed: i * 71.13, kind: "bubble" });
+      }
+      const scan = this.add
+        .image(GAME_WIDTH / 2, GROUND_Y - 30, "beam")
+        .setScrollFactor(0)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setTint(0x37ffb0)
+        .setDisplaySize(GAME_WIDTH, 6)
+        .setAlpha(0.18)
+        .setDepth(DEPTH.floor + 1);
+      this.weatherSprites.push({ img: scan, speed: 0.5, seed: 0, kind: "scan" });
+    } else if (si === 2) {
+      for (let i = 0; i < 22; i += 1) {
+        const img = this.add
+          .image(0, 0, "dot")
+          .setScrollFactor(0)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setTint(i % 2 === 0 ? 0xff6a2a : 0xffe45c)
+          .setScale(0.35 + (i % 3) * 0.15)
+          .setDepth(DEPTH.floor + 1);
+        this.weatherSprites.push({ img, speed: 0.4 + (i % 5) * 0.1, seed: i * 83.7, kind: "ember" });
+      }
+    } else if (si === 3) {
+      for (let i = 0; i < 16; i += 1) {
+        const img = this.add
+          .image(0, 0, "streak")
+          .setScrollFactor(0)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setTint(i % 2 === 0 ? 0x18e6ff : 0xa855f7)
+          .setRotation(-0.26)
+          .setScale(0.55, 0.42)
+          .setDepth(DEPTH.floor + 1);
+        this.weatherSprites.push({ img, speed: 0.85 + (i % 4) * 0.22, seed: i * 113.9, kind: "meteor" });
+      }
+      const rOuter = this.add
+        .image(GAME_WIDTH * 0.72, 210, "ring")
+        .setScrollFactor(0)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setTint(0x818cf8)
+        .setScale(0.62)
+        .setAlpha(0.2)
+        .setDepth(DEPTH.bg + 1);
+      const rInner = this.add
+        .image(GAME_WIDTH * 0.72, 210, "glyph")
+        .setScrollFactor(0)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setTint(0x18e6ff)
+        .setScale(0.48)
+        .setAlpha(0.25)
+        .setDepth(DEPTH.bg + 1);
+      this.stageOrbitSprites.push(rOuter, rInner);
+    } else {
+      for (let i = 0; i < 18; i += 1) {
+        const img = this.add
+          .image(0, 0, i % 3 === 0 ? "star" : "dot")
+          .setScrollFactor(0)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setTint(i % 2 === 0 ? 0xd946ef : 0x67e8f9)
+          .setScale(i % 3 === 0 ? 0.34 : 0.42)
+          .setDepth(DEPTH.floor + 1);
+        this.weatherSprites.push({ img, speed: 0.35 + (i % 4) * 0.12, seed: i * 61.7, kind: "void" });
+      }
+      const vOuter = this.add
+        .image(GAME_WIDTH * 0.5, 250, "softring")
+        .setScrollFactor(0)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setTint(0xd946ef)
+        .setScale(1.1)
+        .setAlpha(0.22)
+        .setDepth(DEPTH.bg + 1);
+      const vInner = this.add
+        .image(GAME_WIDTH * 0.5, 250, "glyph")
+        .setScrollFactor(0)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setTint(0x67e8f9)
+        .setScale(0.75)
+        .setAlpha(0.26)
+        .setDepth(DEPTH.bg + 1);
+      this.stageOrbitSprites.push(vOuter, vInner);
+    }
+
+    for (let i = 0; i < 10; i += 1) {
+      this.reflectionSprites.push(
+        this.add
+          .image(0, GROUND_Y + 6, "glow")
+          .setOrigin(0.5, 0.5)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setDepth(DEPTH.floor + 1)
+          .setVisible(false),
+      );
+    }
+    for (let i = 0; i < 6; i += 1) {
+      this.advanceStreaks.push(
+        this.add
+          .image(0, i < 3 ? 86 + i * 24 : GAME_HEIGHT - 46 - (i - 3) * 22, "streak")
+          .setScrollFactor(0)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setTint(stage.accent)
+          .setScale(1.6, 0.45)
+          .setDepth(DEPTH.fx + 8)
+          .setVisible(false),
+      );
     }
   }
 
@@ -621,22 +741,42 @@ export class GameScene extends Phaser.Scene {
       h.applyMods();
     });
     if (this.phase !== "upgrade") return;
-    if (this.mode === "endless") {
-      this.startWave();
-    } else {
-      this.stageIndex += 1;
-      this.startStage();
-    }
+    if (this.mode === "endless") this.startWave();
+    else this.transitionToNextStage();
   }
 
   chooseUpgrade(upgrade: Upgrade) {
     this.heroes.forEach((h) => { upgrade.apply(h.mods); h.applyMods(); });
-    if (this.mode === "endless") {
-      this.startWave();
-    } else {
+    if (this.phase !== "upgrade") return;
+    if (this.mode === "endless") this.startWave();
+    else this.transitionToNextStage();
+  }
+
+  transitionToNextStage() {
+    if (this.stageTransitioning) return;
+    this.stageTransitioning = true;
+    this.lockHeroes(true);
+    const cam = this.cameras.main;
+    cam.fadeOut(180, 2, 7, 13);
+    cam.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+      this.projectileSys.clear();
+      this.fieldSys.clear();
+      this.hazardSys.clear();
+      this.pickupSys.clear();
+      this.enemies.forEach((e) => e.destroy());
+      this.enemies = [];
+      this.boss = undefined;
+      if (this.timeRift) {
+        this.timeRift.container.destroy();
+        this.timeRift = undefined;
+      }
       this.stageIndex += 1;
+      this.camLookAhead = 90;
+      music.start(this.stageIndex === 4 || this.mode === "bossrush" ? "boss" : "stage");
       this.startStage();
-    }
+      this.stageTransitioning = false;
+      cam.fadeIn(260, 2, 7, 13);
+    });
   }
 
   finish(win: boolean) {
@@ -762,15 +902,20 @@ export class GameScene extends Phaser.Scene {
     this.spawnDirector.update(real);
 
     this.updateCamera(real);
-    this.bg.tilePositionX = (this.cameras.main.scrollX * 1.0) / this.bgScale;
-    if (this.bgFar) {
-      this.bgFar.tilePositionX = (this.cameras.main.scrollX * 0.15) / this.bgFarScale;
-    }
+    if (this.bg) this.bg.tilePositionX = this.cameras.main.scrollX / this.bgScale;
 
-    // Dynamic neon signage glow flicker & pulse + 60FPS procedural weather & floor reflections
+    // GPU-batched weather, floor reflections, culled neon/lamp lights & advance momentum streaks
     const nowSec = this.time.now / 1000;
     this.updateStageProceduralFX(nowSec);
+    const camLeft = this.cameras.main.scrollX;
+    const camRight = camLeft + GAME_WIDTH;
+    for (const cone of this.lampCones) {
+      cone.setVisible(cone.x >= camLeft - 240 && cone.x <= camRight + 240);
+    }
     for (const ng of this.neonGlows) {
+      const vis = ng.img.x >= camLeft - 240 && ng.img.x <= camRight + 240;
+      ng.img.setVisible(vis);
+      if (!vis) continue;
       const flicker = Math.sin(nowSec * ng.speed + ng.seed) * 0.15;
       const jitter = Math.random() < 0.04 ? -0.15 : 0;
       ng.img.setAlpha(Math.max(0.1, ng.baseAlpha + flicker + jitter));
@@ -946,8 +1091,11 @@ export class GameScene extends Phaser.Scene {
     this.camLookAhead = expDecay(this.camLookAhead, avgFacing * 85, 4.2, dt);
 
     const avg = alive.length > 0 ? alive.reduce((s, h) => s + h.x, 0) / alive.length : this.arenaMin + ARENA_WIDTH * 0.5;
-    const maxScroll = Math.max(this.arenaMin, (this.phase === "advance" ? this.arenaMin + ARENA_WIDTH : this.arenaMax) - GAME_WIDTH);
-    const desired = avg - GAME_WIDTH * (this.phase === "advance" ? 0.42 : 0.48) + this.camLookAhead;
+    const maxScroll =
+      this.phase === "advance"
+        ? Math.max(this.arenaMin, Math.min(this.worldWidth - GAME_WIDTH, this.arenaMin + ARENA_WIDTH))
+        : Math.max(this.arenaMin, this.arenaMax - GAME_WIDTH);
+    const desired = avg - GAME_WIDTH * (this.phase === "advance" ? 0.30 : 0.48) + this.camLookAhead;
     const delta = desired - cam.scrollX;
     const deadzone = this.phase === "advance" ? 0 : 24;
     const continuousTarget = Math.abs(delta) > deadzone ? cam.scrollX + (delta - Math.sign(delta) * deadzone) : cam.scrollX;
@@ -973,150 +1121,84 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateStageProceduralFX(nowSec: number) {
-    const g = this.stageFxGfx;
-    if (!g) return;
-    g.clear();
-
     const camLeft = this.cameras.main.scrollX;
     const camRight = camLeft + GAME_WIDTH;
 
-    // 1. Real-Time Metallic Floor Specular Reflections under all alive Heroes & Enemies
+    // 1. Pooled GPU Floor Reflections under on-screen alive Heroes & Enemies (zero Graphics triangulation)
+    let rIdx = 0;
     for (const h of this.heroes) {
+      if (rIdx >= this.reflectionSprites.length) break;
       if (h.dead || h.x < camLeft - 80 || h.x > camRight + 80) continue;
       const dist = Math.max(0, GROUND_Y - h.y);
       const fade = Math.max(0.1, 1 - dist / 340);
-      const col = PALETTE[h.def.element].main;
-      const rw = (58 + Math.sin(nowSec * 4) * 5) * fade;
-      g.fillStyle(col, 0.2 * fade);
-      g.fillRect(h.x - rw * 0.5, GROUND_Y + 4, rw, 3);
-      g.fillStyle(col, 0.12 * fade);
-      g.fillRect(h.x - rw * 0.38, GROUND_Y + 10, rw * 0.76, 3);
-      g.fillStyle(0xffffff, 0.1 * fade);
-      g.fillRect(h.x - rw * 0.22, GROUND_Y + 16, rw * 0.44, 2);
+      const rw = (68 + Math.sin(nowSec * 4) * 5) * fade;
+      this.reflectionSprites[rIdx++]
+        .setPosition(h.x, GROUND_Y + 8)
+        .setTint(PALETTE[h.def.element].main)
+        .setScale(rw / 128, 0.09)
+        .setAlpha(0.28 * fade)
+        .setVisible(true);
     }
     for (const e of this.enemies) {
+      if (rIdx >= this.reflectionSprites.length) break;
       if (e.dead || e.x < camLeft - 120 || e.x > camRight + 120) continue;
       const dist = Math.max(0, GROUND_Y - e.y);
       const fade = Math.max(0.08, 1 - dist / 360);
-      const col = e.def.tint ?? (e.isBoss ? 0x33e6ff : 0xff3355);
-      const rw = Math.min(180, e.bodyW * 0.65) * fade;
-      g.fillStyle(col, 0.16 * fade);
-      g.fillRect(e.x - rw * 0.5, GROUND_Y + 4, rw, 3);
-      g.fillStyle(col, 0.09 * fade);
-      g.fillRect(e.x - rw * 0.35, GROUND_Y + 10, rw * 0.7, 3);
+      const rw = Math.min(200, e.bodyW * 0.72) * fade;
+      this.reflectionSprites[rIdx++]
+        .setPosition(e.x, GROUND_Y + 8)
+        .setTint(e.def.tint ?? (e.isBoss ? 0x33e6ff : 0xff3355))
+        .setScale(rw / 128, 0.08)
+        .setAlpha(0.22 * fade)
+        .setVisible(true);
+    }
+    while (rIdx < this.reflectionSprites.length) {
+      this.reflectionSprites[rIdx++].setVisible(false);
     }
 
-    // 2. Per-Stage 60FPS Procedural Weather & Atmosphere
-    const si = Math.min(this.stageIndex, 4);
-    if (si === 0) {
-      // Stage 1: Slanted Cyberpunk Neon Rain + Ground Splashes
-      for (let i = 0; i < 36; i += 1) {
-        const seed = i * 97.31;
-        const cycle = (nowSec * (1.35 + (i % 5) * 0.18) + (seed % 1)) % 1;
-        const rx = camLeft + ((seed * 37 + cycle * 95) % GAME_WIDTH);
-        const ry = cycle * (GROUND_Y + 8);
-        const col = i % 3 === 0 ? 0xd946ef : 0x18e6ff;
-        g.lineStyle(1.4, col, 0.24 + (i % 3) * 0.08);
-        g.beginPath();
-        g.moveTo(rx, ry);
-        g.lineTo(rx - 9, ry + 26);
-        g.strokePath();
-        if (cycle > 0.91) {
-          const sp = (cycle - 0.91) / 0.09;
-          g.lineStyle(1.1, col, (1 - sp) * 0.42);
-          g.strokeEllipse(rx, GROUND_Y + 1, 6 + sp * 18, 2 + sp * 5);
-        }
+    // 2. Pooled GPU Weather Sprites (camera-locked)
+    for (const w of this.weatherSprites) {
+      const cyc = (nowSec * w.speed + (w.seed % 1)) % 1;
+      if (w.kind === "rain") {
+        const rx = ((w.seed * 37 - cyc * 95) % GAME_WIDTH + GAME_WIDTH) % GAME_WIDTH;
+        w.img.setPosition(rx, cyc * (GROUND_Y + 8)).setAlpha(0.26);
+      } else if (w.kind === "bubble") {
+        const bx = ((w.seed * 53) % GAME_WIDTH) + Math.sin(nowSec * 3 + w.seed) * 10;
+        w.img.setPosition(bx, GROUND_Y - cyc * 460).setAlpha(Math.sin(cyc * Math.PI) * 0.42);
+      } else if (w.kind === "scan") {
+        w.img.setPosition(GAME_WIDTH / 2, GROUND_Y - 16 - ((nowSec * 45) % 90)).setAlpha(0.2);
+      } else if (w.kind === "ember") {
+        const ex = ((w.seed * 47) % GAME_WIDTH) + Math.sin(nowSec * 4.5 + w.seed) * 18;
+        w.img.setPosition(ex, GROUND_Y - cyc * 520).setAlpha(Math.sin(cyc * Math.PI) * 0.6);
+      } else if (w.kind === "meteor") {
+        const mx = GAME_WIDTH - cyc * (GAME_WIDTH + 180);
+        const my = 70 + ((w.seed * 19) % 320) + cyc * 110;
+        w.img.setPosition(mx, my).setAlpha(Math.sin(cyc * Math.PI) * 0.55);
+      } else {
+        const vx = ((w.seed * 43 + Math.sin(nowSec * 2 + w.seed) * 32) % GAME_WIDTH + GAME_WIDTH) % GAME_WIDTH;
+        const vy = 80 + ((w.seed * 29 + cyc * 180) % 440);
+        w.img.setPosition(vx, vy).setAlpha(Math.sin(cyc * Math.PI) * 0.48);
       }
-    } else if (si === 1) {
-      // Stage 2: Rising Bioluminescent Bubbles + Lower Corridor Laser Scanline
-      for (let i = 0; i < 24; i += 1) {
-        const seed = i * 71.13;
-        const cyc = (nowSec * (0.28 + (i % 4) * 0.08) + (seed % 1)) % 1;
-        const bx = camLeft + ((seed * 53) % GAME_WIDTH) + Math.sin(nowSec * 3 + i) * 10;
-        const by = GROUND_Y - cyc * 460;
-        const r = 3 + (i % 4) * 1.6;
-        g.lineStyle(1.2, 0x37ffb0, Math.sin(cyc * Math.PI) * 0.42);
-        g.strokeCircle(bx, by, r);
+    }
+
+    // 3. Stage 4 / Stage 5 Orbital & Void Mandalas
+    if (this.stageOrbitSprites.length >= 2) {
+      this.stageOrbitSprites[0].rotation = nowSec * 0.35;
+      this.stageOrbitSprites[1].rotation = -nowSec * 0.55;
+    }
+
+    // 4. Wave Advance Momentum Streaks along top/bottom HUD rails
+    const adv = this.phase === "advance";
+    for (let i = 0; i < this.advanceStreaks.length; i += 1) {
+      const st = this.advanceStreaks[i];
+      if (!adv) {
+        st.setVisible(false);
+        continue;
       }
-      const scanY = GROUND_Y - 16 - ((nowSec * 45) % 90);
-      g.lineStyle(1.6, 0x37ffb0, 0.22);
-      g.beginPath();
-      g.moveTo(camLeft, scanY);
-      g.lineTo(camRight, scanY);
-      g.strokePath();
-    } else if (si === 2) {
-      // Stage 3: Rising Spiral Magma Embers + Glowing Lava Fissures
-      for (let i = 0; i < 28; i += 1) {
-        const seed = i * 83.7;
-        const cyc = (nowSec * (0.42 + (i % 5) * 0.1) + (seed % 1)) % 1;
-        const ex = camLeft + ((seed * 47) % GAME_WIDTH) + Math.sin(nowSec * 4.5 + i * 2) * 18;
-        const ey = GROUND_Y - cyc * 520;
-        const fade = Math.sin(cyc * Math.PI);
-        g.fillStyle(i % 2 === 0 ? 0xff6a2a : 0xffe45c, fade * 0.6);
-        g.fillCircle(ex, ey, 2.2 + (i % 3));
-      }
-      for (let fx = 140; fx < GAME_WIDTH; fx += 260) {
-        const pulse = 0.25 + 0.18 * Math.sin(nowSec * 4 + fx);
-        g.lineStyle(2.5, 0xff5511, pulse);
-        g.beginPath();
-        g.moveTo(camLeft + fx - 35, GROUND_Y + 8);
-        g.lineTo(camLeft + fx + 35, GROUND_Y + 8);
-        g.strokePath();
-      }
-    } else if (si === 3) {
-      // Stage 4: High-Speed Orbital Plasma Meteors + Rotating Telemetry Dual-Ring Reticle
-      for (let i = 0; i < 16; i += 1) {
-        const seed = i * 113.9;
-        const cyc = (nowSec * (0.85 + (i % 4) * 0.22) + (seed % 1)) % 1;
-        const mx = camLeft + GAME_WIDTH - cyc * (GAME_WIDTH + 180);
-        const my = 70 + ((seed * 19) % 320) + cyc * 110;
-        g.lineStyle(1.8, i % 2 === 0 ? 0x18e6ff : 0xa855f7, Math.sin(cyc * Math.PI) * 0.55);
-        g.beginPath();
-        g.moveTo(mx, my);
-        g.lineTo(mx + 42, my - 11);
-        g.strokePath();
-      }
-      const rx = camLeft + GAME_WIDTH * 0.72;
-      const ry = 210;
-      g.lineStyle(1.4, 0x818cf8, 0.22);
-      g.strokeCircle(rx, ry, 76);
-      for (let k = 0; k < 3; k += 1) {
-        const a = nowSec * 0.7 + (k * Math.PI * 2) / 3;
-        g.lineStyle(2.2, 0x18e6ff, 0.35);
-        g.beginPath();
-        g.arc(rx, ry, 58, a, a + Math.PI * 0.35);
-        g.strokePath();
-      }
-    } else {
-      // Stage 5: Rotating Void Singularity Mandala + Crackling Dimensional Lightning Arcs
-      const cx = camLeft + GAME_WIDTH * 0.5;
-      const cy = 260;
-      for (let ring = 0; ring < 3; ring += 1) {
-        const r = 88 + ring * 44;
-        const rot = nowSec * (ring % 2 === 0 ? 0.55 : -0.45);
-        g.lineStyle(1.8, ring === 1 ? 0x18e6ff : 0xd946ef, 0.24 - ring * 0.04);
-        for (let seg = 0; seg < 4; seg += 1) {
-          const a = rot + (seg * Math.PI) / 2;
-          g.beginPath();
-          g.arc(cx, cy, r, a, a + Math.PI * 0.28);
-          g.strokePath();
-        }
-      }
-      for (let i = 0; i < 4; i += 1) {
-        const ang = nowSec * 1.3 + i * 1.57;
-        const x1 = cx + Math.cos(ang) * 90;
-        const y1 = cy + Math.sin(ang) * 90;
-        const midX = (x1 + cx + Math.cos(ang + 0.3) * 185) * 0.5 + Math.sin(nowSec * 31 + i) * 18;
-        const midY = (y1 + cy + Math.sin(ang + 0.3) * 185) * 0.5 + Math.cos(nowSec * 29 + i) * 18;
-        const x2 = cx + Math.cos(ang + 0.35) * 210;
-        const y2 = cy + Math.sin(ang + 0.35) * 210;
-        g.lineStyle(1.6, i % 2 === 0 ? 0xd946ef : 0x67e8f9, 0.4);
-        g.beginPath();
-        g.moveTo(x1, y1);
-        g.lineTo(midX, midY);
-        g.lineTo(x2, y2);
-        g.strokePath();
-      }
+      const p = (nowSec * 1.45 + i * 0.17) % 1;
+      st.setX(GAME_WIDTH + 120 - p * (GAME_WIDTH + 240))
+        .setAlpha(Math.sin(p * Math.PI) * 0.35)
+        .setVisible(true);
     }
   }
 

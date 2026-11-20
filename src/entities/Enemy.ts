@@ -783,7 +783,7 @@ export class Enemy extends Actor {
     const dt = this.scene.dt || 1 / 60;
     const a = this.anim;
     const moving = (this.state === "move" || this.state === "idle") && Math.abs(this.vx) > 20;
-    if (moving) a.stride += (Math.abs(this.vx) * dt) / (this.isBoss ? 26 : 18);
+    if (moving) a.stride += (Math.abs(this.vx) * dt) / (this.isBoss ? 18 : 12);
 
     const t = this.scene.time.now / 1000;
     let tex = this.def.sprite;
@@ -797,20 +797,20 @@ export class Enemy extends Actor {
       } else if (this.enraged) {
         tex = "boss_rage";
       } else if (moving) {
-        const fIdx = (Math.floor(a.stride) % 4) + 1;
+        const fIdx = (Math.floor(a.stride) % 8) + 1;
         tex = `boss_run_${fIdx}`;
       }
     } else if (this.def.type === "crawler" || this.def.type === "bomber") {
       if (this.state === "selfDestruct" || (this.state === "active" && this.move === "explode")) tex = "crawler_explode";
       else if (this.state === "windup" || (this.state === "active" && this.move === "leap")) tex = "crawler_leap";
       else if (moving) {
-        const fIdx = (Math.floor(a.stride) % 4) + 1;
+        const fIdx = (Math.floor(a.stride) % 8) + 1;
         tex = `${this.def.type}_run_${fIdx}`;
       }
     } else if (this.def.type === "mutant") {
       if (this.state === "windup" || this.state === "active") tex = "mutant_punch";
       else if (moving) {
-        const fIdx = (Math.floor(a.stride) % 4) + 1;
+        const fIdx = (Math.floor(a.stride) % 8) + 1;
         tex = `mutant_run_${fIdx}`;
       }
     } else if (this.def.type === "hunter" || this.def.type === "sniper" || this.def.type === "drone") {
@@ -821,7 +821,7 @@ export class Enemy extends Actor {
       else if ((this.state === "windup" || this.state === "active") && this.move === "bash") tex = "aegis_bash";
       else if ((this.state === "windup" || this.state === "active") && this.move === "shoot") tex = "aegis_shot";
       else if (moving) {
-        const fIdx = (Math.floor(a.stride) % 4) + 1;
+        const fIdx = (Math.floor(a.stride) % 8) + 1;
         tex = `aegis_run_${fIdx}`;
       }
     }
@@ -858,7 +858,7 @@ export class Enemy extends Actor {
 
     const targetBob =
       moving && !this.flying
-        ? -Math.abs(Math.sin(a.stride * Math.PI * 0.5)) *
+        ? -Math.abs(Math.sin(a.stride * Math.PI * 0.25)) *
           (this.def.type === "crawler" || this.def.type === "bomber" ? 2.5 : this.def.type === "mutant" ? 5 : 4.5)
         : 0;
     a.bob = expDecay(a.bob, targetBob, 20, dt);
@@ -881,7 +881,7 @@ export class Enemy extends Actor {
       lean = -this.facing * 0.18;
       yOff = 0;
     } else if (moving) {
-      const cyc = a.stride * Math.PI * 0.5;
+      const cyc = a.stride * Math.PI * 0.25;
       sy = 1 + Math.cos(cyc * 2) * 0.025;
       lean = (this.vx / (this.def.speed * 1.5)) * 0.08;
     } else {
@@ -908,8 +908,8 @@ export class Enemy extends Actor {
     if (moving && !this.flying && !this.dead && tex.includes("_run_")) {
       const sepIdx = tex.lastIndexOf("_run_");
       const baseRun = tex.slice(0, sepIdx);
-      const curIdx = (Math.floor(a.stride) % 4) + 1;
-      const nextTex = `${baseRun}_run_${(curIdx % 4) + 1}`;
+      const curIdx = (Math.floor(a.stride) % 8) + 1;
+      const nextTex = `${baseRun}_run_${(curIdx % 8) + 1}`;
       if (this.scene.textures.exists(nextTex)) {
         const frac = a.stride - Math.floor(a.stride);
         const nextAx = anchorX(nextTex);
@@ -972,7 +972,8 @@ export class Enemy extends Actor {
   private drawProceduralEnemyFX(t: number, yOff: number) {
     const g = this.enemyFxGfx;
     g.clear();
-    if (this.dead) return;
+    const camLeft = this.scene.cameras.main.scrollX;
+    if (this.dead || this.x < camLeft - 160 || this.x > camLeft + 1440) return;
 
     const tintCol = this.def.tint ?? (this.isBoss ? 0x33e6ff : 0xff3355);
     const cy = this.cy + yOff;

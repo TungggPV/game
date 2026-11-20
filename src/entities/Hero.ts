@@ -459,12 +459,12 @@ export class Hero extends Actor {
 
   private pose(): HeroPose {
     if (this.dead || this.state === "hurt") return "hit_reaction";
-    if (this.state === "dash" || this.state === "sweep") return "dash";
-    if (this.state === "attack") return "attack_slash";
+    if (this.state === "dash" || this.state === "sweep") return this.stateTime < 0.08 ? "dash_1" : "dash_2";
+    if (this.state === "attack") return `attack_slash_${Math.min(3, Math.max(1, this.comboStep))}` as HeroPose;
     if (this.state === "cast") return this.castPose;
-    if (!this.onGround) return "jump";
-    if (this.hasWalk && Math.abs(this.vx) > 35) return `walk_${(Math.floor(this.anim.stride) % 8) + 1}` as HeroPose;
-    return "idle";
+    if (!this.onGround) return this.vy < -180 ? "jump_rise" : this.vy > 180 ? "jump_fall" : "jump_apex";
+    if (this.hasWalk && Math.abs(this.vx) > 35) return `walk_${(Math.floor(this.anim.stride) % 12) + 1}` as HeroPose;
+    return `idle_${(Math.floor(this.scene.time.now / 180) % 4) + 1}` as HeroPose;
   }
 
   /** Kick the squash/stretch spring; it settles back to 1 on its own. */
@@ -498,15 +498,17 @@ export class Hero extends Actor {
     a.sx += a.vx * dt;
     a.sy += a.vy * dt;
 
-    // Stride advances at smooth 8-frame sprint cadence proportional to distance covered.
-    if (running) a.stride += (speed * dt) / 18;
+    // Stride advances at smooth 12-frame sprint cadence proportional to distance covered.
+    if (running) a.stride += (speed * dt) / 13.5;
     else a.stride = 0;
 
     const pose = this.pose();
     const key = heroKey(this.def.id, pose);
     if (key !== a.lastKey) {
       this.sprite.setTexture(key);
-      if (!pose.startsWith("walk") && !a.lastKey.includes("walk")) this.impulse(a.sx * 1.04, a.sy * 0.97);
+      if (!pose.startsWith("walk") && !a.lastKey.includes("walk") && !pose.startsWith("idle")) {
+        this.impulse(a.sx * 1.04, a.sy * 0.97);
+      }
       a.lastKey = key;
     }
 
@@ -515,12 +517,12 @@ export class Hero extends Actor {
     const sign = a.turn >= 0 ? 1 : -1;
     const turnScale = Math.max(0.2, Math.abs(a.turn));
 
-    const ax = pose === "jump" ? 0.5 : anchorX(key);
+    const ax = anchorX(key);
     const flip = (sign < 0) !== artFacesLeft(key);
     this.sprite.setFlipX(flip).setOrigin(flip ? 1 - ax : ax, 1);
 
     const t = this.scene.time.now / 1000;
-    const walkCycle = (a.stride / 8) * Math.PI * 2;
+    const walkCycle = (a.stride / 12) * Math.PI * 2;
     const targetBob = running ? -Math.abs(Math.sin(walkCycle)) * 4.5 : 0;
     a.bob = expDecay(a.bob, targetBob, 22, dt);
     const yOff = a.bob;
@@ -537,8 +539,8 @@ export class Hero extends Actor {
       }
     } else if (!grounded && !this.dead) {
       leanTarget = Phaser.Math.Clamp(this.vy / 1400, -0.5, 0.5) * 0.25 * this.facing + (this.vx / 2400);
-    } else if (pose === "idle") {
-      breathe = Math.sin(t * 3) * 0.018;
+    } else if (pose.startsWith("idle")) {
+      breathe = Math.sin(t * 3) * 0.015;
     } else if (this.state === "dash" || this.state === "sweep") {
       leanTarget = this.facing * 0.15;
     } else if (this.state === "hurt") {
@@ -562,10 +564,10 @@ export class Hero extends Actor {
       this.sprite.setAlpha(this.dead ? 0.55 : 1);
     }
 
-    // 60 FPS Sub-Frame Cross-Blend Interpolation between adjacent articulated run poses
+    // 60 FPS Sub-Frame Cross-Blend Interpolation across 12-frame run, 4-frame idle & 2-frame dash
     if (running && this.hasWalk && !this.dead) {
-      const frameIdx = Math.floor(a.stride) % 8;
-      const nextPose = `walk_${((frameIdx + 1) % 8) + 1}` as HeroPose;
+      const frameIdx = Math.floor(a.stride) % 12;
+      const nextPose = `walk_${((frameIdx + 1) % 12) + 1}` as HeroPose;
       const nextKey = heroKey(this.def.id, nextPose);
       const frac = a.stride - Math.floor(a.stride);
       const nextAx = anchorX(nextKey);
@@ -576,7 +578,35 @@ export class Hero extends Actor {
         .setPosition(this.x, this.y + yOff)
         .setScale(sx, sy)
         .setRotation(a.lean)
-        .setAlpha(Math.sin(frac * Math.PI) * 0.38 * this.sprite.alpha)
+        .setAlpha(Math.sin(frac * Math.PI) * 0.36 * this.sprite.alpha)
+        .setVisible(true);
+    } else if (grounded && !running && this.state === "free" && !this.dead) {
+      const idlePhase = this.scene.time.now / 180;
+      const frameIdx = Math.floor(idlePhase) % 4;
+      const nextIdle = `idle_${((frameIdx + 1) % 4) + 1}` as HeroPose;
+      const nextKey = heroKey(this.def.id, nextIdle);
+      const frac = idlePhase - Math.floor(idlePhase);
+      const nextAx = anchorX(nextKey);
+      this.blendSprite
+        .setTexture(nextKey)
+        .setFlipX(flip)
+        .setOrigin(flip ? 1 - nextAx : nextAx, 1)
+        .setPosition(this.x, this.y + yOff)
+        .setScale(sx, sy)
+        .setRotation(a.lean)
+        .setAlpha(Math.sin(frac * Math.PI) * 0.3 * this.sprite.alpha)
+        .setVisible(true);
+    } else if ((this.state === "dash" || this.state === "sweep") && !this.dead) {
+      const nextKey = heroKey(this.def.id, "dash_2");
+      const nextAx = anchorX(nextKey);
+      this.blendSprite
+        .setTexture(nextKey)
+        .setFlipX(flip)
+        .setOrigin(flip ? 1 - nextAx : nextAx, 1)
+        .setPosition(this.x, this.y + yOff)
+        .setScale(sx, sy)
+        .setRotation(a.lean)
+        .setAlpha(0.28 * this.sprite.alpha)
         .setVisible(true);
     } else {
       this.blendSprite.setVisible(false);
@@ -619,7 +649,8 @@ export class Hero extends Actor {
     const front = this.armorOverlayGfx;
     back.clear();
     front.clear();
-    if (this.dead) return;
+    const camLeft = this.scene.cameras.main.scrollX;
+    if (this.dead || this.x < camLeft - 140 || this.x > camLeft + 1420) return;
 
     const dir = this.facing;
     const skinId = getSelectedSkin();
