@@ -237,76 +237,168 @@ export class Fx {
   // ---------- composite effects ----------
 
   /**
-   * Forward crescent slash sweeping across the front of the attacker (`dir`),
-   * paired with a procedural forward wave blade & cross-glint flash.
+   * 60 FPS GPU-batched multi-frame animation player with sub-frame cross-blend interpolation.
+   */
+  playAnim(
+    x: number,
+    y: number,
+    keys: string[],
+    opts: {
+      scale?: number;
+      endScale?: number;
+      scaleX?: number;
+      scaleY?: number;
+      rotation?: number;
+      endRotation?: number;
+      tint?: number;
+      flipX?: boolean;
+      originX?: number;
+      originY?: number;
+      blendMode?: number;
+      alpha?: number;
+      depth?: number;
+      duration?: number;
+      ease?: string;
+    } = {},
+  ) {
+    if (!keys.length) return;
+    const validKeys = keys.filter((k) => this.scene.textures.exists(k));
+    const seq = validKeys.length ? validKeys : keys;
+    const ox = opts.originX ?? 0.5;
+    const oy = opts.originY ?? 0.5;
+    const bm = opts.blendMode ?? ADD;
+    const depth = opts.depth ?? DEPTH.fx + 1;
+    const baseAlpha = opts.alpha ?? 1;
+    const startRot = opts.rotation ?? 0;
+    const endRot = opts.endRotation ?? startRot;
+    const s0 = opts.scale ?? 1;
+    const s1 = opts.endScale ?? s0;
+    const sxMul = opts.scaleX ?? 1;
+    const syMul = opts.scaleY ?? 1;
+
+    const mk = (k: string) => {
+      const img = this.scene.add
+        .image(x, y, k)
+        .setOrigin(ox, oy)
+        .setScale(s0 * sxMul, s0 * syMul)
+        .setRotation(startRot)
+        .setFlipX(!!opts.flipX)
+        .setBlendMode(bm)
+        .setAlpha(baseAlpha)
+        .setDepth(depth);
+      if (opts.tint !== undefined) img.setTint(opts.tint);
+      return img;
+    };
+
+    const cur = mk(seq[0]);
+    const blend = mk(seq[Math.min(1, seq.length - 1)]).setVisible(seq.length > 1);
+    const n = seq.length;
+    this.scene.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration: opts.duration ?? 280,
+      ease: opts.ease ?? "Linear",
+      onUpdate: (tw) => {
+        if (!cur.scene) return;
+        const p = tw.getValue() ?? 0;
+        const f = Math.min(Math.max(0, n - 1.0001), p * Math.max(0, n - 1));
+        const idx = Math.floor(f);
+        const frac = f - idx;
+        const fade = p > 0.72 ? Math.max(0, (1 - p) / 0.28) : 1;
+        const sc = Phaser.Math.Linear(s0, s1, p);
+        const rot = Phaser.Math.Linear(startRot, endRot, p);
+        const kCur = seq[idx];
+        const kNext = seq[Math.min(n - 1, idx + 1)];
+        if (cur.texture.key !== kCur) cur.setTexture(kCur);
+        cur
+          .setScale(sc * sxMul, sc * syMul)
+          .setRotation(rot)
+          .setAlpha(baseAlpha * fade * (1 - frac));
+        if (n > 1 && idx + 1 < n) {
+          if (blend.texture.key !== kNext) blend.setTexture(kNext);
+          blend
+            .setScale(sc * sxMul, sc * syMul)
+            .setRotation(rot)
+            .setAlpha(baseAlpha * fade * frac)
+            .setVisible(true);
+        } else {
+          blend.setVisible(false);
+        }
+      },
+      onComplete: () => {
+        cur.destroy();
+        blend.destroy();
+      },
+    });
+    return cur;
+  }
+
+  /** Animated impact ground crack decal that fades smoothly into the arena floor. */
+  groundCrack(x: number, scale = 1, tint = 0x18e6ff, duration = 900) {
+    if (!this.scene.textures.exists("fx_ground_crack")) return;
+    const crack = this.scene.add
+      .image(x, GROUND_Y + 2, "fx_ground_crack")
+      .setOrigin(0.5, 0.5)
+      .setTint(tint)
+      .setBlendMode(ADD)
+      .setScale(scale * 0.65, scale * 0.34)
+      .setAlpha(0.9)
+      .setDepth(DEPTH.shadow + 1);
+    this.scene.tweens.add({
+      targets: crack,
+      scaleX: scale * 0.9,
+      scaleY: scale * 0.44,
+      alpha: 0,
+      duration,
+      ease: "Cubic.easeOut",
+      onComplete: () => crack.destroy(),
+    });
+  }
+
+  /**
+   * Multi-frame painted slash crescent sweeping across the front of the attacker (`dir`),
+   * paired with white core highlight & tip sparks.
    */
   slash(x: number, y: number, dir: number, palette: Palette, opts: { scale?: number; tilt?: number; sweep?: number; duration?: number; thin?: boolean } = {}) {
     const scale = opts.scale ?? 1;
     const tilt = Phaser.Math.Clamp(opts.tilt ?? 0, -0.32, 0.32);
     const sweep = Math.min(0.78, opts.sweep ?? 0.65);
-    const duration = opts.duration ?? 220;
+    const duration = opts.duration ?? 240;
     const flip = dir < 0;
-    const startRot = (tilt - sweep * 0.45) * dir;
-    const endRot = (tilt + sweep * 0.45) * dir;
-    const layers: [number, number, number][] = [
-      [palette.dark, 1.08, 0.72],
-      [palette.main, 1, 1],
-      [0xffffff, 0.9, 0.95],
-    ];
-    const objs = layers.map(([color, s, a]) =>
-      this.scene.add
-        .image(x + dir * 12 * scale, y, "arc")
-        .setTint(color)
-        .setBlendMode(ADD)
-        .setAlpha(a)
-        .setScale(scale * 0.62 * s, scale * 0.62 * s * (opts.thin ? 0.58 : 0.82))
-        .setRotation(startRot)
-        .setFlipX(flip)
-        .setDepth(DEPTH.fx + 1),
-    );
-    this.scene.tweens.add({
-      targets: objs,
-      rotation: endRot,
-      scaleX: `*=1.16`,
-      duration: duration * 0.55,
-      ease: "Cubic.easeOut",
-    });
-    this.scene.tweens.add({ targets: objs, alpha: 0, delay: duration * 0.35, duration: duration * 0.65, onComplete: () => objs.forEach((o) => o.destroy()) });
+    const startRot = (tilt - sweep * 0.32) * dir;
+    const endRot = (tilt + sweep * 0.32) * dir;
+    const sx = scale * 0.85;
+    const sy = scale * (opts.thin ? 0.65 : 0.9);
+    const slashFrames = ["fx_slash_anim_1", "fx_slash_anim_2", "fx_slash_anim_3", "fx_slash_anim_4", "fx_slash_anim_5", "fx_slash_anim_6"];
 
-    // 60FPS Procedural Forward Wave Blade & Cross-Glint
-    const wx = x + dir * 26 * scale;
-    const wave = this.scene.add.graphics().setPosition(wx, y).setDepth(DEPTH.fx + 2).setBlendMode(ADD);
-    const r = 54 * scale;
-    wave.lineStyle(5 * scale, palette.main, 0.85);
-    wave.beginPath();
-    wave.arc(0, 0, r, flip ? Math.PI - 0.85 : -0.85, flip ? Math.PI + 0.85 : 0.85);
-    wave.strokePath();
-    wave.lineStyle(2.2 * scale, 0xffffff, 0.95);
-    wave.beginPath();
-    wave.arc(dir * 5 * scale, 0, r * 0.92, flip ? Math.PI - 0.65 : -0.65, flip ? Math.PI + 0.65 : 0.65);
-    wave.strokePath();
-    // Sharp 4-point cross-spark at the blade apex
-    const sx = dir * r;
-    const sy = Math.sin(tilt) * r * 0.6;
-    wave.fillStyle(0xffffff, 0.95);
-    wave.fillTriangle(sx - 12 * scale, sy, sx + 12 * scale, sy, sx, sy - 3.5 * scale);
-    wave.fillTriangle(sx - 12 * scale, sy, sx + 12 * scale, sy, sx, sy + 3.5 * scale);
-    wave.fillTriangle(sx, sy - 12 * scale, sx, sy + 12 * scale, sx + 3.5 * scale, sy);
-    wave.fillTriangle(sx, sy - 12 * scale, sx, sy + 12 * scale, sx - 3.5 * scale, sy);
-    this.scene.tweens.add({
-      targets: wave,
-      x: wx + dir * 26 * scale,
-      scaleX: 1.24,
-      scaleY: 1.12,
-      alpha: 0,
+    this.playAnim(x + dir * 24 * scale, y, slashFrames, {
+      scale: sx,
+      endScale: sx * 1.18,
+      scaleY: sy / sx,
+      rotation: startRot,
+      endRotation: endRot,
+      tint: palette.main,
+      flipX: flip,
       duration,
-      ease: "Cubic.easeOut",
-      onComplete: () => wave.destroy(),
+      depth: DEPTH.fx + 1,
+      alpha: 0.86,
+    });
+    this.playAnim(x + dir * 28 * scale, y, slashFrames.slice(1, 5), {
+      scale: sx * 0.86,
+      endScale: sx * 1.02,
+      scaleY: (sy / sx) * 0.88,
+      rotation: startRot,
+      endRotation: endRot,
+      tint: 0xffffff,
+      flipX: flip,
+      duration: Math.round(duration * 0.82),
+      depth: DEPTH.fx + 2,
+      alpha: 0.45,
     });
 
     const tipA = (flip ? Math.PI : 0) + endRot;
-    const tipR = 112 * scale * 0.62;
-    this.particles(x + dir * 12 * scale + Math.cos(tipA) * tipR, y + Math.sin(tipA) * tipR, "streak", {
+    const tipR = 72 * scale;
+    this.particles(x + dir * 20 * scale + Math.cos(tipA) * tipR, y + Math.sin(tipA) * tipR, "streak", {
       speed: { min: 150, max: 420 },
       angle: { min: (tipA * toDeg) - 35, max: (tipA * toDeg) + 35 },
       lifespan: { min: 140, max: 280 },
@@ -318,31 +410,41 @@ export class Fx {
   }
 
   hit(x: number, y: number, dir: number, palette: Palette, heavy = false) {
-    this.flashCore(x, y, heavy ? 1.1 : 0.7, heavy ? 160 : 110);
+    this.playAnim(x, y, ["fx_hit_1", "fx_hit_2", "fx_hit_3", "fx_hit_4"], {
+      scale: heavy ? 1.1 : 0.72,
+      endScale: heavy ? 1.42 : 0.96,
+      rotation: (Math.random() - 0.5) * 0.6,
+      tint: palette.light,
+      flipX: dir < 0,
+      duration: heavy ? 220 : 150,
+      depth: DEPTH.fx + 2,
+    });
     this.glow(x, y, palette.main, heavy ? 2.2 : 1.3, 180);
     this.sparks(x, y, palette.main, dir, heavy ? 12 : 7, heavy ? 820 : 600);
     if (heavy) this.ring(x, y, palette.light, 70, 260);
   }
 
   explosion(x: number, y: number, palette: Palette, radius = 120, smoky = true) {
-    this.flashCore(x, y, radius / 70, 180);
+    const warm = palette === PALETTE.fire || palette === PALETTE.earth || palette === PALETTE.enemy;
+    const boomKeys = warm
+      ? ["fx_boom_fire_1", "fx_boom_fire_2", "fx_boom_fire_3", "fx_boom_fire_4", "fx_boom_fire_5", "fx_boom_fire_6"]
+      : ["fx_boom_energy_1", "fx_boom_energy_2", "fx_boom_energy_3", "fx_boom_energy_4", "fx_boom_energy_5", "fx_boom_energy_6"];
+    this.playAnim(x, y - 12, boomKeys, {
+      scale: (radius / 110) * 1.1,
+      endScale: (radius / 110) * 1.42,
+      tint: warm ? undefined : palette.main,
+      blendMode: ADD,
+      duration: 420,
+      depth: DEPTH.fx + 2,
+    });
     this.glow(x, y, palette.light, radius / 30, 260);
     this.glow(x, y, palette.main, radius / 18, 520);
     this.ring(x, y, palette.light, radius * 1.1, 360);
     this.ring(x, GROUND_Y - 4, palette.main, radius * 1.4, 520, 0.22);
-    this.particles(x, y, "flame", {
-      speed: { min: radius * 0.8, max: radius * 2.4 },
-      angle: { min: 0, max: 360 },
-      lifespan: { min: 260, max: 520 },
-      scale: { start: radius / 120, end: 0.1 },
-      alpha: { start: 1, end: 0 },
-      rotate: alignToVelocity,
-      color: [0xffffff, palette.light, palette.main, palette.dark],
-      blendMode: ADD,
-    }, Math.round(10 + radius / 12));
+    if (Math.abs(y - GROUND_Y) < 110) this.groundCrack(x, radius / 110, palette.main);
     this.sparks(x, y, palette.light, 1, 8, 900, 180);
-    this.embers(x, y, palette, 12, radius * 0.5);
-    if (smoky) this.smoke(x, y - 10, 6, radius * 0.5);
+    this.embers(x, y, palette, 10, radius * 0.5);
+    if (smoky) this.smoke(x, y - 10, 5, radius * 0.5);
   }
 
   afterimage(source: Phaser.GameObjects.Image, color: number, alpha = 0.5, duration = 240) {
@@ -366,9 +468,19 @@ export class Fx {
     this.scene.cameras.main.shake(duration, intensity);
   }
 
-  flash(color = 0xffffff, duration = 140) {
-    const c = Phaser.Display.Color.IntegerToColor(color);
-    this.scene.cameras.main.flash(duration, c.red, c.green, c.blue);
+  flash(color = 0xffffff, duration = 140, alpha = 0.24) {
+    const overlay = this.scene.add
+      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH * 1.1, GAME_HEIGHT * 1.1, color, alpha)
+      .setScrollFactor(0)
+      .setBlendMode(ADD)
+      .setDepth(DEPTH.fx + 8);
+    this.scene.tweens.add({
+      targets: overlay,
+      alpha: 0,
+      duration,
+      ease: "Quad.easeOut",
+      onComplete: () => overlay.destroy(),
+    });
   }
 
   zoomPunch(amount = 0.04, duration = 160) {
@@ -425,12 +537,10 @@ export class Fx {
   }
 
   dualImpactFlash(c1 = 0x18e6ff, c2 = 0xff3366, duration = 180) {
-    const cam = this.scene.cameras.main;
-    const col1 = Phaser.Display.Color.IntegerToColor(c1);
-    cam.flash(Math.round(duration * 0.5), col1.red, col1.green, col1.blue);
-    this.scene.time.delayedCall(Math.round(duration * 0.5), () => {
-      const col2 = Phaser.Display.Color.IntegerToColor(c2);
-      cam.flash(Math.round(duration * 0.5), col2.red, col2.green, col2.blue);
+    const half = Math.round(duration * 0.5);
+    this.flash(c1, half, 0.2);
+    this.scene.time.delayedCall(half, () => {
+      this.flash(c2, half, 0.24);
     });
   }
 

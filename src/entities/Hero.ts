@@ -36,6 +36,7 @@ export class Hero extends Actor {
   private stateTime = 0;
   private stateDuration = 0;
   private castPose: HeroPose = "attack_blast";
+  private castAnim: "blast" | "ult" = "blast";
   private pendingCast?: { slot: SkillSlot; skill: SkillDef; at: number };
   private comboStep = 0;
   private comboWindow = 0;
@@ -393,6 +394,7 @@ export class Hero extends Actor {
     this.cooldowns[slot] = skill.cooldown * (slot === "ultimate" ? 1 : this.mods.cooldown);
     if (slot === "ultimate") this.overdriveTimer = 6.0;
     this.castPose = skill.kind === "projectile" ? "attack_blast" : skill.kind === "sweep" || skill.kind === "burst" ? "attack_slash" : "attack_blast";
+    this.castAnim = slot === "ultimate" || skill.kind !== "projectile" ? "ult" : "blast";
     const windup = slot === "ultimate" ? 0.32 : 0.08;
     this.pendingCast = { slot, skill, at: windup };
     this.setState("cast", windup + (slot === "ultimate" ? 0.35 : 0.24));
@@ -461,7 +463,11 @@ export class Hero extends Actor {
     if (this.dead || this.state === "hurt") return "hit_reaction";
     if (this.state === "dash" || this.state === "sweep") return this.stateTime < 0.08 ? "dash_1" : "dash_2";
     if (this.state === "attack") return `attack_slash_${Math.min(3, Math.max(1, this.comboStep))}` as HeroPose;
-    if (this.state === "cast") return this.castPose;
+    if (this.state === "cast") {
+      const p = Phaser.Math.Clamp(this.stateTime / Math.max(0.05, this.stateDuration), 0, 0.999);
+      const step = Math.floor(p * 4) + 1;
+      return `${this.castAnim === "ult" ? "cast_ult" : "attack_blast"}_${step}` as HeroPose;
+    }
     if (!this.onGround) return this.vy < -180 ? "jump_rise" : this.vy > 180 ? "jump_fall" : "jump_apex";
     if (this.hasWalk && Math.abs(this.vx) > 35) return `walk_${(Math.floor(this.anim.stride) % 12) + 1}` as HeroPose;
     return `idle_${(Math.floor(this.scene.time.now / 180) % 4) + 1}` as HeroPose;
@@ -564,12 +570,8 @@ export class Hero extends Actor {
       this.sprite.setAlpha(this.dead ? 0.55 : 1);
     }
 
-    // 60 FPS Sub-Frame Cross-Blend Interpolation across 12-frame run, 4-frame idle & 2-frame dash
-    if (running && this.hasWalk && !this.dead) {
-      const frameIdx = Math.floor(a.stride) % 12;
-      const nextPose = `walk_${((frameIdx + 1) % 12) + 1}` as HeroPose;
-      const nextKey = heroKey(this.def.id, nextPose);
-      const frac = a.stride - Math.floor(a.stride);
+    // 60 FPS Sub-Frame Cross-Blend Interpolation across 12-frame run, 4-frame idle, 4-frame cast & dash/attack
+    const applyBlend = (nextKey: string, alpha: number) => {
       const nextAx = anchorX(nextKey);
       this.blendSprite
         .setTexture(nextKey)
@@ -578,36 +580,30 @@ export class Hero extends Actor {
         .setPosition(this.x, this.y + yOff)
         .setScale(sx, sy)
         .setRotation(a.lean)
-        .setAlpha(Math.sin(frac * Math.PI) * 0.36 * this.sprite.alpha)
+        .setAlpha(alpha * this.sprite.alpha)
         .setVisible(true);
+    };
+
+    if (running && this.hasWalk && !this.dead) {
+      const frameIdx = Math.floor(a.stride) % 12;
+      const frac = a.stride - Math.floor(a.stride);
+      applyBlend(heroKey(this.def.id, `walk_${((frameIdx + 1) % 12) + 1}` as HeroPose), Math.sin(frac * Math.PI) * 0.36);
+    } else if (this.state === "cast" && !this.dead) {
+      const p = Phaser.Math.Clamp(this.stateTime / Math.max(0.05, this.stateDuration), 0, 0.999) * 4;
+      const step = Math.floor(p) + 1;
+      const frac = p - Math.floor(p);
+      const nextStep = Math.min(4, step + 1);
+      const prefix = this.castAnim === "ult" ? "cast_ult" : "attack_blast";
+      applyBlend(heroKey(this.def.id, `${prefix}_${nextStep}` as HeroPose), Math.sin(frac * Math.PI) * 0.36);
+    } else if (this.state === "attack" && !this.dead) {
+      applyBlend(key, 0.24);
     } else if (grounded && !running && this.state === "free" && !this.dead) {
       const idlePhase = this.scene.time.now / 180;
       const frameIdx = Math.floor(idlePhase) % 4;
-      const nextIdle = `idle_${((frameIdx + 1) % 4) + 1}` as HeroPose;
-      const nextKey = heroKey(this.def.id, nextIdle);
       const frac = idlePhase - Math.floor(idlePhase);
-      const nextAx = anchorX(nextKey);
-      this.blendSprite
-        .setTexture(nextKey)
-        .setFlipX(flip)
-        .setOrigin(flip ? 1 - nextAx : nextAx, 1)
-        .setPosition(this.x, this.y + yOff)
-        .setScale(sx, sy)
-        .setRotation(a.lean)
-        .setAlpha(Math.sin(frac * Math.PI) * 0.3 * this.sprite.alpha)
-        .setVisible(true);
+      applyBlend(heroKey(this.def.id, `idle_${((frameIdx + 1) % 4) + 1}` as HeroPose), Math.sin(frac * Math.PI) * 0.3);
     } else if ((this.state === "dash" || this.state === "sweep") && !this.dead) {
-      const nextKey = heroKey(this.def.id, "dash_2");
-      const nextAx = anchorX(nextKey);
-      this.blendSprite
-        .setTexture(nextKey)
-        .setFlipX(flip)
-        .setOrigin(flip ? 1 - nextAx : nextAx, 1)
-        .setPosition(this.x, this.y + yOff)
-        .setScale(sx, sy)
-        .setRotation(a.lean)
-        .setAlpha(0.28 * this.sprite.alpha)
-        .setVisible(true);
+      applyBlend(heroKey(this.def.id, "dash_2"), 0.28);
     } else {
       this.blendSprite.setVisible(false);
     }

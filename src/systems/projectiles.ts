@@ -24,6 +24,8 @@ export type ProjectileSpec = {
 
 export type Projectile = ProjectileSpec & {
   parts: Phaser.GameObjects.Image[];
+  animKeys?: string[];
+  animFps?: number;
   trail?: Phaser.GameObjects.Particles.ParticleEmitter;
   crackle?: Phaser.GameObjects.Graphics;
   life: number;
@@ -47,15 +49,25 @@ export class ProjectileSystem {
         p.anchor.x = p.x;
         p.anchor.y = p.y;
       }
+      if (p.animKeys?.length && p.parts[0]) {
+        const idx = Math.floor(p.age * (p.animFps ?? 20)) % p.animKeys.length;
+        const tk = p.animKeys[idx];
+        if (p.parts[0].texture.key !== tk && this.scene.textures.exists(tk)) p.parts[0].setTexture(tk);
+      }
       const angle = Math.atan2(p.vy, p.vx);
       const pulse = 1 + Math.sin(p.age * 40) * 0.08;
       p.parts.forEach((o, i) => {
         o.setPosition(p.x, p.y);
-        if (p.style === "wind") o.setRotation((p.vx < 0 ? Math.PI : 0) + Math.sin(p.age * 30) * 0.12);
-        else if (p.style === "fire" || p.style === "void") o.setRotation(p.age * 8 * (i + 1));
-        else if (p.style === "earth") o.setRotation(p.age * 12);
-        else o.setRotation(angle);
-        if (i === 0) o.setAlpha(0.75 + Math.sin(p.age * 50) * 0.25);
+        if (i === 0 && p.animKeys?.length) {
+          if (p.style === "void") o.setRotation(Math.sin(p.age * 8) * 0.14);
+          else if (p.style === "fire") o.setRotation(angle - Math.PI * 0.25);
+          else if (p.style === "volt" || p.style === "earth" || p.style === "cryo") o.setRotation(angle + Math.PI * 0.5);
+          else o.setRotation(angle);
+          o.setAlpha(0.88 + Math.sin(p.age * 42) * 0.12);
+        } else if (p.style === "enemy") {
+          o.setRotation(angle);
+          if (i === 0) o.setAlpha(0.75 + Math.sin(p.age * 50) * 0.25);
+        }
       });
       if (p.style === "enemy") p.parts[2]?.setScale((p.size / 20) * 0.22 * pulse * 1.4);
       if (p.crackle) this.drawProjectileFx(p);
@@ -127,22 +139,35 @@ export class ProjectileSystem {
       this.scene.add.image(spec.x, spec.y, tex).setTint(tint).setBlendMode(Phaser.BlendModes.ADD).setScale(sx, sy).setDepth(depth);
     const s = spec.size / 20;
     const parts: Phaser.GameObjects.Image[] = [];
+    let animKeys: string[] | undefined;
+    let animFps = 20;
     let trail: Phaser.GameObjects.Particles.ParticleEmitter | undefined;
     let crackle: Phaser.GameObjects.Graphics | undefined;
     const p = { x: spec.x, y: spec.y };
 
+    const pickTex = (keys: string[]) => {
+      animKeys = keys;
+      return this.scene.textures.exists(keys[0]) ? keys[0] : "streak";
+    };
+
     switch (spec.style) {
       case "plasma":
-        parts.push(add("glow", pal.main, 1.4 * s, 0.9 * s), add("streak", pal.main, 2.2 * s, 3.2 * s), add("streak", 0xffffff, 1.5 * s, 1.6 * s, DEPTH.projectile + 1));
-        crackle = this.scene.add.graphics().setDepth(DEPTH.projectile + 1).setBlendMode(Phaser.BlendModes.ADD);
+        parts.push(
+          add(pickTex(["fx_blast_anim_1", "fx_blast_anim_2", "fx_blast_anim_3", "fx_blast_anim_4"]), pal.main, 0.44 * s, 0.36 * s, DEPTH.projectile + 1),
+          add("glow", pal.main, 1.3 * s, 0.9 * s),
+        );
+        animFps = 22;
         trail = this.scene.fx.trail(p, "streak", {
           speed: 0, lifespan: 260, frequency: 12, scale: { start: 0.9 * s, end: 0 }, alpha: { start: 0.8, end: 0 },
           color: [pal.light, pal.main, pal.dark], blendMode: Phaser.BlendModes.ADD, rotate: Math.atan2(spec.vy, spec.vx) * (180 / Math.PI),
         });
         break;
       case "fire":
-        parts.push(add("glow", pal.main, 1.8 * s, 1.8 * s), add("core", pal.light, 0.9 * s, 0.9 * s, DEPTH.projectile + 1));
-        crackle = this.scene.add.graphics().setDepth(DEPTH.projectile + 1).setBlendMode(Phaser.BlendModes.ADD);
+        parts.push(
+          add(pickTex(["fx_meteor_1", "fx_meteor_2", "fx_meteor_3", "fx_meteor_4"]), 0xffffff, 0.48 * s, 0.48 * s, DEPTH.projectile + 1),
+          add("glow", pal.main, 1.7 * s, 1.7 * s),
+        );
+        animFps = 20;
         trail = this.scene.fx.trail(p, "flame", {
           speedX: { min: -spec.vx * 0.15, max: -spec.vx * 0.05 }, speedY: { min: -90, max: -20 },
           lifespan: { min: 220, max: 420 }, frequency: 14, quantity: 2,
@@ -151,7 +176,11 @@ export class ProjectileSystem {
         });
         break;
       case "volt":
-        parts.push(add("glow", pal.main, 1.2 * s, 0.8 * s), add("streak", 0xffffff, 2.6 * s, 2 * s, DEPTH.projectile + 1));
+        parts.push(
+          add(pickTex(["fx_volt_bolt_1", "fx_volt_bolt_2", "fx_volt_bolt_3", "fx_volt_bolt_4"]), pal.light, 0.36 * s, 0.46 * s, DEPTH.projectile + 1),
+          add("glow", pal.main, 1.15 * s, 0.8 * s),
+        );
+        animFps = 24;
         crackle = this.scene.add.graphics().setDepth(DEPTH.projectile).setBlendMode(Phaser.BlendModes.ADD);
         trail = this.scene.fx.trail(p, "dot", {
           speed: { min: 40, max: 160 }, lifespan: { min: 120, max: 260 }, frequency: 10,
@@ -159,9 +188,11 @@ export class ProjectileSystem {
         });
         break;
       case "wind":
-        parts.push(add("arc", pal.main, 0.55 * s, 0.85 * s), add("arc", 0xffffff, 0.42 * s, 0.6 * s, DEPTH.projectile + 1), add("glow", pal.main, 1.2 * s, 1.6 * s));
-        parts.forEach((o) => o.setRotation(spec.vx < 0 ? Math.PI : 0));
-        crackle = this.scene.add.graphics().setDepth(DEPTH.projectile + 1).setBlendMode(Phaser.BlendModes.ADD);
+        parts.push(
+          add(pickTex(["fx_slash_anim_2", "fx_slash_anim_3", "fx_slash_anim_4", "fx_slash_anim_5"]), pal.main, 0.48 * s, 0.62 * s, DEPTH.projectile + 1),
+          add("glow", pal.main, 1.2 * s, 1.6 * s),
+        );
+        animFps = 18;
         trail = this.scene.fx.trail(p, "leaf", {
           speedX: { min: -spec.vx * 0.2, max: -spec.vx * 0.05 }, speedY: { min: -120, max: 120 },
           lifespan: { min: 300, max: 600 }, frequency: 25, scale: { start: 0.8, end: 0.2 },
@@ -169,24 +200,33 @@ export class ProjectileSystem {
         });
         break;
       case "earth":
-        parts.push(add("core", pal.dark, 1.4 * s, 1.4 * s), add("glow", pal.main, 1.2 * s, 1.2 * s), add("ring", pal.light, 0.8 * s, 0.8 * s, DEPTH.projectile + 1));
-        crackle = this.scene.add.graphics().setDepth(DEPTH.projectile + 1).setBlendMode(Phaser.BlendModes.ADD);
+        parts.push(
+          add(pickTex(["fx_earth_spire_1", "fx_earth_spire_2", "fx_earth_spire_3", "fx_earth_spire_4"]), 0xffffff, 0.45 * s, 0.45 * s, DEPTH.projectile + 1),
+          add("glow", pal.main, 1.2 * s, 1.2 * s),
+        );
+        animFps = 18;
         trail = this.scene.fx.trail(p, "shard", {
           speed: { min: 30, max: 120 }, lifespan: { min: 180, max: 320 }, frequency: 12,
           scale: { start: 0.6 * s, end: 0 }, color: [pal.light, pal.main], blendMode: Phaser.BlendModes.ADD,
         });
         break;
       case "cryo":
-        parts.push(add("glow", pal.main, 1.5 * s, 1.1 * s), add("streak", pal.light, 2.5 * s, 2.8 * s, DEPTH.projectile + 1));
-        crackle = this.scene.add.graphics().setDepth(DEPTH.projectile + 1).setBlendMode(Phaser.BlendModes.ADD);
+        parts.push(
+          add(pickTex(["fx_ice_monolith_1", "fx_ice_monolith_2", "fx_ice_monolith_3", "fx_ice_monolith_4"]), 0xffffff, 0.45 * s, 0.5 * s, DEPTH.projectile + 1),
+          add("glow", pal.main, 1.5 * s, 1.1 * s),
+        );
+        animFps = 18;
         trail = this.scene.fx.trail(p, "shard", {
           speed: { min: 30, max: 140 }, lifespan: { min: 200, max: 380 }, frequency: 12,
           scale: { start: 0.7 * s, end: 0.05 }, rotate: { min: 0, max: 360 }, color: [0xffffff, pal.light, pal.main], blendMode: Phaser.BlendModes.ADD,
         });
         break;
       case "void":
-        parts.push(add("glow", pal.main, 1.7 * s, 1.7 * s), add("ring", pal.light, 0.35 * s, 0.35 * s, DEPTH.projectile + 1));
-        crackle = this.scene.add.graphics().setDepth(DEPTH.projectile + 1);
+        parts.push(
+          add(pickTex(["fx_void_orb_1", "fx_void_orb_2", "fx_void_orb_3", "fx_void_orb_4"]), 0xffffff, 0.52 * s, 0.52 * s, DEPTH.projectile + 1),
+          add("glow", pal.main, 1.7 * s, 1.7 * s),
+        );
+        animFps = 20;
         trail = this.scene.fx.trail(p, "dot", {
           speed: { min: 20, max: 120 }, lifespan: { min: 200, max: 360 }, frequency: 12,
           scale: { start: 0.75 * s, end: 0 }, color: [pal.light, pal.main, 0x3b0764], blendMode: Phaser.BlendModes.ADD,
@@ -199,7 +239,7 @@ export class ProjectileSystem {
         });
         break;
     }
-    const proj: Projectile = { ...spec, parts, trail, crackle, life: 1.6, age: 0, hitSet: new Set(), anchor: p };
+    const proj: Projectile = { ...spec, parts, animKeys, animFps, trail, crackle, life: 1.6, age: 0, hitSet: new Set(), anchor: p };
     this.projectiles.push(proj);
   }
 

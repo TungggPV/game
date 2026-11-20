@@ -14,11 +14,13 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import time
 from collections import deque
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parents[1] / "public" / "assets"
 OUT = ROOT / "game"
@@ -480,7 +482,18 @@ def save(a: np.ndarray, name: str, height: int | None = None) -> dict:
         w = round(img.width * height / img.height)
         img = img.resize((w, height), Image.LANCZOS)
     OUT.mkdir(parents=True, exist_ok=True)
-    img.save(OUT / f"{name}.png", optimize=True)
+    target = OUT / f"{name}.png"
+    tmp = OUT / f".tmp_{name}.png"
+    for attempt in range(5):
+        try:
+            img.save(tmp, optimize=True)
+            os.replace(tmp, target)
+            return {"file": f"{name}.png", "w": img.width, "h": img.height}
+        except OSError:
+            if attempt == 4:
+                img.save(target, optimize=True)
+                return {"file": f"{name}.png", "w": img.width, "h": img.height}
+            time.sleep(0.15)
     return {"file": f"{name}.png", "w": img.width, "h": img.height}
 
 
@@ -520,20 +533,29 @@ def save_mirrored_background(name: str) -> tuple[dict, dict]:
 
 
 def recolor_to_obsidian(a: np.ndarray) -> np.ndarray:
-    """Recolor armor to dark volcanic slate / obsidian stone with warm amber-gold core energy."""
+    """Recolor armor to dark volcanic slate / obsidian stone with blazing molten-gold core and slash energy."""
     res = a.copy().astype(np.float32)
     alpha = res[..., 3]
     orig_rgb = a[..., :3].astype(np.float32)
     gray = orig_rgb.mean(axis=2)
 
-    is_core = (orig_rgb[..., 0] < 120) & (orig_rgb[..., 2] > 160) & (alpha > 40)
+    is_core = (orig_rgb[..., 0] < 135) & (orig_rgb[..., 2] > 155) & (alpha > 30)
+    is_bright_fx = (
+        (alpha > 30)
+        & (orig_rgb[..., 2] > 235)
+        & (orig_rgb[..., 1] > 215)
+        & ((orig_rgb[..., 2] - orig_rgb[..., 0]) > 14)
+    )
     res[..., 0] = np.clip(gray * 0.72 + 22, 0, 255)
     res[..., 1] = np.clip(gray * 0.62 + 16, 0, 255)
     res[..., 2] = np.clip(gray * 0.58 + 14, 0, 255)
 
     res[is_core, 0] = 255
-    res[is_core, 1] = 185
-    res[is_core, 2] = 55
+    res[is_core, 1] = 175
+    res[is_core, 2] = 42
+    res[is_bright_fx, 0] = 255
+    res[is_bright_fx, 1] = 238
+    res[is_bright_fx, 2] = 158
     return res.astype(np.int16)
 
 
@@ -661,7 +683,7 @@ def generate_variant_hero(
     manifest: dict[str, dict],
 ) -> None:
     """Create a complete expanded-pose + art + 4-icon hero variant via recolor helper."""
-    cycle_prefixes = ("walk_", "idle_", "jump_", "attack_slash_", "dash_")
+    cycle_prefixes = ("walk_", "idle_", "jump_", "attack_slash_", "attack_blast_", "cast_ult_", "dash_")
     for pose, src_arr in src_poses.items():
         recolored = recolor_fn(src_arr)
         if pose == "art":
@@ -1013,6 +1035,62 @@ def synthesize_hero_dash2(base_dash: np.ndarray) -> tuple[list[np.ndarray], floa
     return _crop_union_frames([d1, d2], pivot_x, pad=2)
 
 
+def synthesize_hero_blast4(base_blast: np.ndarray) -> tuple[list[np.ndarray], float]:
+    """Synthesize 4-frame ranged blast sequence (coiled charge -> ignition -> recoil -> settle)."""
+    pivot_x = body_anchor(base_blast, "attack_blast") * base_blast.shape[1] + 18.0
+    padded = np.pad(base_blast, ((14, 14), (18, 18), (0, 0)), mode="constant", constant_values=0)
+    h, w = padded.shape[:2]
+    pivot_y = h * 0.55
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    dx0 = xx - pivot_x
+    dy0 = yy - pivot_y
+    w_muzzle = _smoothstep(pivot_x + 12.0, pivot_x + 42.0, xx)
+
+    def mk_pose(ang_deg: float, shift_x: float, sx_sc: float, muzzle_sc: float) -> np.ndarray:
+        th = math.radians(ang_deg)
+        c, s = math.cos(th), math.sin(th)
+        loc_sc = sx_sc + (muzzle_sc - 1.0) * w_muzzle
+        lx = (dx0 - shift_x) / loc_sc
+        ly = dy0 / (1.0 + (muzzle_sc - 1.0) * 0.5 * w_muzzle)
+        return _bilinear_warp(padded, pivot_x + lx * c + ly * s, pivot_y - lx * s + ly * c, alpha_thresh=0.0)
+
+    frames = [
+        mk_pose(-4.0, -4.0, 0.96, 1.0),
+        mk_pose(+3.0, +3.0, 1.0, 1.04),
+        mk_pose(-6.0, -2.0, 1.0, 1.08),
+        mk_pose(-1.5, 0.0, 1.0, 1.0),
+    ]
+    return _crop_union_frames(frames, pivot_x, pad=2)
+
+
+def synthesize_hero_ult4(base_slash: np.ndarray) -> tuple[list[np.ndarray], float]:
+    """Synthesize 4-frame dramatic melee/ultimate surge sequence (crouch -> surge -> overdrive -> settle)."""
+    pivot_x = body_anchor(base_slash, "attack_slash") * base_slash.shape[1] + 24.0
+    padded = np.pad(base_slash, ((24, 24), (24, 24), (0, 0)), mode="constant", constant_values=0)
+    h, w = padded.shape[:2]
+    pivot_y = h * 0.56
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    dx0 = xx - pivot_x
+    dy0 = yy - pivot_y
+    w_front = _smoothstep(pivot_x - 10.0, pivot_x + 30.0, xx)
+
+    def mk_pose(ang_deg: float, shift_x: float, shift_y: float, sy_sc: float, punch_sc: float) -> np.ndarray:
+        th = math.radians(ang_deg)
+        c, s = math.cos(th), math.sin(th)
+        sc = 1.0 + (punch_sc - 1.0) * w_front
+        lx = (dx0 - shift_x) / sc
+        ly = (dy0 - shift_y) / (sy_sc * sc)
+        return _bilinear_warp(padded, pivot_x + lx * c + ly * s, pivot_y - lx * s + ly * c, alpha_thresh=0.0)
+
+    frames = [
+        mk_pose(-3.0, -2.0, +5.0, 0.93, 1.0),
+        mk_pose(-8.5, +1.0, -6.0, 1.04, 1.02),
+        mk_pose(+7.0, +5.0, -1.0, 1.01, 1.06),
+        mk_pose(+2.0, +1.0, 0.0, 1.0, 1.01),
+    ]
+    return _crop_union_frames(frames, pivot_x, pad=2)
+
+
 def synthesize_enemy_run8(base: np.ndarray, kind: str) -> list[np.ndarray]:
     """Synthesize a smooth 8-frame high-res walk cycle from an enemy's main portrait."""
     padded = np.pad(base, ((8, 8), (8, 8), (0, 0)), mode="constant", constant_values=0)
@@ -1080,6 +1158,393 @@ def _crop_union_frames(frames: list[np.ndarray], pivot_x: float, pad: int = 2) -
     cropped = [fr[uy0:uy1, ux0:ux1].copy() for fr in frames]
     ax = float((pivot_x - ux0) / max(1, ux1 - ux0))
     return cropped, ax
+
+
+def _to_luminous_tintable(rgba: np.ndarray) -> np.ndarray:
+    """Desaturate colored energy FX into high-luminance white/silver so setTint() recolors any element cleanly."""
+    out = rgba.copy().astype(np.float32)
+    rgb = out[..., :3]
+    mx = rgb.max(axis=2)
+    lum = rgb.mean(axis=2)
+    tone = np.clip(mx * 0.72 + lum * 0.42, 0.0, 255.0)
+    mask = out[..., 3] > 0
+    for c in range(3):
+        out[..., c] = np.where(mask, tone, 0.0)
+    return out.astype(rgba.dtype)
+
+
+def _dark_bg_to_alpha(
+    rgb_patch: np.ndarray, bg_rgb: np.ndarray | None = None, scale_h: int = 180, tintable: bool = False
+) -> np.ndarray:
+    """Convert dark-panel additive VFX artwork into crisp unpremultiplied RGBA."""
+    rgb = rgb_patch[..., :3].astype(np.float32)
+    if bg_rgb is None:
+        bg_rgb = np.median(np.vstack([rgb[:3, :].reshape(-1, 3), rgb[-3:, :].reshape(-1, 3)]), axis=0)
+    delta = np.maximum(rgb - bg_rgb[None, None, :], 0.0)
+    dmax = delta.max(axis=2)
+    alpha = np.where(dmax <= 11.0, 0.0, np.clip((dmax - 11.0) / 135.0, 0.0, 1.0) ** 0.84 * 255.0)
+    # Feather 2px outer patch edges so adjacent icons on strips never bleed
+    alpha[:2, :] *= 0.25
+    alpha[-2:, :] *= 0.25
+    alpha[:, :2] *= 0.25
+    alpha[:, -2:] *= 0.25
+    gain = np.where(dmax > 11.0, np.clip(220.0 / np.maximum(dmax, 36.0), 1.0, 2.2), 0.0)
+    rgb_clean = np.clip(delta * gain[..., None], 0.0, 255.0)
+    rgba = np.dstack([rgb_clean, alpha]).clip(0, 255).astype(np.uint8)
+    trimmed = trim(rgba.astype(np.int16), pad=2).clip(0, 255).astype(np.uint8)
+    if scale_h and trimmed.shape[0] > 0:
+        im = Image.fromarray(trimmed, "RGBA")
+        nw = max(4, round(im.width * scale_h / im.height))
+        im = im.resize((nw, scale_h), Image.Resampling.LANCZOS)
+        out = np.array(im, dtype=np.int16)
+    else:
+        out = trimmed.astype(np.int16)
+    return _to_luminous_tintable(out) if tintable else out
+
+
+def _fit_union_canvas(cells: list[np.ndarray], target_w: int, target_h: int) -> list[np.ndarray]:
+    """Center variable-sized cleaned VFX sprites on one shared transparent canvas."""
+    out: list[np.ndarray] = []
+    for c in cells:
+        im = Image.fromarray(c.clip(0, 255).astype(np.uint8), "RGBA")
+        scale = min((target_w - 8) / max(1, im.width), (target_h - 8) / max(1, im.height))
+        nw, nh = max(4, round(im.width * scale)), max(4, round(im.height * scale))
+        im = im.resize((nw, nh), Image.Resampling.LANCZOS)
+        can = np.zeros((target_h, target_w, 4), dtype=np.int16)
+        x0 = (target_w - nw) // 2
+        y0 = (target_h - nh) // 2
+        can[y0 : y0 + nh, x0 : x0 + nw] = np.array(im, dtype=np.int16)
+        out.append(can)
+    return out
+
+
+def _anim_variants_4(base: np.ndarray, mode: str) -> list[np.ndarray]:
+    """Synthesize 4 smooth looping progression frames from one high-res VFX painting."""
+    padded = np.pad(base, ((16, 16), (16, 16), (0, 0)), mode="constant", constant_values=0)
+    h, w = padded.shape[:2]
+    cx, cy = w * 0.5, h * 0.5
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    dx0, dy0 = xx - cx, yy - cy
+    r_norm = np.hypot(dx0, dy0) / max(1.0, min(w, h) * 0.45)
+
+    frames: list[np.ndarray] = []
+    for k in range(4):
+        ph = k * (math.pi / 2.0)
+        s = math.sin(ph)
+        c = math.cos(ph)
+        if mode == "surge":
+            wave_y = s * 4.5 + np.sin(yy * 0.08 - k * 1.4) * 3.5 * np.clip(r_norm, 0.2, 1.0)
+            wave_x = np.cos(yy * 0.09 + ph) * 3.8 * _smoothstep(0.15, 0.85, r_norm)
+            sc = 1.0 + c * 0.035
+            sx = cx + dx0 / sc - wave_x
+            sy = cy + dy0 / (sc + 0.02 * s) - wave_y
+        elif mode == "spin":
+            ang = 0.16 * s + 0.28 * c * np.clip(1.0 - r_norm * 0.5, 0.2, 1.0)
+            ca, sa = np.cos(ang), np.sin(ang)
+            sc = 1.0 + 0.045 * math.sin(ph)
+            sx = cx + (dx0 * ca + dy0 * sa) / sc
+            sy = cy + (-dx0 * sa + dy0 * ca) / sc
+        elif mode == "burst":
+            sc = 0.88 + k * 0.075
+            swirl = (k - 1.5) * 0.09 * _smoothstep(0.2, 1.0, r_norm)
+            ca, sa = np.cos(swirl), np.sin(swirl)
+            sx = cx + (dx0 * ca + dy0 * sa) / sc
+            sy = cy + (-dx0 * sa + dy0 * ca) / sc
+        else:  # crackle
+            wig = np.sin(yy * 0.14 + ph * 1.3) * 4.2 + np.cos(xx * 0.12 - ph) * 2.4
+            sc = 1.0 + 0.04 * s
+            sx = cx + dx0 / sc - wig * 0.65
+            sy = cy + dy0 / sc - np.cos(yy * 0.11 + ph) * 3.0
+        frames.append(_bilinear_warp(padded, sx, sy, alpha_thresh=0.0))
+    cropped, _ = _crop_union_frames(frames, cx, pad=2)
+    return cropped
+
+
+def _save_fx_cycle(manifest: dict[str, dict], name_prefix: str, frames: list[np.ndarray]) -> None:
+    for idx, fr in enumerate(frames, 1):
+        key = f"{name_prefix}_{idx}"
+        entry = save(fr, key)
+        entry["ax"] = 0.5
+        manifest[key] = entry
+
+
+def _paint_earth_spires() -> list[np.ndarray]:
+    """Paint 4 erupting volcanic obsidian spire monolith frames with glowing magma cracks."""
+    sz = 192
+    frames: list[np.ndarray] = []
+    for k in range(4):
+        im = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
+        d = ImageDraw.Draw(im)
+        rise = [0.68, 0.88, 1.0, 0.84][k]
+        base_y = sz - 18
+        spires = [(sz * 0.28, 86 * rise, -14, 24), (sz * 0.5, 138 * rise, 0, 32), (sz * 0.72, 96 * rise, 16, 26)]
+
+        # Warm ambient magma glow around rock base
+        glow = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
+        gd = ImageDraw.Draw(glow)
+        gd.ellipse((32, base_y - 34, sz - 32, base_y + 12), fill=(255, 140, 35, 130))
+        gd.ellipse((sz * 0.34, base_y - int(115 * rise), sz * 0.66, base_y), fill=(255, 175, 65, 85))
+        glow = glow.filter(ImageFilter.GaussianBlur(10))
+        im = Image.alpha_composite(im, glow)
+        d = ImageDraw.Draw(im)
+
+        for sx_c, h_sp, lean, hw in spires:
+            tip_x = sx_c + lean
+            tip_y = base_y - h_sp
+            d.polygon(
+                [(sx_c - hw, base_y), (sx_c - hw * 0.45, tip_y + h_sp * 0.42), (tip_x, tip_y), (sx_c + hw * 0.72, base_y)],
+                fill=(42, 32, 28, 250),
+            )
+            d.polygon(
+                [(sx_c, base_y), (tip_x, tip_y), (sx_c + hw * 0.45, tip_y + h_sp * 0.52), (sx_c + hw * 0.72, base_y)],
+                fill=(102, 74, 48, 248),
+            )
+            # Glowing molten magma veins
+            d.line([(sx_c - hw * 0.1, base_y - 4), (tip_x + 2, tip_y + 14), (sx_c + hw * 0.25, base_y - 24)], fill=(255, 185, 55, 255), width=3)
+            d.line([(tip_x, tip_y + 16), (sx_c - hw * 0.35, base_y - 18)], fill=(255, 240, 170, 240), width=2)
+        for m in range(5):
+            px = sz * (0.22 + 0.14 * m) + math.sin(k * 1.5 + m) * 10
+            py = base_y - (45 + ((m * 29 + k * 24) % 95))
+            d.polygon([(px, py - 5), (px + 4, py), (px, py + 5), (px - 4, py)], fill=(255, 215, 95, 235))
+        frames.append(np.array(im, dtype=np.int16))
+    return frames
+
+
+def _paint_ice_monoliths() -> list[np.ndarray]:
+    """Paint 4 faceted glacier crystal spear monolith frames with specular cyan-white facets."""
+    sz = 192
+    frames: list[np.ndarray] = []
+    for k in range(4):
+        base_y = sz - 16
+        pulse = 0.88 + 0.12 * math.sin(k * math.pi / 2.0)
+        glow = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
+        gd = ImageDraw.Draw(glow)
+        gd.ellipse((40, base_y - 44, sz - 40, base_y + 10), fill=(56, 189, 248, 125))
+        gd.polygon([(sz * 0.36, base_y), (sz * 0.5, 20), (sz * 0.64, base_y)], fill=(125, 211, 252, 95))
+        im = glow.filter(ImageFilter.GaussianBlur(9))
+        d = ImageDraw.Draw(im)
+
+        sh = int(146 * pulse)
+        d.polygon([(sz * 0.24, base_y), (sz * 0.31, base_y - sh * 0.56), (sz * 0.44, base_y)], fill=(14, 116, 184, 225))
+        d.polygon([(sz * 0.76, base_y), (sz * 0.69, base_y - sh * 0.62), (sz * 0.56, base_y)], fill=(56, 189, 248, 225))
+        # Center translucent spear facets
+        d.polygon([(sz * 0.35, base_y), (sz * 0.5, base_y - sh), (sz * 0.5, base_y)], fill=(125, 211, 252, 245))
+        d.polygon([(sz * 0.5, base_y - sh), (sz * 0.65, base_y), (sz * 0.5, base_y)], fill=(224, 250, 255, 250))
+        d.line([(sz * 0.35, base_y), (sz * 0.5, base_y - sh), (sz * 0.65, base_y)], fill=(255, 255, 255, 255), width=2)
+        d.line([(sz * 0.5, base_y - sh + 4), (sz * 0.5, base_y - 4)], fill=(255, 255, 255, 245), width=2)
+        for m in range(6):
+            a = k * 0.7 + m * 1.05
+            sx = sz * 0.5 + math.cos(a) * (36 + (m % 2) * 18)
+            sy = sz * 0.52 + math.sin(a) * 44
+            d.polygon([(sx, sy - 6), (sx + 3, sy), (sx, sy + 6), (sx - 3, sy)], fill=(235, 252, 255, 230))
+        frames.append(np.array(im, dtype=np.int16))
+    return frames
+
+
+def _paint_cryo_blizzard() -> list[np.ndarray]:
+    """Paint 4 rotating hexagonal crystalline frost snowflake mandala frames."""
+    sz = 196
+    frames: list[np.ndarray] = []
+    for k in range(4):
+        rot = k * (math.pi / 12.0)
+        glow = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
+        gd = ImageDraw.Draw(glow)
+        gd.ellipse((24, 24, sz - 24, sz - 24), outline=(56, 189, 248, 130), width=12)
+        gd.ellipse((48, 48, sz - 48, sz - 48), fill=(186, 230, 253, 85))
+        im = glow.filter(ImageFilter.GaussianBlur(8))
+        d = ImageDraw.Draw(im)
+        cx = cy = sz * 0.5
+        d.ellipse((18, 18, sz - 18, sz - 18), outline=(125, 211, 252, 215), width=3)
+        d.ellipse((40, 40, sz - 40, sz - 40), outline=(255, 255, 255, 195), width=2)
+        for i in range(6):
+            a = rot + (i * math.pi) / 3.0
+            ca, sa = math.cos(a), math.sin(a)
+            x2, y2 = cx + ca * 82, cy + sa * 82
+            d.line([(cx, cy), (x2, y2)], fill=(235, 252, 255, 245), width=3)
+            # Crystal chevron barbs
+            for frac, arm in ((0.48, 16), (0.72, 12)):
+                bx, by = cx + ca * (82 * frac), cy + sa * (82 * frac)
+                for side in (-0.65, 0.65):
+                    d.line([(bx, by), (bx + math.cos(a + side) * arm, by + math.sin(a + side) * arm)], fill=(125, 211, 252, 240), width=2)
+            d.polygon([(x2 + ca * 6, y2 + sa * 6), (x2 - sa * 5, y2 + ca * 5), (x2 - ca * 5, y2 - sa * 5), (x2 + sa * 5, y2 - ca * 5)], fill=(255, 255, 255, 245))
+        frames.append(np.array(im, dtype=np.int16))
+    return frames
+
+
+def _paint_void_orbs() -> list[np.ndarray]:
+    """Paint 4 black-hole singularity core frames with tilted neon-magenta accretion disk."""
+    sz = 180
+    frames: list[np.ndarray] = []
+    for k in range(4):
+        glow = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
+        gd = ImageDraw.Draw(glow)
+        gd.ellipse((14, sz * 0.34, sz - 14, sz * 0.66), fill=(192, 38, 211, 145))
+        gd.ellipse((42, 42, sz - 42, sz - 42), fill=(217, 70, 239, 135))
+        im = glow.filter(ImageFilter.GaussianBlur(9))
+        d = ImageDraw.Draw(im)
+        cx = cy = sz * 0.5
+        # Tilted multi-ring accretion ellipses
+        tilt = (k % 2) * 3 - 1
+        d.ellipse((16, sz * 0.37 + tilt, sz - 16, sz * 0.63 + tilt), outline=(232, 121, 249, 235), width=4)
+        d.ellipse((28, sz * 0.41 - tilt, sz - 28, sz * 0.59 - tilt), outline=(253, 244, 255, 220), width=2)
+        # Pitch-black event horizon + white-magenta photon ring
+        d.ellipse((cx - 30, cy - 30, cx + 30, cy + 30), fill=(6, 2, 16, 255), outline=(255, 255, 255, 255), width=3)
+        d.ellipse((cx - 35, cy - 35, cx + 35, cy + 35), outline=(217, 70, 239, 240), width=3)
+        for i in range(3):
+            a = k * (math.pi / 2.0) + i * 2.094
+            ox = cx + math.cos(a) * 64
+            oy = cy + math.sin(a) * 20
+            d.ellipse((ox - 5, oy - 5, ox + 5, oy + 5), fill=(255, 255, 255, 250), outline=(217, 70, 239, 255), width=2)
+        frames.append(np.array(im, dtype=np.int16))
+    return frames
+
+
+def _paint_void_rifts() -> list[np.ndarray]:
+    """Paint 4 jagged dimensional X-rift tear frames with white core fracture & amethyst lightning."""
+    sz = 200
+    frames: list[np.ndarray] = []
+    for k in range(4):
+        sc = 0.86 + 0.14 * math.sin(k * math.pi / 2.0 + 0.4)
+        pad = int((1.0 - sc) * 45)
+        glow = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
+        gd = ImageDraw.Draw(glow)
+        gd.line([(16 + pad, 16 + pad), (sz - 16 - pad, sz - 16 - pad)], fill=(217, 70, 239, 170), width=24)
+        gd.line([(16 + pad, sz - 16 - pad), (sz - 16 - pad, 16 + pad)], fill=(192, 38, 211, 170), width=24)
+        im = glow.filter(ImageFilter.GaussianBlur(9))
+        d = ImageDraw.Draw(im)
+        cx = cy = sz * 0.5
+        for p1, p2 in [
+            ((16 + pad, 16 + pad), (sz - 16 - pad, sz - 16 - pad)),
+            ((16 + pad, sz - 16 - pad), (sz - 16 - pad, 16 + pad)),
+        ]:
+            d.line([p1, p2], fill=(217, 70, 239, 245), width=10)
+            d.line([p1, p2], fill=(255, 255, 255, 255), width=4)
+        # Central dark dimensional slit & glowing fracture shards
+        d.polygon([(cx - 18, cy), (cx, cy - 28), (cx + 18, cy), (cx, cy + 28)], fill=(8, 2, 22, 250), outline=(245, 208, 254, 255))
+        for j in range(4):
+            a = k * 0.8 + j * 1.57
+            d.line(
+                [(cx + math.cos(a) * 18, cy + math.sin(a) * 18), (cx + math.cos(a + 0.25) * 62, cy + math.sin(a + 0.25) * 62)],
+                fill=(245, 208, 254, 235),
+                width=2,
+            )
+        frames.append(np.array(im, dtype=np.int16))
+    return frames
+
+
+def build_skill_vfx(manifest: dict[str, dict]) -> None:
+    """Extract & synthesize multi-frame animated skill VFX sheets into sprites.json."""
+    # 1. Animated Slash Sequence (fx_slash_anim_1..6)
+    slash_sheet = load("effects/slash_effects_sheet.png")
+    s1 = _to_luminous_tintable(trim(slash_sheet[0:124, 6:175, :], pad=2)[:, ::-1, :])
+    s2 = _to_luminous_tintable(trim(slash_sheet[0:124, 160:332, :], pad=2))
+    s3 = _to_luminous_tintable(trim(slash_sheet[0:152, 356:450, :], pad=2))
+    s4 = _to_luminous_tintable(trim(slash_sheet[124:165, 6:248, :], pad=2))
+    for s in (s1, s2, s3, s4):
+        defringe(s)
+    slash_base = _fit_union_canvas([s1, s2, s3, s4], 184, 164)
+    # Expand 4 distinctive keyframes + 2 intermediate motion blurs into 6 smooth frames
+    slash_6 = [
+        slash_base[0],
+        _bilinear_warp(slash_base[1], np.mgrid[0:164, 0:184][1].astype(np.float32) - 4.0, np.mgrid[0:164, 0:184][0].astype(np.float32), alpha_thresh=0.0),
+        slash_base[1],
+        slash_base[2],
+        _anim_variants_4(slash_base[2], "surge")[1],
+        slash_base[3],
+    ]
+    _save_fx_cycle(manifest, "fx_slash_anim", slash_6)
+
+    # 2. Animated Energy Blast Sequence (fx_blast_anim_1..6, facing RIGHT +1)
+    blast_sheet = load("effects/energy_blasts_sheet.png")
+    b_raw = [
+        trim(blast_sheet[8:145, 0:60, :], pad=2)[:, ::-1, :],
+        trim(blast_sheet[8:145, 74:146, :], pad=2)[:, ::-1, :],
+        trim(blast_sheet[8:145, 160:264, :], pad=2)[:, ::-1, :],
+        trim(blast_sheet[8:145, 272:500, :], pad=2)[:, ::-1, :],
+    ]
+    b_norm = [_to_luminous_tintable(b) for b in b_raw]
+    for b in b_norm:
+        defringe(b)
+    b_fitted = _fit_union_canvas(b_norm, 220, 148)
+    b_surge = _anim_variants_4(b_fitted[2], "surge")
+    b_fade = _fit_union_canvas([b_surge[2], b_surge[3]], 220, 148)
+    _save_fx_cycle(manifest, "fx_blast_anim", [b_fitted[0], b_fitted[1], b_fitted[2], b_fitted[3], b_fade[0], b_fade[1]])
+
+    # 3. Animated Explosions: Warm Fireball (fx_boom_fire_1..6) & Tintable Crystalline Burst (fx_boom_energy_1..6)
+    exp_sheet = load("effects/explosions_sheet.png")
+    ex_fire_1 = trim(exp_sheet[22:155, 94:188, :], pad=2)
+    ex_fire_2 = trim(exp_sheet[20:155, 194:324, :], pad=2)
+    fire_fit = _fit_union_canvas([ex_fire_1, ex_fire_2], 196, 176)
+    fire_burst_a = _anim_variants_4(fire_fit[0], "burst")
+    fire_burst_b = _anim_variants_4(fire_fit[1], "burst")
+    _save_fx_cycle(manifest, "fx_boom_fire", [fire_burst_a[0], fire_burst_a[2], fire_fit[1], fire_burst_b[1], fire_burst_b[2], fire_burst_b[3]])
+
+    ex_ice_1 = _to_luminous_tintable(trim(exp_sheet[22:155, 6:80, :], pad=2))
+    ex_ice_2 = _to_luminous_tintable(trim(exp_sheet[20:155, 329:485, :], pad=2))
+    ice_fit = _fit_union_canvas([ex_ice_1, ex_ice_2], 196, 176)
+    ice_burst_a = _anim_variants_4(ice_fit[0], "burst")
+    ice_burst_b = _anim_variants_4(ice_fit[1], "burst")
+    _save_fx_cycle(manifest, "fx_boom_energy", [ice_burst_a[0], ice_burst_a[2], ice_fit[1], ice_burst_b[1], ice_burst_b[2], ice_burst_b[3]])
+
+    # 4. Hit Spark Bursts (fx_hit_1..4, tintable)
+    hit_sheet = load("effects/hit_sparks_sheet.png")
+    h_raw = [
+        _to_luminous_tintable(trim(hit_sheet[22:145, 0:64, :], pad=2)),
+        _to_luminous_tintable(trim(hit_sheet[22:145, 72:154, :], pad=2)),
+        _to_luminous_tintable(trim(hit_sheet[22:145, 158:228, :], pad=2)),
+        _to_luminous_tintable(trim(hit_sheet[22:145, 234:352, :], pad=2)),
+    ]
+    for hc in h_raw:
+        defringe(hc)
+    _save_fx_cycle(manifest, "fx_hit", _fit_union_canvas(h_raw, 136, 136))
+
+    # 5. Per-Hero Painted Signature Effects from detail/effects/*
+    nb = load("detail/effects/nova_blade_effects.png")
+    nb_bg = np.median(nb[:4, :4, :3], axis=(0, 1))
+    _save_fx_cycle(manifest, "fx_nova_pillar", _anim_variants_4(_dark_bg_to_alpha(nb[0:84, 132:196, :], nb_bg, scale_h=200), "surge"))
+    _save_fx_cycle(manifest, "fx_nova_vortex", _anim_variants_4(_dark_bg_to_alpha(nb[0:84, 196:272, :], nb_bg, scale_h=180), "spin"))
+
+    cf = load("detail/effects/crimson_flare_effects.png")
+    cf_bg = np.median(cf[:4, :4, :3], axis=(0, 1))
+    _save_fx_cycle(manifest, "fx_meteor", _anim_variants_4(_dark_bg_to_alpha(cf[0:84, 4:74, :], cf_bg, scale_h=168), "surge"))
+    _save_fx_cycle(manifest, "fx_fire_vortex", _anim_variants_4(_dark_bg_to_alpha(cf[0:84, 74:154, :], cf_bg, scale_h=180), "spin"))
+
+    vs = load("detail/effects/volt_sentinel_effects.png")
+    vs_bg = np.median(vs[:4, :4, :3], axis=(0, 1))
+    vb1 = _dark_bg_to_alpha(vs[0:84, 0:65, :], vs_bg, scale_h=208)
+    vb2 = _dark_bg_to_alpha(vs[0:84, 182:274, :], vs_bg, scale_h=208)
+    vb_pair = _fit_union_canvas([vb1, vb2], 140, 208)
+    _save_fx_cycle(
+        manifest,
+        "fx_volt_bolt",
+        [vb_pair[0], _anim_variants_4(vb_pair[0], "crackle")[1], vb_pair[1], _anim_variants_4(vb_pair[1], "crackle")[2]],
+    )
+    _save_fx_cycle(manifest, "fx_volt_dome", _anim_variants_4(_dark_bg_to_alpha(vs[0:84, 68:180, :], vs_bg, scale_h=180), "crackle"))
+
+    ep = load("detail/effects/emerald_phantom_effects.png")
+    ep_bg = np.median(ep[:4, :4, :3], axis=(0, 1))
+    tw1 = _dark_bg_to_alpha(ep[0:84, 4:88, :], ep_bg, scale_h=190)
+    tw2 = _dark_bg_to_alpha(ep[0:84, 90:166, :], ep_bg, scale_h=190)
+    tw_pair = _fit_union_canvas([tw1, tw2], 180, 190)
+    _save_fx_cycle(
+        manifest,
+        "fx_wind_tornado",
+        [tw_pair[0], _anim_variants_4(tw_pair[0], "spin")[1], tw_pair[1], _anim_variants_4(tw_pair[1], "spin")[2]],
+    )
+
+    ce = load("detail/effects/common_effects.png")
+    ce_bg = np.median(ce[12:18, 2:8, :3], axis=(0, 1))
+    gcrack = _dark_bg_to_alpha(ce[4:64, 728:846, :], ce_bg, scale_h=96, tintable=True)
+    ce_entry = save(gcrack, "fx_ground_crack")
+    ce_entry["ax"] = 0.5
+    manifest["fx_ground_crack"] = ce_entry
+
+    # 6. High-Res Procedural Element Signature Sets (Obsidian Warden, Cryo Archon, Void Reaper)
+    _save_fx_cycle(manifest, "fx_earth_spire", _paint_earth_spires())
+    _save_fx_cycle(manifest, "fx_ice_monolith", _paint_ice_monoliths())
+    _save_fx_cycle(manifest, "fx_cryo_blizzard", _paint_cryo_blizzard())
+    _save_fx_cycle(manifest, "fx_void_orb", _paint_void_orbs())
+    _save_fx_cycle(manifest, "fx_void_rift", _paint_void_rifts())
 
 
 def main() -> None:
@@ -1165,6 +1630,22 @@ def main() -> None:
             entry["ax"] = dash_ax
             manifest[f"{hero}_{dname}"] = entry
 
+        blast4, blast_ax = synthesize_hero_blast4(cleaned_heroes[hero]["attack_blast"])
+        for k, fr in enumerate(blast4, 1):
+            bname = f"attack_blast_{k}"
+            cleaned_heroes[hero][bname] = fr
+            entry = save(fr, f"{hero}_{bname}")
+            entry["ax"] = blast_ax
+            manifest[f"{hero}_{bname}"] = entry
+
+        ult4, ult_ax = synthesize_hero_ult4(cleaned_heroes[hero]["attack_slash"])
+        for k, fr in enumerate(ult4, 1):
+            uname = f"cast_ult_{k}"
+            cleaned_heroes[hero][uname] = fr
+            entry = save(fr, f"{hero}_{uname}")
+            entry["ax"] = ult_ax
+            manifest[f"{hero}_{uname}"] = entry
+
         art_cell = clean_master_cell(sheet[56:546, 740:1446], bg, shadow_px=0, ratio=0.02, halo_depth=18)
         cleaned_heroes[hero]["art"] = art_cell
         manifest[f"{hero}_art"] = save(trim(art_cell, pad=2), f"{hero}_art", 420)
@@ -1230,6 +1711,7 @@ def main() -> None:
         defringe(a)
         keep_main(a, 0.4 if name == "item_coin" else 0.05)
         manifest[name] = save(trim(a, pad=2), name, 64 if name.startswith("item") else None)
+    build_skill_vfx(manifest)
 
     # 5. City Props (Crate, Barrel, Supply Chest)
     city_props = Image.open(ROOT / "props" / "city_props.png").convert("RGBA")

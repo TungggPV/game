@@ -20,6 +20,11 @@ export type Field = {
   style: FieldStyle;
   hit: Hit;
   g: Phaser.GameObjects.Graphics;
+  sprite?: Phaser.GameObjects.Image;
+  blendSprite?: Phaser.GameObjects.Image;
+  animKeys?: string[];
+  animFps?: number;
+  age: number;
   particles?: Phaser.GameObjects.Particles.ParticleEmitter;
   anchor?: { x: number; y: number };
 };
@@ -32,6 +37,7 @@ export class FieldSystem {
   update(dt: number) {
     for (const f of this.fields) {
       f.time -= dt;
+      f.age += dt;
       f.acc += dt;
       if (f.style === "spiral") {
         f.x = f.owner.x + f.owner.facing * f.offset;
@@ -59,6 +65,8 @@ export class FieldSystem {
       }
       if (f.time <= 0) {
         f.g.destroy();
+        f.sprite?.destroy();
+        f.blendSprite?.destroy();
         this.scene.fx.stopTrail(f.particles, 500);
       }
     }
@@ -68,14 +76,43 @@ export class FieldSystem {
   clear() {
     this.fields.forEach((f) => {
       f.g.destroy();
+      f.sprite?.destroy();
+      f.blendSprite?.destroy();
       this.scene.fx.stopTrail(f.particles, 100);
     });
     this.fields = [];
   }
 
-  spawnField(spec: Omit<Field, "g" | "acc" | "time"> & { duration: number }) {
+  spawnField(spec: Omit<Field, "g" | "acc" | "time" | "age"> & { duration: number }) {
     const pal = PALETTE[spec.owner.def.element];
     const g = this.scene.add.graphics().setDepth(DEPTH.fx - 1);
+    const animKeys =
+      spec.style === "cage"
+        ? ["fx_volt_dome_1", "fx_volt_dome_2", "fx_volt_dome_3", "fx_volt_dome_4"]
+        : spec.style === "blizzard"
+        ? ["fx_cryo_blizzard_1", "fx_cryo_blizzard_2", "fx_cryo_blizzard_3", "fx_cryo_blizzard_4"]
+        : ["fx_wind_tornado_1", "fx_wind_tornado_2", "fx_wind_tornado_3", "fx_wind_tornado_4"];
+    const animFps = spec.style === "spiral" ? 16 : 14;
+    const isBliz = spec.style === "blizzard";
+    const mk = (depth: number) =>
+      this.scene.textures.exists(animKeys[0])
+        ? this.scene.add
+            .image(spec.x, isBliz ? GROUND_Y - 12 : GROUND_Y + 6, animKeys[0])
+            .setOrigin(0.5, isBliz ? 0.5 : 1)
+            .setBlendMode(Phaser.BlendModes.ADD)
+            .setDepth(depth)
+        : undefined;
+    const sprite = mk(DEPTH.fx);
+    const blendSprite = mk(DEPTH.fx + 1);
+    if (isBliz) {
+      sprite?.setScale((spec.radius * 2.1) / 196, ((spec.radius * 2.1) / 196) * 0.42);
+      blendSprite?.setScale((spec.radius * 2.1) / 196, ((spec.radius * 2.1) / 196) * 0.42);
+    } else {
+      const sc = Math.max(0.85, (spec.radius * 1.4) / 180);
+      sprite?.setScale(sc);
+      blendSprite?.setScale(sc);
+    }
+
     let particles: Phaser.GameObjects.Particles.ParticleEmitter | undefined;
     const anchor = { x: spec.x, y: spec.y };
     if (spec.style === "spiral") {
@@ -101,79 +138,45 @@ export class FieldSystem {
         blendMode: Phaser.BlendModes.ADD,
       });
     }
-    this.fields.push({ ...spec, g, particles, anchor, time: spec.duration, acc: 0 });
+    this.fields.push({ ...spec, g, sprite, blendSprite, animKeys, animFps, age: 0, particles, anchor, time: spec.duration, acc: 0 });
   }
 
   private drawField(f: Field) {
+    const fade = Math.min(1, f.time * 2);
+    if (f.sprite && f.animKeys?.length) {
+      const phase = f.age * (f.animFps ?? 14);
+      const curIdx = Math.floor(phase) % f.animKeys.length;
+      const nextIdx = (curIdx + 1) % f.animKeys.length;
+      const frac = phase - Math.floor(phase);
+      const kCur = f.animKeys[curIdx];
+      const kNext = f.animKeys[nextIdx];
+      if (f.sprite.texture.key !== kCur && this.scene.textures.exists(kCur)) f.sprite.setTexture(kCur);
+      if (f.style === "blizzard") {
+        f.sprite.rotation += 0.03;
+        f.blendSprite?.setRotation(f.sprite.rotation);
+      } else if (f.style === "spiral") {
+        f.sprite.setPosition(f.x, GROUND_Y + 6);
+        f.blendSprite?.setPosition(f.x, GROUND_Y + 6);
+      }
+      const pulse = 1 + Math.sin(f.age * 10) * 0.04;
+      const baseSc = f.style === "blizzard" ? (f.radius * 2.1) / 196 : Math.max(0.85, (f.radius * 1.4) / 180);
+      f.sprite
+        .setScale(baseSc * pulse, (f.style === "blizzard" ? baseSc * 0.42 : baseSc) * pulse)
+        .setAlpha(0.92 * fade);
+      if (f.blendSprite) {
+        if (f.blendSprite.texture.key !== kNext && this.scene.textures.exists(kNext)) f.blendSprite.setTexture(kNext);
+        f.blendSprite
+          .setScale(f.sprite.scaleX, f.sprite.scaleY)
+          .setAlpha(Math.sin(frac * Math.PI) * 0.48 * fade);
+      }
+    }
+
     const g = f.g;
     g.clear();
-    const pal = PALETTE[f.owner.def.element];
-    const fade = Math.min(1, f.time * 2);
-    if (f.style === "cage") {
-      this.drawCage(f, fade);
-      return;
-    }
     if (f.style === "blizzard") {
-      this.drawBlizzard(f, fade);
-      return;
-    }
-    // Toxic Spiral: spinning vortex rings and particle orbit
-    const t = this.scene.time.now / 1000;
-    for (let i = 0; i < 3; i += 1) {
-      const r = f.radius * (0.45 + i * 0.28);
-      g.lineStyle(2 + i, i === 0 ? 0xffffff : pal.main, (0.55 - i * 0.1) * fade);
-      g.strokeEllipse(f.x, f.y + Math.sin(t * 3 + i) * 6, r * 2, r * 0.55);
-    }
-  }
-
-  private drawCage(f: Field, fade: number) {
-    const g = f.g;
-    const pal = PALETTE.volt;
-    const top = f.y - 80;
-    const bottom = GROUND_Y;
-    const bars = 8;
-    for (let i = 0; i < bars; i += 1) {
-      const u = i / (bars - 1);
-      const x = f.x - f.radius + u * f.radius * 2;
-      const front = i % 2 === 0;
-      g.lineStyle(front ? 4 : 2, front ? 0xffffff : pal.main, (front ? 0.9 : 0.45) * fade);
-      g.beginPath();
-      g.moveTo(x, top);
-      for (let y = top; y < bottom; y += 26) g.lineTo(x + (Math.random() - 0.5) * 12, Math.min(bottom, y + 26));
-      g.strokePath();
-    }
-    g.lineStyle(3, pal.main, 0.7 * fade).strokeEllipse(f.x, top, f.radius * 2, f.radius * 0.4);
-    if (Math.random() < 0.35) {
-      const a1 = Math.random() * Math.PI * 2;
-      const a2 = a1 + Math.PI * (0.5 + Math.random());
-      g.lineStyle(2, 0xffffff, 0.9 * fade);
-      g.lineBetween(f.x + Math.cos(a1) * f.radius, f.y + Math.sin(a1) * 50, f.x + Math.cos(a2) * f.radius, f.y + Math.sin(a2) * 50);
-    }
-  }
-
-  private drawBlizzard(f: Field, fade: number) {
-    const g = f.g;
-    const t = this.scene.time.now / 1000;
-    const groundY = GROUND_Y - 2;
-    g.setBlendMode(Phaser.BlendModes.ADD);
-    // Rotating 6-point frost mandala at base
-    g.lineStyle(2.4, 0x38bdf8, 0.72 * fade);
-    g.strokeEllipse(f.x, groundY, f.radius * 2, f.radius * 0.42);
-    g.lineStyle(1.6, 0xe0faff, 0.8 * fade);
-    for (let i = 0; i < 6; i += 1) {
-      const a = t * 1.6 + (i * Math.PI) / 3;
-      const sx = f.x + Math.cos(a) * f.radius * 0.9;
-      const sy = groundY + Math.sin(a) * f.radius * 0.19;
-      g.lineBetween(f.x, groundY, sx, sy);
-      // Crystalline ice spire around the dome perimeter
-      const h = 34 + Math.sin(t * 7 + i * 1.3) * 8;
-      g.fillStyle(0x7dd3fc, 0.48 * fade);
-      g.fillTriangle(sx - 8, sy, sx + 8, sy, sx, sy - h);
-    }
-    // Cold dome halo arcs
-    for (let r = 0; r < 2; r += 1) {
-      g.lineStyle(1.8, r === 0 ? 0xffffff : 0x38bdf8, 0.35 * fade);
-      g.strokeEllipse(f.x, f.y + 10 - r * 35, f.radius * (1.8 - r * 0.4), f.radius * 0.36);
+      g.lineStyle(1.6, 0x7dd3fc, 0.38 * fade).strokeEllipse(f.x, GROUND_Y - 4, f.radius * 2, f.radius * 0.34);
+    } else if (f.style === "cage") {
+      g.lineStyle(2, PALETTE.volt.main, 0.45 * fade).strokeEllipse(f.x, GROUND_Y - 2, f.radius * 1.9, f.radius * 0.34);
     }
   }
 }

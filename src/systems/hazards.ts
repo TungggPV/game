@@ -188,6 +188,7 @@ export class HazardSystem {
     const startX = x - 320;
     const startY = this.scene.cameras.main.worldView.y - 100;
     const rock = { x: startX, y: startY };
+    const meteorKeys = ["fx_meteor_1", "fx_meteor_2", "fx_meteor_3", "fx_meteor_4"];
     const head = this.scene.add
       .image(startX, startY, "glow")
       .setTint(pal.main)
@@ -195,12 +196,12 @@ export class HazardSystem {
       .setScale(2.2)
       .setDepth(DEPTH.projectile);
     const core = this.scene.add
-      .image(startX, startY, "core")
-      .setTint(pal.light)
+      .image(startX, startY, this.scene.textures.exists(meteorKeys[0]) ? meteorKeys[0] : "core")
       .setBlendMode(Phaser.BlendModes.ADD)
-      .setScale(1.3)
+      .setScale(this.scene.textures.exists(meteorKeys[0]) ? 0.95 : 1.3)
       .setDepth(DEPTH.projectile + 1);
     const angle = Math.atan2(GROUND_Y - 40 - startY, x - startX) * (180 / Math.PI);
+    core.setRotation(Phaser.Math.DegToRad(angle - 45));
     const tail = this.scene.fx.trail(rock, "flame", {
       speed: { min: 20, max: 80 },
       lifespan: { min: 260, max: 480 },
@@ -225,12 +226,17 @@ export class HazardSystem {
       delay: 120,
       duration: 360,
       ease: "Quad.easeIn",
+      onUpdate: (tw) => {
+        const mk = meteorKeys[Math.floor(tw.progress * 8) % meteorKeys.length];
+        if (core.texture.key !== mk && this.scene.textures.exists(mk)) core.setTexture(mk);
+      },
       onComplete: () => {
         head.destroy();
         core.destroy();
         mark.destroy();
         this.scene.fx.stopTrail(tail, 500);
         this.scene.fx.stopTrail(smoke, 700);
+        this.scene.fx.groundCrack(x, radius / 110, pal.main);
         this.scene.fx.pillar(x, pal.main, 1.4, 0.8, 500);
         this.scene.explode(owner, x, GROUND_Y - 60, radius, hit);
       },
