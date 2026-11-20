@@ -73,8 +73,8 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
       const cy = hero.y - 75;
       if (hero.def.element === "fire") {
         // Inferno Arc: two heavy fire crescents and a fan of flame.
-        fx.slash(cx - dir * 20, cy, dir, pal, { scale: 2.2, tilt: 0.15, sweep: 1.6, duration: 300 });
-        scene.time.delayedCall(60, () => fx.slash(cx, cy + 10, dir, pal, { scale: 1.8, tilt: -0.2, sweep: 1.4, duration: 300 }));
+        fx.slash(cx - dir * 20, cy, dir, pal, { scale: 2.2, tilt: 0.15, sweep: 0.78, duration: 300 });
+        scene.time.delayedCall(60, () => fx.slash(cx, cy + 10, dir, pal, { scale: 1.8, tilt: -0.2, sweep: 0.72, duration: 300 }));
         fx.particles(hero.x + dir * 60, cy, "flame", {
           speed: { min: 300, max: 900 },
           angle: dir > 0 ? { min: -45, max: 35 } : { min: 145, max: 225 },
@@ -89,6 +89,23 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
         fx.embers(cx, cy, pal, 20, skill.radius * 0.6);
         fx.smoke(cx, cy, 5, 60);
         fx.shake(0.01, 180);
+      } else if (hero.def.element === "void") {
+        // Phantom Rift: dual crisscrossing dimensional X-slash + spatial rift + siphon heal
+        fx.slash(cx - dir * 10, cy - 10, dir, pal, { scale: 2.0, tilt: -0.28, sweep: 0.78, duration: 280 });
+        scene.time.delayedCall(55, () => fx.slash(cx, cy + 8, dir, pal, { scale: 2.0, tilt: 0.28, sweep: 0.78, duration: 280 }));
+        const rift = scene.add.graphics().setDepth(58).setBlendMode(Phaser.BlendModes.ADD);
+        rift.lineStyle(8, pal.main, 0.9);
+        rift.lineBetween(cx - 95, cy - 85, cx + 95, cy + 85);
+        rift.lineBetween(cx - 95, cy + 85, cx + 95, cy - 85);
+        rift.lineStyle(3, 0xffffff, 0.95);
+        rift.lineBetween(cx - 85, cy - 75, cx + 85, cy + 75);
+        rift.lineBetween(cx - 85, cy + 75, cx + 85, cy - 75);
+        scene.tweens.add({ targets: rift, alpha: 0, scaleX: 1.15, scaleY: 1.15, duration: 320, onComplete: () => rift.destroy() });
+        fx.ring(cx, GROUND_Y - 4, pal.main, skill.radius * 1.35, 450, 0.22);
+        fx.shards(cx, cy, pal, 24, 980);
+        hero.heal(8);
+        fx.label(hero.x, hero.y - 165, "+8 HP", "#f0abfc");
+        fx.shake(0.012, 180);
       } else if (hero.def.element === "earth") {
         // Earth Barrier: heavy rock burst, shockwave, and pillar
         fx.pillar(cx, pal.main, 1.8, 1.2, 500);
@@ -99,7 +116,7 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
       } else {
         // Rising Blade: three stacked upward crescents and a plasma pillar.
         [0, 1, 2].forEach((i) => {
-          scene.time.delayedCall(i * 55, () => fx.slash(cx, cy + 30 - i * 40, dir, pal, { scale: 1.5 + i * 0.25, tilt: -0.9, sweep: 1.5, duration: 260, thin: i === 1 }));
+          scene.time.delayedCall(i * 55, () => fx.slash(cx, cy + 30 - i * 40, dir, pal, { scale: 1.5 + i * 0.25, tilt: -0.28, sweep: 0.76, duration: 260, thin: i === 1 }));
         });
         fx.pillar(cx, pal.main, 1.2, 0.9, 450);
         fx.ring(cx, GROUND_Y - 4, pal.light, skill.radius * 1.2, 420, 0.22);
@@ -125,7 +142,7 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
         duration: skill.duration,
         tick: skill.tick,
         color: skill.color,
-        style: hero.def.element === "volt" ? "cage" : "spiral",
+        style: hero.def.element === "volt" ? "cage" : hero.def.element === "cryo" ? "blizzard" : "spiral",
         hit: { ...base, knock: 40 },
       });
       return;
@@ -141,6 +158,30 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
           const x = alive.length ? alive[i % alive.length].x + Phaser.Math.Between(-30, 30) : Phaser.Math.Between(minX + 120, maxX - 120);
           if (skill.meteor) {
             scene.spawnMeteor(hero, x, skill.radius, { ...base, knock: 300, launch: 500 });
+            return;
+          }
+          if (hero.def.element === "cryo") {
+            // Eternal Permafrost: falling crystalline ice monolith slamming into the ground
+            const ice = scene.add.graphics().setPosition(x, -120).setDepth(58);
+            ice.fillStyle(0x38bdf8, 0.85).fillTriangle(-24, 0, 24, 0, 0, 130);
+            ice.fillStyle(0xe0faff, 0.95).fillTriangle(-12, 0, 12, 0, 0, 105);
+            ice.lineStyle(2, 0xffffff, 0.9).strokeTriangle(-24, 0, 24, 0, 0, 130);
+            scene.tweens.add({
+              targets: ice,
+              y: GROUND_Y - 125,
+              duration: 180,
+              ease: "Cubic.easeIn",
+              onComplete: () => {
+                sfx.boom();
+                fx.pillar(x, pal.main, 1.3, 1.2, 420);
+                fx.flashCore(x, GROUND_Y - 30, 1.5, 180);
+                fx.ring(x, GROUND_Y - 4, pal.light, skill.radius * 1.4, 420, 0.24);
+                fx.shards(x, GROUND_Y - 30, pal, 18, 950);
+                fx.shake(0.01, 120);
+                scene.areaHit(hero, x, GROUND_Y - 80, skill.radius, { ...base, knock: 120, stun: skill.status?.time ?? 1.8 });
+                scene.tweens.add({ targets: ice, alpha: 0, delay: 240, duration: 220, onComplete: () => ice.destroy() });
+              },
+            });
             return;
           }
           // Storm Breaker: forked bolt from the sky, impact flash and a ground ring.
@@ -182,7 +223,13 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
           const line = scene.add.image((fromX + toX) / 2, y, "beam").setTint(pal.main).setBlendMode(Phaser.BlendModes.ADD)
             .setDisplaySize(Math.abs(toX - fromX), 18).setDepth(55);
           scene.tweens.add({ targets: line, displayHeight: 2, alpha: 0, duration: 260, onComplete: () => line.destroy() });
-          fx.particles((fromX + toX) / 2, y, "leaf", {
+          if (hero.def.element === "void") {
+            const cutAng = (i % 2 ? 1 : -1) * 0.16;
+            const cut = scene.add.image((minX + maxX) / 2, y + (i % 3 - 1) * 45, "beam").setTint(0xffffff).setBlendMode(Phaser.BlendModes.ADD)
+              .setDisplaySize(maxX - minX, 8).setRotation(cutAng).setDepth(57);
+            scene.tweens.add({ targets: cut, displayHeight: 1, alpha: 0, duration: 320, onComplete: () => cut.destroy() });
+          }
+          fx.particles((fromX + toX) / 2, y, hero.def.element === "void" ? "shard" : "leaf", {
             emitZone: { type: "random", source: new Phaser.Geom.Rectangle(-Math.abs(toX - fromX) / 2, -20, Math.abs(toX - fromX), 40) as unknown as Phaser.Types.GameObjects.Particles.RandomZoneSource },
             speedX: { min: (goingRight ? 1 : -1) * 100, max: (goingRight ? 1 : -1) * 400 }, speedY: { min: -150, max: 150 },
             lifespan: { min: 400, max: 700 }, scale: { start: 1, end: 0.2 }, rotate: { start: 0, end: 720 },
@@ -191,7 +238,7 @@ export const castSkill = (scene: GameScene, hero: Hero, slot: SkillSlot, skill: 
           sfx.swing();
           for (const t of scene.targetsFor(hero)) {
             if (t.dead) continue;
-            fx.slash(t.cx, t.cy, hero.facing, pal, { scale: 1.3, tilt: i % 2 ? 0.6 : -0.6, sweep: 1.4, duration: 220 });
+            fx.slash(t.cx, t.cy, hero.facing, pal, { scale: 1.3, tilt: i % 2 ? 0.24 : -0.24, sweep: 0.72, duration: 220 });
           }
           scene.areaHit(hero, (minX + maxX) / 2, GROUND_Y - 200, 9999, { ...base, knock: 60, status: i === skill.hits - 1 ? { kind: "poison", time: 3 } : undefined }, true);
         });

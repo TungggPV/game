@@ -5,7 +5,7 @@ import { Hero } from "../entities/Hero";
 import type { GameScene } from "../scenes/GameScene";
 import { PALETTE } from "./Fx";
 
-export type ProjectileStyle = "plasma" | "fire" | "volt" | "wind" | "earth" | "enemy";
+export type ProjectileStyle = "plasma" | "fire" | "volt" | "wind" | "earth" | "cryo" | "void" | "enemy";
 
 export type ProjectileSpec = {
   owner: Actor;
@@ -52,13 +52,13 @@ export class ProjectileSystem {
       p.parts.forEach((o, i) => {
         o.setPosition(p.x, p.y);
         if (p.style === "wind") o.setRotation((p.vx < 0 ? Math.PI : 0) + Math.sin(p.age * 30) * 0.12);
-        else if (p.style === "fire") o.setRotation(p.age * 8 * (i + 1));
+        else if (p.style === "fire" || p.style === "void") o.setRotation(p.age * 8 * (i + 1));
         else if (p.style === "earth") o.setRotation(p.age * 12);
         else o.setRotation(angle);
         if (i === 0) o.setAlpha(0.75 + Math.sin(p.age * 50) * 0.25);
       });
       if (p.style === "enemy") p.parts[2]?.setScale((p.size / 20) * 0.22 * pulse * 1.4);
-      if (p.crackle) this.drawCrackle(p);
+      if (p.crackle) this.drawProjectileFx(p);
 
       const box = new Phaser.Geom.Rectangle(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
       for (const t of this.scene.targetsFor(p.owner)) {
@@ -134,6 +134,7 @@ export class ProjectileSystem {
     switch (spec.style) {
       case "plasma":
         parts.push(add("glow", pal.main, 1.4 * s, 0.9 * s), add("streak", pal.main, 2.2 * s, 3.2 * s), add("streak", 0xffffff, 1.5 * s, 1.6 * s, DEPTH.projectile + 1));
+        crackle = this.scene.add.graphics().setDepth(DEPTH.projectile + 1).setBlendMode(Phaser.BlendModes.ADD);
         trail = this.scene.fx.trail(p, "streak", {
           speed: 0, lifespan: 260, frequency: 12, scale: { start: 0.9 * s, end: 0 }, alpha: { start: 0.8, end: 0 },
           color: [pal.light, pal.main, pal.dark], blendMode: Phaser.BlendModes.ADD, rotate: Math.atan2(spec.vy, spec.vx) * (180 / Math.PI),
@@ -141,6 +142,7 @@ export class ProjectileSystem {
         break;
       case "fire":
         parts.push(add("glow", pal.main, 1.8 * s, 1.8 * s), add("core", pal.light, 0.9 * s, 0.9 * s, DEPTH.projectile + 1));
+        crackle = this.scene.add.graphics().setDepth(DEPTH.projectile + 1).setBlendMode(Phaser.BlendModes.ADD);
         trail = this.scene.fx.trail(p, "flame", {
           speedX: { min: -spec.vx * 0.15, max: -spec.vx * 0.05 }, speedY: { min: -90, max: -20 },
           lifespan: { min: 220, max: 420 }, frequency: 14, quantity: 2,
@@ -159,6 +161,7 @@ export class ProjectileSystem {
       case "wind":
         parts.push(add("arc", pal.main, 0.55 * s, 0.85 * s), add("arc", 0xffffff, 0.42 * s, 0.6 * s, DEPTH.projectile + 1), add("glow", pal.main, 1.2 * s, 1.6 * s));
         parts.forEach((o) => o.setRotation(spec.vx < 0 ? Math.PI : 0));
+        crackle = this.scene.add.graphics().setDepth(DEPTH.projectile + 1).setBlendMode(Phaser.BlendModes.ADD);
         trail = this.scene.fx.trail(p, "leaf", {
           speedX: { min: -spec.vx * 0.2, max: -spec.vx * 0.05 }, speedY: { min: -120, max: 120 },
           lifespan: { min: 300, max: 600 }, frequency: 25, scale: { start: 0.8, end: 0.2 },
@@ -167,9 +170,26 @@ export class ProjectileSystem {
         break;
       case "earth":
         parts.push(add("core", pal.dark, 1.4 * s, 1.4 * s), add("glow", pal.main, 1.2 * s, 1.2 * s), add("ring", pal.light, 0.8 * s, 0.8 * s, DEPTH.projectile + 1));
+        crackle = this.scene.add.graphics().setDepth(DEPTH.projectile + 1).setBlendMode(Phaser.BlendModes.ADD);
         trail = this.scene.fx.trail(p, "shard", {
           speed: { min: 30, max: 120 }, lifespan: { min: 180, max: 320 }, frequency: 12,
           scale: { start: 0.6 * s, end: 0 }, color: [pal.light, pal.main], blendMode: Phaser.BlendModes.ADD,
+        });
+        break;
+      case "cryo":
+        parts.push(add("glow", pal.main, 1.5 * s, 1.1 * s), add("streak", pal.light, 2.5 * s, 2.8 * s, DEPTH.projectile + 1));
+        crackle = this.scene.add.graphics().setDepth(DEPTH.projectile + 1).setBlendMode(Phaser.BlendModes.ADD);
+        trail = this.scene.fx.trail(p, "shard", {
+          speed: { min: 30, max: 140 }, lifespan: { min: 200, max: 380 }, frequency: 12,
+          scale: { start: 0.7 * s, end: 0.05 }, rotate: { min: 0, max: 360 }, color: [0xffffff, pal.light, pal.main], blendMode: Phaser.BlendModes.ADD,
+        });
+        break;
+      case "void":
+        parts.push(add("glow", pal.main, 1.7 * s, 1.7 * s), add("ring", pal.light, 0.35 * s, 0.35 * s, DEPTH.projectile + 1));
+        crackle = this.scene.add.graphics().setDepth(DEPTH.projectile + 1);
+        trail = this.scene.fx.trail(p, "dot", {
+          speed: { min: 20, max: 120 }, lifespan: { min: 200, max: 360 }, frequency: 12,
+          scale: { start: 0.75 * s, end: 0 }, color: [pal.light, pal.main, 0x3b0764], blendMode: Phaser.BlendModes.ADD,
         });
         break;
       case "enemy":
@@ -183,22 +203,103 @@ export class ProjectileSystem {
     this.projectiles.push(proj);
   }
 
-  private drawCrackle(p: Projectile) {
+  private drawProjectileFx(p: Projectile) {
     const g = p.crackle!;
     g.clear();
     const pal = this.scene.paletteFor(p.owner);
-    for (let k = 0; k < 3; k += 1) {
-      let x = p.x;
-      let y = p.y;
-      const ang = Math.random() * Math.PI * 2;
-      const len = 14 + Math.random() * 20;
-      g.lineStyle(1.5, k === 0 ? 0xffffff : pal.main, 0.9);
+    const dir = Math.sign(p.vx) || 1;
+    const t = p.age;
+    const s = p.size / 20;
+
+    if (p.style === "volt") {
+      for (let k = 0; k < 3; k += 1) {
+        let x = p.x;
+        let y = p.y;
+        const ang = Math.random() * Math.PI * 2;
+        const len = 14 + Math.random() * 20;
+        g.lineStyle(1.5, k === 0 ? 0xffffff : pal.main, 0.9);
+        g.beginPath();
+        g.moveTo(x, y);
+        for (let step = 0; step < 3; step += 1) {
+          x += Math.cos(ang) * (len / 3) + (Math.random() - 0.5) * 8;
+          y += Math.sin(ang) * (len / 3) + (Math.random() - 0.5) * 8;
+          g.lineTo(x, y);
+        }
+        g.strokePath();
+      }
+      return;
+    }
+
+    if (p.style === "cryo") {
+      // Rotating 6-point ice crystal + sharp forward lance triangle
+      const r = 16 * s;
+      g.lineStyle(2, 0xe0faff, 0.92);
+      for (let i = 0; i < 3; i += 1) {
+        const a = t * 6 + (i * Math.PI) / 3;
+        g.lineBetween(p.x - Math.cos(a) * r, p.y - Math.sin(a) * r, p.x + Math.cos(a) * r, p.y + Math.sin(a) * r);
+      }
+      g.fillStyle(0xffffff, 0.9);
+      g.fillTriangle(p.x + dir * r * 1.4, p.y, p.x - dir * r * 0.4, p.y - 6 * s, p.x - dir * r * 0.4, p.y + 6 * s);
+      return;
+    }
+
+    if (p.style === "void") {
+      // Black-hole core + rotating magenta accretion rings + orbiting satellites
+      const r = 15 * s;
+      g.fillStyle(0x050210, 0.95);
+      g.fillCircle(p.x, p.y, r * 0.72);
+      g.lineStyle(2.4, 0xd946ef, 0.95);
+      g.strokeCircle(p.x, p.y, r * 0.85);
+      g.lineStyle(1.6, 0xffffff, 0.85);
+      g.strokeEllipse(p.x, p.y, r * 2.6, r * 0.85);
+      for (let i = 0; i < 3; i += 1) {
+        const a = t * 11 + (i * Math.PI * 2) / 3;
+        g.fillStyle(0xfdf4ff, 0.9);
+        g.fillCircle(p.x + Math.cos(a) * r * 1.15, p.y + Math.sin(a) * r * 0.45, 2.8 * s);
+      }
+      return;
+    }
+
+    if (p.style === "plasma") {
+      // Twin phase helix rings trailing along velocity
+      for (let i = 0; i < 2; i += 1) {
+        const px = p.x - dir * (8 + i * 11) * s;
+        g.lineStyle(2, i === 0 ? 0xffffff : pal.main, 0.85 - i * 0.25);
+        g.strokeEllipse(px, p.y, 10 * s, (22 - i * 4) * s);
+      }
+      return;
+    }
+
+    if (p.style === "fire") {
+      // Spinning 3-blade flame vortex
+      for (let i = 0; i < 3; i += 1) {
+        const a = t * 14 + (i * Math.PI * 2) / 3;
+        const fx = p.x + Math.cos(a) * 14 * s;
+        const fy = p.y + Math.sin(a) * 14 * s;
+        g.fillStyle(i === 0 ? 0xfff0a0 : pal.main, 0.85);
+        g.fillCircle(fx, fy, 5 * s);
+      }
+      return;
+    }
+
+    if (p.style === "wind") {
+      g.lineStyle(2.2, 0xffffff, 0.85);
       g.beginPath();
-      g.moveTo(x, y);
-      for (let s = 0; s < 3; s += 1) {
-        x += Math.cos(ang) * (len / 3) + (Math.random() - 0.5) * 8;
-        y += Math.sin(ang) * (len / 3) + (Math.random() - 0.5) * 8;
-        g.lineTo(x, y);
+      g.arc(p.x, p.y, 20 * s, dir < 0 ? Math.PI - 0.8 : -0.8, dir < 0 ? Math.PI + 0.8 : 0.8);
+      g.strokePath();
+      return;
+    }
+
+    if (p.style === "earth") {
+      const r = 14 * s;
+      g.lineStyle(2.2, 0xffe6a8, 0.9);
+      g.beginPath();
+      for (let i = 0; i <= 6; i += 1) {
+        const a = t * 9 + (i * Math.PI) / 3;
+        const rx = p.x + Math.cos(a) * r;
+        const ry = p.y + Math.sin(a) * r;
+        if (i === 0) g.moveTo(rx, ry);
+        else g.lineTo(rx, ry);
       }
       g.strokePath();
     }

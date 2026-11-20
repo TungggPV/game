@@ -2,7 +2,7 @@ import Phaser from "phaser";
 import { DEPTH, FONT, GAME_HEIGHT, GAME_WIDTH, GROUND_Y, hex } from "../config/constants";
 import { loadSettings } from "./settings";
 
-export type HeroElement = "plasma" | "fire" | "volt" | "wind" | "earth";
+export type HeroElement = "plasma" | "fire" | "volt" | "wind" | "earth" | "cryo" | "void";
 export type Element = HeroElement | "enemy" | "boss";
 
 export type Palette = { main: number; light: number; dark: number; glow?: number };
@@ -13,6 +13,8 @@ export const PALETTE: Record<Element, Palette> = {
   volt: { main: 0xffd93a, light: 0xfffbe6, dark: 0x8a5cff },
   wind: { main: 0x3df2a0, light: 0xe0fff0, dark: 0x0b8f74 },
   earth: { main: 0xcca052, light: 0xffe6a8, dark: 0x704812 },
+  cryo: { main: 0x38bdf8, light: 0xe0faff, dark: 0x0284c7 },
+  void: { main: 0xd946ef, light: 0xfdf4ff, dark: 0x6b21a8 },
   enemy: { main: 0xff3355, light: 0xffd0d8, dark: 0x6a0a2a },
   boss: { main: 0x8f6bff, light: 0xeee6ff, dark: 0x2c1690 },
 };
@@ -235,46 +237,78 @@ export class Fx {
   // ---------- composite effects ----------
 
   /**
-   * Crescent slash that sweeps through `sweep` radians toward the facing direction.
-   * `tilt` rotates the whole arc (negative = upward cut).
+   * Forward crescent slash sweeping across the front of the attacker (`dir`),
+   * paired with a procedural forward wave blade & cross-glint flash.
    */
   slash(x: number, y: number, dir: number, palette: Palette, opts: { scale?: number; tilt?: number; sweep?: number; duration?: number; thin?: boolean } = {}) {
     const scale = opts.scale ?? 1;
-    const tilt = opts.tilt ?? 0;
-    const sweep = opts.sweep ?? 1.1;
+    const tilt = Phaser.Math.Clamp(opts.tilt ?? 0, -0.32, 0.32);
+    const sweep = Math.min(0.78, opts.sweep ?? 0.65);
     const duration = opts.duration ?? 220;
     const flip = dir < 0;
-    const base = (flip ? Math.PI : 0) + tilt * dir;
+    const startRot = (tilt - sweep * 0.45) * dir;
+    const endRot = (tilt + sweep * 0.45) * dir;
     const layers: [number, number, number][] = [
-      [palette.dark, 1.08, 0.7],
+      [palette.dark, 1.08, 0.72],
       [palette.main, 1, 1],
       [0xffffff, 0.9, 0.95],
     ];
     const objs = layers.map(([color, s, a]) =>
       this.scene.add
-        .image(x - dir * 40 * scale, y, "arc")
+        .image(x + dir * 12 * scale, y, "arc")
         .setTint(color)
         .setBlendMode(ADD)
         .setAlpha(a)
-        .setScale(scale * 0.62 * s, scale * 0.62 * s * (opts.thin ? 0.55 : 0.8))
-        .setRotation(base - (sweep / 2) * dir)
-        .setFlipX(false)
+        .setScale(scale * 0.62 * s, scale * 0.62 * s * (opts.thin ? 0.58 : 0.82))
+        .setRotation(startRot)
+        .setFlipX(flip)
         .setDepth(DEPTH.fx + 1),
     );
     this.scene.tweens.add({
       targets: objs,
-      rotation: base + (sweep / 2) * dir,
-      scaleX: `*=1.18`,
+      rotation: endRot,
+      scaleX: `*=1.16`,
       duration: duration * 0.55,
       ease: "Cubic.easeOut",
     });
     this.scene.tweens.add({ targets: objs, alpha: 0, delay: duration * 0.35, duration: duration * 0.65, onComplete: () => objs.forEach((o) => o.destroy()) });
-    // Sparks peel off the leading tip of the arc.
-    const tipA = base + (sweep / 2) * dir;
-    const r = 118 * scale * 0.62;
-    this.particles(x - dir * 40 * scale + Math.cos(tipA) * r, y + Math.sin(tipA) * r, "streak", {
+
+    // 60FPS Procedural Forward Wave Blade & Cross-Glint
+    const wx = x + dir * 26 * scale;
+    const wave = this.scene.add.graphics().setPosition(wx, y).setDepth(DEPTH.fx + 2).setBlendMode(ADD);
+    const r = 54 * scale;
+    wave.lineStyle(5 * scale, palette.main, 0.85);
+    wave.beginPath();
+    wave.arc(0, 0, r, flip ? Math.PI - 0.85 : -0.85, flip ? Math.PI + 0.85 : 0.85);
+    wave.strokePath();
+    wave.lineStyle(2.2 * scale, 0xffffff, 0.95);
+    wave.beginPath();
+    wave.arc(dir * 5 * scale, 0, r * 0.92, flip ? Math.PI - 0.65 : -0.65, flip ? Math.PI + 0.65 : 0.65);
+    wave.strokePath();
+    // Sharp 4-point cross-spark at the blade apex
+    const sx = dir * r;
+    const sy = Math.sin(tilt) * r * 0.6;
+    wave.fillStyle(0xffffff, 0.95);
+    wave.fillTriangle(sx - 12 * scale, sy, sx + 12 * scale, sy, sx, sy - 3.5 * scale);
+    wave.fillTriangle(sx - 12 * scale, sy, sx + 12 * scale, sy, sx, sy + 3.5 * scale);
+    wave.fillTriangle(sx, sy - 12 * scale, sx, sy + 12 * scale, sx + 3.5 * scale, sy);
+    wave.fillTriangle(sx, sy - 12 * scale, sx, sy + 12 * scale, sx - 3.5 * scale, sy);
+    this.scene.tweens.add({
+      targets: wave,
+      x: wx + dir * 26 * scale,
+      scaleX: 1.24,
+      scaleY: 1.12,
+      alpha: 0,
+      duration,
+      ease: "Cubic.easeOut",
+      onComplete: () => wave.destroy(),
+    });
+
+    const tipA = (flip ? Math.PI : 0) + endRot;
+    const tipR = 112 * scale * 0.62;
+    this.particles(x + dir * 12 * scale + Math.cos(tipA) * tipR, y + Math.sin(tipA) * tipR, "streak", {
       speed: { min: 150, max: 420 },
-      angle: { min: (tipA * toDeg) + 60 * dir, max: (tipA * toDeg) + 120 * dir },
+      angle: { min: (tipA * toDeg) - 35, max: (tipA * toDeg) + 35 },
       lifespan: { min: 140, max: 280 },
       scale: { start: 0.4, end: 0 },
       color: [0xffffff, palette.main],

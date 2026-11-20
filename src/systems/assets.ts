@@ -12,7 +12,7 @@ export const heroKey = (heroId: string, pose: HeroPose) => `${heroId}_${pose}`;
 /** Horizontal foot anchor (0..1) so poses of different widths stand on the same spot. */
 export const anchorX = (key: string) => MANIFEST[key]?.ax ?? 0.5;
 
-/** The source sheets draw the slash pose swinging to the left; every other pose faces right. */
-export const artFacesLeft = (key: string) => key.endsWith("_attack_slash");
+/** All gameplay pose sprites are oriented facing right (+1). */
+export const artFacesLeft = (_key: string) => false;
 
 export const textureHeight = (key: string) => MANIFEST[key]?.h ?? 100;

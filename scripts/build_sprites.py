@@ -356,10 +356,10 @@ def recolor_to_obsidian(a: np.ndarray) -> np.ndarray:
     """Recolor armor to dark volcanic slate / obsidian stone with warm amber-gold core energy."""
     res = a.copy().astype(np.float32)
     alpha = res[..., 3]
-    rgb = res[..., :3]
-    gray = rgb.mean(axis=2)
+    orig_rgb = a[..., :3].astype(np.float32)
+    gray = orig_rgb.mean(axis=2)
 
-    is_core = (rgb[..., 0] < 120) & (rgb[..., 2] > 160) & (alpha > 40)
+    is_core = (orig_rgb[..., 0] < 120) & (orig_rgb[..., 2] > 160) & (alpha > 40)
     res[..., 0] = np.clip(gray * 0.72 + 22, 0, 255)
     res[..., 1] = np.clip(gray * 0.62 + 16, 0, 255)
     res[..., 2] = np.clip(gray * 0.58 + 14, 0, 255)
@@ -368,6 +368,141 @@ def recolor_to_obsidian(a: np.ndarray) -> np.ndarray:
     res[is_core, 1] = 185
     res[is_core, 2] = 55
     return res.astype(np.int16)
+
+
+def recolor_to_cryo_archon(a: np.ndarray) -> np.ndarray:
+    """Recolor Volt Sentinel sheets into glacial crystalline ice armor with bright cryo-cyan core/FX."""
+    res = a.copy().astype(np.float32)
+    alpha = res[..., 3]
+    orig_rgb = a[..., :3].astype(np.float32)
+    gray = orig_rgb.mean(axis=2)
+
+    dark = gray < 58
+    res[..., 0] = np.clip(np.where(dark, gray * 0.72, gray * 0.84 + 18), 0, 255)
+    res[..., 1] = np.clip(np.where(dark, gray * 0.86, gray * 0.96 + 24), 0, 255)
+    res[..., 2] = np.clip(np.where(dark, gray * 1.12, gray * 1.08 + 34), 0, 255)
+
+    # Gold/yellow armor & slash FX -> deep glacier sapphire / luminous cryo cyan
+    is_yellow = (orig_rgb[..., 0] > orig_rgb[..., 2] + 22) & (orig_rgb[..., 1] > orig_rgb[..., 2] + 8) & (alpha > 40)
+    bright_fx = is_yellow & (gray > 195)
+    mid_plate = is_yellow & ~bright_fx
+    res[mid_plate, 0] = np.clip(gray[mid_plate] * 0.22 + 18, 0, 255)
+    res[mid_plate, 1] = np.clip(gray[mid_plate] * 0.88 + 42, 0, 255)
+    res[mid_plate, 2] = np.clip(gray[mid_plate] * 1.15 + 88, 0, 255)
+    res[bright_fx, 0] = 140
+    res[bright_fx, 1] = 244
+    res[bright_fx, 2] = 255
+
+    # Existing cyan core / visor -> intense arctic neon cyan
+    is_cyan = (orig_rgb[..., 2] > 160) & (orig_rgb[..., 0] < 150) & (orig_rgb[..., 1] > orig_rgb[..., 0] + 15) & (alpha > 40)
+    res[is_cyan, 0] = 95
+    res[is_cyan, 1] = 242
+    res[is_cyan, 2] = 255
+    return res.astype(np.int16)
+
+
+def recolor_to_void_reaper(a: np.ndarray) -> np.ndarray:
+    """Recolor Emerald Phantom sheets into cosmic eclipse obsidian with neon magenta-violet energy."""
+    res = a.copy().astype(np.float32)
+    alpha = res[..., 3]
+    orig_rgb = a[..., :3].astype(np.float32)
+    gray = orig_rgb.mean(axis=2)
+
+    dark = gray < 58
+    res[..., 0] = np.clip(np.where(dark, gray * 0.85, gray * 0.88 + 14), 0, 255)
+    res[..., 1] = np.clip(np.where(dark, gray * 0.62, gray * 0.72 + 10), 0, 255)
+    res[..., 2] = np.clip(np.where(dark, gray * 1.12, gray * 0.98 + 26), 0, 255)
+
+    # Green/teal plates, cape & slash FX -> cosmic amethyst & bright neon magenta
+    is_green = (orig_rgb[..., 1] > orig_rgb[..., 0] + 16) & (alpha > 40)
+    bright_fx = is_green & (gray > 180)
+    mid_plate = is_green & ~bright_fx
+    res[mid_plate, 0] = np.clip(gray[mid_plate] * 1.25 + 38, 0, 255)
+    res[mid_plate, 1] = np.clip(gray[mid_plate] * 0.24 + 10, 0, 255)
+    res[mid_plate, 2] = np.clip(gray[mid_plate] * 1.32 + 64, 0, 255)
+    res[bright_fx, 0] = 255
+    res[bright_fx, 1] = 140
+    res[bright_fx, 2] = 255
+    return res.astype(np.int16)
+
+
+def orient_attack_slash_forward(trimmed: np.ndarray) -> np.ndarray:
+    """Flip attack_slash so weapon & arc swing RIGHT, then mirror full helmet+chin to face RIGHT too."""
+    af = np.ascontiguousarray(trimmed[:, ::-1, :].copy())
+    h, w = af.shape[:2]
+    y_min, y_max = 22, min(72, h - 1)
+    x_min, x_max = 14, min(82, w - 1)
+
+    rgb = af[..., :3]
+    alpha = af[..., 3]
+    dark = (alpha > 80) & (rgb.mean(axis=2) < 110)
+
+    head_mask = np.zeros((h, w), dtype=bool)
+    q: deque[tuple[int, int]] = deque()
+    for y in range(max(y_min, 32), min(56, y_max + 1)):
+        for x in range(max(x_min, 28), min(72, x_max + 1)):
+            if dark[y, x] and not head_mask[y, x]:
+                head_mask[y, x] = True
+                q.append((y, x))
+
+    while q:
+        cy, cx = q.popleft()
+        for ny, nx in ((cy - 1, cx), (cy + 1, cx), (cy, cx - 1), (cy, cx + 1)):
+            row_x_max = x_max if ny <= 61 else min(x_max, 71)
+            row_x_min = x_min if ny <= 62 else max(x_min, 24)
+            if y_min <= ny <= y_max and row_x_min <= nx <= row_x_max and not head_mask[ny, nx]:
+                is_arc_glow = (nx >= 74) and (rgb[ny, nx].mean() > 140) and ((rgb[ny, nx].max() - rgb[ny, nx].min()) > 30)
+                if alpha[ny, nx] > 20 and not is_arc_glow:
+                    head_mask[ny, nx] = True
+                    q.append((ny, nx))
+
+    neck_xs = np.where(head_mask[max(y_min, 54) : min(y_max, 68)].any(axis=0))[0]
+    if neck_xs.size == 0:
+        ys_fb, xs_fb = np.nonzero(head_mask)
+        if xs_fb.size == 0:
+            return af
+        cx = int(round((xs_fb.min() + xs_fb.max()) / 2))
+    else:
+        cx = int(round((neck_xs.min() + neck_xs.max()) / 2))
+
+    ys, xs = np.nonzero(head_mask)
+    old_pixels = af[ys, xs].copy()
+    af[ys, xs] = 0
+    new_xs = np.clip(2 * cx - xs, 0, w - 1)
+    af[ys, new_xs] = old_pixels
+    keep_main(af, 0.02)
+    return trim(af, pad=2)
+
+
+def generate_variant_hero(
+    target_id: str,
+    src_hero: str,
+    src_poses: dict[str, np.ndarray],
+    recolor_fn,
+    manifest: dict[str, dict],
+) -> None:
+    """Create a complete 10-pose + art + 4-icon hero variant via recolor helper."""
+    for pose, src_arr in src_poses.items():
+        recolored = recolor_fn(src_arr)
+        if pose == "art":
+            manifest[f"{target_id}_art"] = save(trim(recolored, pad=2), f"{target_id}_art", 420)
+        else:
+            trimmed = trim(recolored, pad=2)
+            entry = save(trimmed, f"{target_id}_{pose}")
+            entry["ax"] = foot_anchor(trimmed)
+            manifest[f"{target_id}_{pose}"] = entry
+
+    icon_names = {"basic": "j_basic_attack", "skill1": "k_skill1", "skill2": "l_skill2", "ultimate": "u_ultimate"}
+    for slot, file in icon_names.items():
+        a = load(f"skills/{HERO_SRC_ICONS[src_hero]}/icons/{file}_icon.png")
+        a = recolor_fn(a)
+        side = min(a.shape[0], a.shape[1])
+        a = a[:side, :side].copy()
+        yy, xx = np.mgrid[0:side, 0:side]
+        fx, fy, fr = ICON_CIRCLE.get(f"{src_hero}_icon_{slot}", (0.5, 0.42, 0.34))
+        cx, cy, r = side * fx, side * fy, side * fr
+        a[((yy - cy) ** 2 + (xx - cx) ** 2) > r * r, 3] = 0
+        manifest[f"{target_id}_icon_{slot}"] = save(trim(a, 0), f"{target_id}_icon_{slot}", 96)
 
 
 def main() -> None:
@@ -397,8 +532,10 @@ def main() -> None:
             elif pose == "dash":
                 for i in range(8):
                     cell[:, i, 3] = (cell[:, i, 3] * i) // 8
-            cleaned_heroes[hero][pose] = cell
             trimmed = trim(cell, pad=2)
+            if pose == "attack_slash":
+                trimmed = orient_attack_slash_forward(trimmed)
+            cleaned_heroes[hero][pose] = trimmed
             entry = save(trimmed, f"{hero}_{pose}")
             entry["ax"] = foot_anchor(trimmed)
             manifest[f"{hero}_{pose}"] = entry
@@ -413,27 +550,10 @@ def main() -> None:
                 f"skills/{HERO_SRC_ICONS[hero]}/icons/{file}_icon.png", f"{hero}_icon_{slot}"
             )
 
-    # 2. Hero 5: Obsidian Warden (recolored from cleaned Nova Blade master sheet sprites)
-    for pose, src_arr in cleaned_heroes["nova_blade"].items():
-        if pose == "art":
-            art_obs = recolor_to_obsidian(src_arr)
-            manifest["obsidian_warden_art"] = save(trim(art_obs, pad=2), "obsidian_warden_art", 420)
-        else:
-            recolored = recolor_to_obsidian(src_arr)
-            trimmed = trim(recolored, pad=2)
-            entry = save(trimmed, f"obsidian_warden_{pose}")
-            entry["ax"] = foot_anchor(trimmed)
-            manifest[f"obsidian_warden_{pose}"] = entry
-
-    for slot, file in {"basic": "j_basic_attack", "skill1": "k_skill1", "skill2": "l_skill2", "ultimate": "u_ultimate"}.items():
-        a = load(f"skills/nova_blade/icons/{file}_icon.png")
-        a = recolor_to_obsidian(a)
-        side = min(a.shape[0], a.shape[1])
-        a = a[:side, :side].copy()
-        yy, xx = np.mgrid[0:side, 0:side]
-        cx, cy, r = side * 0.5, side * 0.42, side * 0.34
-        a[((yy - cy) ** 2 + (xx - cx) ** 2) > r * r, 3] = 0
-        manifest[f"obsidian_warden_icon_{slot}"] = save(trim(a, 0), f"obsidian_warden_icon_{slot}", 96)
+    # 2. Heroes 5, 6, 7: Obsidian Warden, Cryo Archon & Void Reaper
+    generate_variant_hero("obsidian_warden", "nova_blade", cleaned_heroes["nova_blade"], recolor_to_obsidian, manifest)
+    generate_variant_hero("cryo_archon", "volt_sentinel", cleaned_heroes["volt_sentinel"], recolor_to_cryo_archon, manifest)
+    generate_variant_hero("void_reaper", "emerald_phantom", cleaned_heroes["emerald_phantom"], recolor_to_void_reaper, manifest)
 
     # 3. Extract all 25 enemy sprites/poses from uncut enemy master sheet + aliases
     enemy_sheet = load(ENEMY_MASTER_SHEET)

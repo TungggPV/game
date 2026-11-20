@@ -5,7 +5,7 @@ import type { Hero } from "../entities/Hero";
 import type { GameScene } from "../scenes/GameScene";
 import { PALETTE } from "./Fx";
 
-export type FieldStyle = "cage" | "spiral";
+export type FieldStyle = "cage" | "spiral" | "blizzard";
 
 export type Field = {
   owner: Hero;
@@ -39,6 +39,13 @@ export class FieldSystem {
         if (f.anchor) {
           f.anchor.x = f.x;
           f.anchor.y = f.y;
+        }
+      }
+      if (f.style === "blizzard") {
+        for (const t of this.scene.targetsFor(f.owner)) {
+          if (!t.dead && Math.abs(t.x - f.x) < f.radius * 1.15) {
+            t.x += Math.sign(f.x - t.x) * 85 * dt;
+          }
         }
       }
       this.drawField(f);
@@ -81,6 +88,18 @@ export class FieldSystem {
         color: [pal.light, pal.main, pal.dark],
         blendMode: Phaser.BlendModes.ADD,
       });
+    } else if (spec.style === "blizzard") {
+      particles = this.scene.fx.trail(anchor, "shard", {
+        emitZone: { type: "random", source: new Phaser.Geom.Circle(0, 0, spec.radius * 0.75) as unknown as Phaser.Types.GameObjects.Particles.RandomZoneSource },
+        speedY: { min: 40, max: 160 },
+        speedX: { min: -70, max: 70 },
+        lifespan: { min: 320, max: 620 },
+        frequency: 16,
+        scale: { start: 0.7, end: 0.08 },
+        rotate: { min: 0, max: 360 },
+        color: [0xffffff, 0xe0faff, 0x38bdf8],
+        blendMode: Phaser.BlendModes.ADD,
+      });
     }
     this.fields.push({ ...spec, g, particles, anchor, time: spec.duration, acc: 0 });
   }
@@ -92,6 +111,10 @@ export class FieldSystem {
     const fade = Math.min(1, f.time * 2);
     if (f.style === "cage") {
       this.drawCage(f, fade);
+      return;
+    }
+    if (f.style === "blizzard") {
+      this.drawBlizzard(f, fade);
       return;
     }
     // Toxic Spiral: spinning vortex rings and particle orbit
@@ -125,6 +148,32 @@ export class FieldSystem {
       const a2 = a1 + Math.PI * (0.5 + Math.random());
       g.lineStyle(2, 0xffffff, 0.9 * fade);
       g.lineBetween(f.x + Math.cos(a1) * f.radius, f.y + Math.sin(a1) * 50, f.x + Math.cos(a2) * f.radius, f.y + Math.sin(a2) * 50);
+    }
+  }
+
+  private drawBlizzard(f: Field, fade: number) {
+    const g = f.g;
+    const t = this.scene.time.now / 1000;
+    const groundY = GROUND_Y - 2;
+    g.setBlendMode(Phaser.BlendModes.ADD);
+    // Rotating 6-point frost mandala at base
+    g.lineStyle(2.4, 0x38bdf8, 0.72 * fade);
+    g.strokeEllipse(f.x, groundY, f.radius * 2, f.radius * 0.42);
+    g.lineStyle(1.6, 0xe0faff, 0.8 * fade);
+    for (let i = 0; i < 6; i += 1) {
+      const a = t * 1.6 + (i * Math.PI) / 3;
+      const sx = f.x + Math.cos(a) * f.radius * 0.9;
+      const sy = groundY + Math.sin(a) * f.radius * 0.19;
+      g.lineBetween(f.x, groundY, sx, sy);
+      // Crystalline ice spire around the dome perimeter
+      const h = 34 + Math.sin(t * 7 + i * 1.3) * 8;
+      g.fillStyle(0x7dd3fc, 0.48 * fade);
+      g.fillTriangle(sx - 8, sy, sx + 8, sy, sx, sy - h);
+    }
+    // Cold dome halo arcs
+    for (let r = 0; r < 2; r += 1) {
+      g.lineStyle(1.8, r === 0 ? 0xffffff : 0x38bdf8, 0.35 * fade);
+      g.strokeEllipse(f.x, f.y + 10 - r * 35, f.radius * (1.8 - r * 0.4), f.radius * 0.36);
     }
   }
 }

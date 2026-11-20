@@ -21,15 +21,26 @@ export type Progress = {
 
 const KEY = "element-armor.progress.v1";
 
+const ALL_HERO_UNLOCKS = [
+  "nova_blade",
+  "crimson_flare",
+  "volt_sentinel",
+  "emerald_phantom",
+  "obsidian_warden",
+  "cryo_archon",
+  "void_reaper",
+];
+
 const DEFAULT_PROGRESS: Progress = {
   v: 1,
   coins: 0,
   bestScore: 0,
-  unlocks: ["nova_blade", "crimson_flare", "volt_sentinel", "emerald_phantom"],
+  unlocks: [...ALL_HERO_UNLOCKS],
   upgrades: {
     hp: 0,
     energy: 0,
     cooldown: 0,
+    damage: 0,
   },
   codex: [],
   achievements: [],
@@ -46,11 +57,12 @@ export const loadProgress = (): Progress => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === "object") {
+        const mergedUnlocks = Array.from(new Set([...(Array.isArray(parsed.unlocks) ? parsed.unlocks : []), ...ALL_HERO_UNLOCKS]));
         const loaded: Progress = {
           ...DEFAULT_PROGRESS,
           ...parsed,
           v: 1,
-          unlocks: Array.isArray(parsed.unlocks) ? parsed.unlocks : DEFAULT_PROGRESS.unlocks,
+          unlocks: mergedUnlocks,
           upgrades: { ...DEFAULT_PROGRESS.upgrades, ...(parsed.upgrades || {}) },
           codex: Array.isArray(parsed.codex) ? parsed.codex : [],
           achievements: Array.isArray(parsed.achievements) ? parsed.achievements : [],

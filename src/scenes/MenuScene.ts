@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { GAME_HEIGHT, GAME_WIDTH, hex, loadBest, type GameMode } from "../config/constants";
 import { getDailyDateString } from "../config/daily";
-import { HEROES } from "../config/heroes";
+import { HEROES, cycleSelectedSkin, getSkinDef } from "../config/heroes";
 import { heroKey } from "../systems/assets";
 import { setSceneFlag } from "../systems/controls";
 import { getDifficulty, setDifficulty, type DifficultyLevel } from "../systems/difficulty";
@@ -37,6 +37,7 @@ export class MenuScene extends Phaser.Scene {
   private p2Label!: Phaser.GameObjects.Text;
   private art!: Phaser.GameObjects.Image;
   private artGlow!: Phaser.GameObjects.Image;
+  private skinButton!: Button;
   private modeHint!: Phaser.GameObjects.Text;
   private bg!: Phaser.GameObjects.TileSprite;
   private modal?: Phaser.GameObjects.Container;
@@ -110,20 +111,23 @@ export class MenuScene extends Phaser.Scene {
     this.p2Label = text(this, 690, 514, "", 16, "#ff6a8a", "900").setVisible(false);
 
     const unlockedHeroes = HEROES.filter((h) => prog.unlocks.includes(h.id));
-    const cardSpacing = unlockedHeroes.length > 4 ? 112 : 132;
+    const cardW = unlockedHeroes.length > 5 ? 84 : 114;
+    const cardH = unlockedHeroes.length > 5 ? 120 : 124;
+    const cardSpacing = unlockedHeroes.length > 5 ? 91 : unlockedHeroes.length > 4 ? 112 : 132;
+    const cardStartX = unlockedHeroes.length > 5 ? 622 : unlockedHeroes.length > 4 ? 640 : 690;
     unlockedHeroes.forEach((h, i) => {
-      const x = (unlockedHeroes.length > 4 ? 640 : 690) + i * cardSpacing;
+      const x = cardStartX + i * cardSpacing;
       const root = this.add.container(x, 548);
-      const frame = this.add.rectangle(0, 0, 114, 124, 0x0a1a2c, 0.95).setOrigin(0).setStrokeStyle(2, h.color, 0.4);
-      const idle = this.add.image(57, 118, heroKey(h.id, "idle")).setOrigin(0.5, 1);
-      idle.setScale(104 / idle.height);
-      const p1 = text(this, 6, 4, "P1", 15, "#18e6ff", "900");
-      const p2 = text(this, 108, 4, "P2", 15, "#ff6a8a", "900").setOrigin(1, 0);
+      const frame = this.add.rectangle(0, 0, cardW, cardH, 0x0a1a2c, 0.95).setOrigin(0).setStrokeStyle(2, h.color, 0.4);
+      const idle = this.add.image(cardW / 2, cardH - 6, heroKey(h.id, "idle")).setOrigin(0.5, 1);
+      idle.setScale(Math.min((cardH - 22) / idle.height, (cardW - 10) / idle.width));
+      const p1 = text(this, 5, 4, "P1", 13, "#18e6ff", "900");
+      const p2 = text(this, cardW - 5, 4, "P2", 13, "#ff6a8a", "900").setOrigin(1, 0);
       root.add([frame, idle, p1, p2]);
       frame.setInteractive({ useHandCursor: true }).on("pointerdown", () => this.pick(0, i));
       this.cards.push({ root, frame, p1, p2 });
     });
-    text(this, 690, 684, "P1: A/D  ·  P2: ←/→  ·  Tab: đổi chế độ  ·  H: hướng dẫn", 14, "#7f95a8", "700");
+    text(this, 622, 684, "P1: A/D · P2: ←/→ · C: đổi Skin · Tab: chế độ · H: hướng dẫn", 14, "#7f95a8", "700");
 
     // Row 1: Primary action & gameplay modes (left pane, x <= 580, no overlap with cards)
     new Button(this, 125, 618, 170, 42, "BẮT ĐẦU", () => this.start(), 0xffe45c).setSelected(true);
@@ -137,13 +141,15 @@ export class MenuScene extends Phaser.Scene {
     new Button(this, 400, 618, 120, 42, "Xưởng Giáp", () => this.scene.start("workshop"), 0x18e6ff);
     new Button(this, 525, 618, 110, 42, "Sổ Tay", () => this.scene.start("codex"), 0x7dffb0);
 
-    // Row 2: Secondary utilities (y = 651..685)
+    // Row 2: Secondary utilities (y = 651..685, all cleanly separated)
     new Button(this, 125, 668, 170, 34, "BXH Vô Tận", () => this.openEndlessLeaderboard(), 0xffa500);
     new Button(this, 275, 668, 110, 34, "Giúp (H)", () => this.toggleHelp());
+    const initSkin = getSkinDef();
+    this.skinButton = new Button(this, 435, 668, 184, 34, `Skin: ${initSkin.name} (C)`, () => this.cycleSkin(), initSkin.accent ?? 0x38bdf8);
 
     const K = Phaser.Input.Keyboard.KeyCodes;
     this.keys = this.input.keyboard!.addKeys({
-      a: K.A, d: K.D, left: K.LEFT, right: K.RIGHT, tab: K.TAB, enter: K.ENTER, j: K.J, space: K.SPACE, h: K.H, esc: K.ESC,
+      a: K.A, d: K.D, left: K.LEFT, right: K.RIGHT, tab: K.TAB, enter: K.ENTER, j: K.J, space: K.SPACE, h: K.H, esc: K.ESC, c: K.C,
     }) as Record<string, Phaser.Input.Keyboard.Key>;
     this.input.keyboard!.addCapture([K.TAB, K.SPACE]);
     const unlockSound = () => {
@@ -171,8 +177,16 @@ export class MenuScene extends Phaser.Scene {
       if (jd("right")) this.pick(1, this.picks[1] + 1);
     }
     if (jd("tab")) this.setMode(this.mode + 1);
+    if (jd("c")) this.cycleSkin();
     if (jd("h")) this.toggleHelp();
     if (jd("enter") || jd("j") || jd("space")) this.start();
+  }
+
+  private cycleSkin() {
+    const next = cycleSelectedSkin();
+    sfx.confirm();
+    this.skinButton.setCaption(`Skin: ${next.name} (C)`);
+    this.refresh();
   }
 
   private isTwoPlayerOrPk() {
@@ -274,8 +288,9 @@ export class MenuScene extends Phaser.Scene {
     });
 
     const hero = unlocked[this.picks[0]] ?? unlocked[0];
+    const skinDef = getSkinDef();
     this.art.setTexture(`${hero.id}_art`).setScale(0.85);
-    this.artGlow.setTint(hero.color);
+    this.artGlow.setTint(skinDef.accent ?? hero.color);
     this.art.setAlpha(0).setX(990);
     this.tweens.add({ targets: this.art, alpha: 1, x: 950, duration: 220, ease: "Cubic.easeOut" });
 

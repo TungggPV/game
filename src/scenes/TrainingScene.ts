@@ -2,7 +2,7 @@ import Phaser from "phaser";
 import { ARENA_WIDTH, DEPTH, FONT, GAME_HEIGHT, GAME_WIDTH, GROUND_Y, hex } from "../config/constants";
 import { ENEMIES, type EnemyType } from "../config/content";
 import { ARMOR_CORES, type ArmorCore, calculateSynergies, RARITY_COLORS } from "../systems/armorCores";
-import { heroById } from "../config/heroes";
+import { cycleSelectedSkin, getSkinDef, heroById } from "../config/heroes";
 import { Enemy } from "../entities/Enemy";
 import { Hero } from "../entities/Hero";
 import { PlayerControls, setSceneFlag } from "../systems/controls";
@@ -128,8 +128,8 @@ export class TrainingScene extends GameScene {
       this,
       0,
       20,
-      "[F3] Lắp Lõi  ·  [F4] Đổi Quái  ·  [Esc] Menu",
-      13,
+      `[F3] Lắp Lõi · [F4] Đổi Quái · [F5] Skin: ${getSkinDef().name} · [Esc] Menu`,
+      12,
       "#9fb8cc",
       "700",
     ).setOrigin(0.5);
@@ -150,6 +150,7 @@ export class TrainingScene extends GameScene {
       f2: K.F2,
       f3: K.F3,
       f4: K.F4,
+      f5: K.F5,
       esc: K.ESC,
     }) as Record<string, Phaser.Input.Keyboard.Key>;
 
@@ -157,6 +158,7 @@ export class TrainingScene extends GameScene {
     keys.f2.on("down", () => this.toggleInfiniteEnergy());
     keys.f3.on("down", () => this.openQuickCoreSelector());
     keys.f4.on("down", () => this.cycleDummyType());
+    keys.f5.on("down", () => this.cycleTrainingSkin());
     keys.esc.on("down", () => {
       if (this.coreSelectorOpen) this.closeCoreSelector();
       else this.toMenu();
@@ -184,6 +186,14 @@ export class TrainingScene extends GameScene {
     sfx.confirm();
     this.spawnTrainingDummy();
     this.events.emit("toast", `Đã đổi bia tập: ${ENEMIES[this.dummyType].name}`);
+  }
+
+  private cycleTrainingSkin() {
+    const next = cycleSelectedSkin();
+    sfx.confirm();
+    const g2 = this.shortcutBar.getAt(1) as Phaser.GameObjects.Text;
+    if (g2) g2.setText(`[F3] Lắp Lõi · [F4] Đổi Quái · [F5] Skin: ${next.name} · [Esc] Menu`);
+    this.events.emit("toast", `Đã đổi Skin Giáp: ${next.name}`);
   }
 
   private updateShortcutText() {

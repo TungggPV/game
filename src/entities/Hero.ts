@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { DEPTH, GROUND_Y, type SkillSlot } from "../config/constants";
 import { baseMods, type HeroMods } from "../config/content";
 import type { HeroDef, SkillDef } from "../config/heroes";
+import { getSelectedSkin, getSkinDef } from "../config/heroes";
 import { anchorX, artFacesLeft, heroKey, textureHeight, type HeroPose } from "../systems/assets";
 import { ACTIONS, type Action, type Controls } from "../systems/controls";
 import { getDifficultyModifiers } from "../systems/difficulty";
@@ -340,11 +341,11 @@ export class Hero extends Actor {
     const range = b.range * (finisher ? 1.25 : 1);
     const rect = new Phaser.Geom.Rectangle(this.facing > 0 ? this.x - 10 : this.x - range + 10, this.y - 150, range, 140);
     const step = this.comboStep;
-    const tilt = step === 1 ? 0.45 : step === 2 ? -0.45 : 0;
-    this.scene.fx.slash(this.x + this.facing * range * 0.3, this.y - 82, this.facing, this.pal, {
-      scale: finisher ? 1.5 : 1.1,
+    const tilt = step === 1 ? -0.18 : step === 2 ? 0.18 : 0;
+    this.scene.fx.slash(this.x + this.facing * range * 0.42, this.y - 88, this.facing, this.pal, {
+      scale: finisher ? 1.45 : 1.1,
       tilt,
-      sweep: finisher ? 1.8 : 1.3,
+      sweep: finisher ? 0.82 : 0.6,
       duration: finisher ? 280 : 200,
       thin: !finisher,
     });
@@ -597,8 +598,14 @@ export class Hero extends Actor {
     if (this.dead) return;
 
     const dir = this.facing;
-    const main = this.pal.main;
-    const light = this.pal.light;
+    const skinId = getSelectedSkin();
+    const skinDef = getSkinDef(skinId);
+    const nebulaShift = Math.sin(t * 3) > 0 ? 0xc084fc : 0x38bdf8;
+    const main = skinId === "nebula" ? nebulaShift : (skinDef.accent ?? this.pal.main);
+    const light = skinDef.light ?? this.pal.light;
+
+    // 0. Hero & Armor Skin Back Signatures (Ice Wings, Void Tendrils, Seraph Blades, Chakra Ring)
+    this.drawHeroAndSkinWings(t, yOff, dir, main, light, skinId);
 
     // 1. Ground Bounce Rim-Light on the floor deck
     const hRatio = Math.max(0.2, 1 - Math.max(0, GROUND_Y - this.y) / 380);
@@ -760,12 +767,128 @@ export class Hero extends Actor {
         else front.lineTo(px, py);
       }
       front.strokePath();
+    } else if (el === "cryo") {
+      const rx = 12;
+      front.lineStyle(1.8, 0xe0faff, 0.85);
+      for (let i = 0; i < 3; i += 1) {
+        const a = t * 4.5 + (i * Math.PI) / 3;
+        front.lineBetween(wx - Math.cos(a) * rx, wy - Math.sin(a) * rx, wx + Math.cos(a) * rx, wy + Math.sin(a) * rx);
+      }
+      front.fillStyle(main, 0.65);
+      front.fillCircle(wx, wy, 4.2);
+    } else if (el === "void") {
+      front.fillStyle(0x090214, 0.85);
+      front.fillCircle(wx, wy, 6.5);
+      front.lineStyle(2, main, 0.9);
+      front.strokeEllipse(wx, wy, 20, 7.5);
+      front.fillStyle(0xffffff, 0.75);
+      front.fillCircle(wx + Math.cos(t * 9) * 9, wy + Math.sin(t * 9) * 3.5, 2.2);
     } else {
       const pr = 7 + Math.sin(t * 9) * 2.5;
       front.lineStyle(1.6, main, 0.65);
       front.strokeCircle(wx, wy, pr);
       front.fillStyle(0xffffff, 0.55);
       front.fillCircle(wx, wy, 3.2);
+    }
+  }
+
+  private drawHeroAndSkinWings(
+    t: number,
+    yOff: number,
+    dir: number,
+    main: number,
+    light: number,
+    skinId: ReturnType<typeof getSelectedSkin>,
+  ) {
+    const back = this.energyScarf;
+    const front = this.armorOverlayGfx;
+    const sx = this.x - dir * 18;
+    const sy = this.y - 102 + yOff;
+
+    // New Hero Procedural Signatures
+    if (this.def.id === "cryo_archon") {
+      const flap = Math.sin(t * 3.2) * 5;
+      for (let i = 0; i < 3; i += 1) {
+        const ang = (-0.95 + i * 0.42) * dir;
+        const len = 46 - i * 8;
+        const tx = sx + Math.sin(ang) * len;
+        const ty = sy - Math.cos(ang) * len + flap * (i + 1) * 0.35;
+        back.fillStyle(0x38bdf8, 0.48 - i * 0.08);
+        back.fillTriangle(sx, sy - 6 + i * 6, sx - dir * 8, sy + 6 + i * 6, tx, ty);
+        back.lineStyle(1.4, 0xe0faff, 0.75 - i * 0.14);
+        back.lineBetween(sx, sy + i * 4, tx, ty);
+      }
+    } else if (this.def.id === "void_reaper") {
+      // Floating Void Eye Singularity + Shadow Wing Tendrils
+      const ex = this.x - dir * 24;
+      const ey = this.y - 134 + yOff + Math.sin(t * 3.8) * 4;
+      back.fillStyle(0x050210, 0.9);
+      back.fillCircle(ex, ey, 9);
+      back.lineStyle(1.8, 0xd946ef, 0.85);
+      back.strokeEllipse(ex, ey, 26, 9);
+      back.fillStyle(0xffffff, 0.9);
+      back.fillCircle(ex, ey, 3.2);
+      for (let i = 0; i < 2; i += 1) {
+        const wave = Math.sin(t * 6.5 + i * 2) * 8;
+        back.lineStyle(3.2 - i, 0xd946ef, 0.55);
+        back.beginPath();
+        back.moveTo(sx, sy + i * 8);
+        back.lineTo(sx - dir * 32, sy - 12 + i * 16 + wave);
+        back.lineTo(sx - dir * 56, sy - 4 + i * 24 - wave * 0.7);
+        back.strokePath();
+      }
+    }
+
+    // Equip-able Procedural Armor Skins
+    if (skinId === "gold") {
+      // Golden Seraph Halo Crown + Twin Golden Cyber Wing Blades
+      const hy = this.y - 166 + yOff + Math.sin(t * 4) * 2;
+      front.lineStyle(2.4, 0xfbbf24, 0.85);
+      front.strokeEllipse(this.x, hy, 38, 10);
+      front.lineStyle(1.2, 0xfff8d6, 0.9);
+      front.strokeEllipse(this.x, hy, 30, 7);
+      for (const side of [-1, 1]) {
+        const spread = 32 + Math.sin(t * 4.5 + side) * 5;
+        back.fillStyle(0xfbbf24, 0.42);
+        back.fillTriangle(sx, sy, sx + side * spread, sy - 38, sx + side * (spread * 0.55), sy - 10);
+        back.lineStyle(1.4, 0xfff8d6, 0.8);
+        back.strokeTriangle(sx, sy, sx + side * spread, sy - 38, sx + side * (spread * 0.55), sy - 10);
+      }
+    } else if (skinId === "blood_moon") {
+      // Spinning 6-node Crimson Chakra Ring behind Hero
+      const cr = 54;
+      const cy = this.y - 92 + yOff;
+      back.lineStyle(2.2, 0xff2255, 0.48);
+      back.strokeCircle(this.x, cy, cr);
+      for (let i = 0; i < 6; i += 1) {
+        const a = t * 1.9 + (i * Math.PI) / 3;
+        const nx = this.x + Math.cos(a) * cr;
+        const ny = cy + Math.sin(a) * cr;
+        back.fillStyle(0xff2255, 0.7);
+        back.fillCircle(nx, ny, 5.5);
+        back.fillStyle(0xffc2d1, 0.9);
+        back.fillCircle(nx, ny, 2.5);
+      }
+    } else if (skinId === "nebula") {
+      // Prismatic Holographic Hex Wings pulsing across cyan & amethyst
+      for (let i = 0; i < 2; i += 1) {
+        const col = i === 0 ? main : 0x38bdf8;
+        const wx = sx - dir * (22 + i * 14);
+        const wy = sy - 16 + i * 16 + Math.sin(t * 4 + i) * 4;
+        const r = 18 - i * 4;
+        back.lineStyle(2, col, 0.65);
+        back.beginPath();
+        for (let k = 0; k <= 6; k += 1) {
+          const a = t * 1.4 + (k * Math.PI) / 3;
+          const px = wx + Math.cos(a) * r;
+          const py = wy + Math.sin(a) * r;
+          if (k === 0) back.moveTo(px, py);
+          else back.lineTo(px, py);
+        }
+        back.strokePath();
+        back.fillStyle(light, 0.2);
+        back.fillCircle(wx, wy, r * 0.6);
+      }
     }
   }
 

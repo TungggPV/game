@@ -144,9 +144,10 @@ export const baseMods = (): HeroMods => {
   const hpBonus = (up.hp ?? 0) * 15;
   const energyGainBonus = (up.energy ?? 0) * 0.08;
   const cdReduction = Math.pow(0.96, up.cooldown ?? 0);
+  const damageBonus = 1 + (up.damage ?? 0) * 0.05;
 
   return {
-    damage: 1,
+    damage: damageBonus,
     maxHp: hpBonus,
     energyGain: 1 + energyGainBonus,
     cooldown: cdReduction,
