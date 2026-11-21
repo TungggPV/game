@@ -1,14 +1,14 @@
-"""Generate Vietnamese + character-distinct voice clips for Element Armor.
+"""Generate native English character-distinct voice clips for Element Armor.
 
-Synthesizes raw speech using Windows WinRT (`Microsoft An` vi-VN) in a single batch
-PowerShell invocation, then applies per-character pitch shifting, saturation, EQ,
-and radio/helmet spatial reflections via numpy before writing 16 kHz mono WAVs.
+Synthesizes raw speech using Windows WinRT (`Microsoft Mark`, `Microsoft David`,
+`Microsoft Zira` en-US voices) in a single batch PowerShell invocation, then applies
+per-character pitch shifting, saturation, EQ, and radio/helmet spatial reflections
+via numpy before writing 16 kHz mono WAVs.
 """
 
 from __future__ import annotations
 
 import json
-import math
 import os
 import subprocess
 import tempfile
@@ -19,49 +19,49 @@ import numpy as np
 OUT_DIR = Path(__file__).resolve().parent.parent / "public" / "assets" / "audio" / "voice"
 TARGET_SR = 16000
 
-CLIPS: dict[str, tuple[str, str]] = {
+CLIPS: dict[str, tuple[str, str, str]] = {
     # 7 Hero Selection lines
-    "select_nova_blade": ("nova_blade", "Nova Blade sẵn sàng! Thanh kiếm plasma đã nạp năng lượng!"),
-    "select_crimson_flare": ("crimson_flare", "Crimson Flare ra trận! Thiêu rụi tất cả!"),
-    "select_volt_sentinel": ("volt_sentinel", "Volt Sentinel! Tốc độ sấm sét không thể ngăn cản!"),
-    "select_emerald_phantom": ("emerald_phantom", "Emerald Phantom xuất kích! Lưỡi gió vô hình!"),
-    "select_obsidian_warden": ("obsidian_warden", "Obsidian Warden! Bức tường bất khả xâm phạm!"),
-    "select_cryo_archon": ("cryo_archon", "Cryo Archon giáng lâm! Đóng băng chiến trường!"),
-    "select_void_reaper": ("void_reaper", "Void Reaper! Hư không sẽ nuốt chửng tất cả!"),
+    "select_nova_blade": ("Mark", "nova_blade", "Nova Blade online! Plasma edge at full power!"),
+    "select_crimson_flare": ("David", "crimson_flare", "Crimson Flare! Burn them all to ashes!"),
+    "select_volt_sentinel": ("Mark", "volt_sentinel", "Volt Sentinel! Faster than lightning!"),
+    "select_emerald_phantom": ("Zira", "emerald_phantom", "Emerald Phantom deployed! Strike from the shadows!"),
+    "select_obsidian_warden": ("David", "obsidian_warden", "Obsidian Warden! Unbreakable armor engaged!"),
+    "select_cryo_archon": ("Zira", "cryo_archon", "Cryo Archon! Freeze the battlefield!"),
+    "select_void_reaper": ("David", "void_reaper", "Void Reaper! The abyss claims everything!"),
     # 7 Hero Ultimate shouts
-    "ult_nova_blade": ("nova_blade", "Tuyệt kỹ! Nova Overdrive!"),
-    "ult_crimson_flare": ("crimson_flare", "Bùng cháy đi! Mưa thiên thạch đỏ!"),
-    "ult_volt_sentinel": ("volt_sentinel", "Sấm sét giáng trần! Storm Breaker!"),
-    "ult_emerald_phantom": ("emerald_phantom", "Ảo ảnh lục bảo! Trảm liên hoàn!"),
-    "ult_obsidian_warden": ("obsidian_warden", "Nộ kích địa chấn! Nghiền nát tất cả!"),
-    "ult_cryo_archon": ("cryo_archon", "Băng hà vĩnh cửu! Đóng băng tất cả!"),
-    "ult_void_reaper": ("void_reaper", "Nhật thực hư không! Xé toạc không gian!"),
+    "ult_nova_blade": ("Mark", "nova_blade", "Limit break! Nova Overdrive!"),
+    "ult_crimson_flare": ("David", "crimson_flare", "Ignite! Crimson Meteor!"),
+    "ult_volt_sentinel": ("Mark", "volt_sentinel", "Thunder descend! Storm Breaker!"),
+    "ult_emerald_phantom": ("Zira", "emerald_phantom", "Phantom dance! Emerald Mirage!"),
+    "ult_obsidian_warden": ("David", "obsidian_warden", "Shatter the earth! Tectonic Wrath!"),
+    "ult_cryo_archon": ("Zira", "cryo_archon", "Absolute zero! Eternal Permafrost!"),
+    "ult_void_reaper": ("David", "void_reaper", "Tear reality! Dimension Eclipse!"),
     # 7 Hero Skill callouts
-    "skill_nova_blade": ("nova_blade", "Chém xuyên!"),
-    "skill_crimson_flare": ("crimson_flare", "Bùng nổ!"),
-    "skill_volt_sentinel": ("volt_sentinel", "Tia sét!"),
-    "skill_emerald_phantom": ("emerald_phantom", "Cuồng phong!"),
-    "skill_obsidian_warden": ("obsidian_warden", "Nứt đất!"),
-    "skill_cryo_archon": ("cryo_archon", "Băng thương!"),
-    "skill_void_reaper": ("void_reaper", "Hư không!"),
+    "skill_nova_blade": ("Mark", "nova_blade", "Plasma slash!"),
+    "skill_crimson_flare": ("David", "crimson_flare", "Fire burst!"),
+    "skill_volt_sentinel": ("Mark", "volt_sentinel", "High voltage!"),
+    "skill_emerald_phantom": ("Zira", "emerald_phantom", "Wind blade!"),
+    "skill_obsidian_warden": ("David", "obsidian_warden", "Earthquake!"),
+    "skill_cryo_archon": ("Zira", "cryo_archon", "Freeze!"),
+    "skill_void_reaper": ("David", "void_reaper", "Void rift!"),
     # Combat Kiai / Efforts
-    "kiai_1": ("kiai", "Hây!"),
-    "kiai_2": ("kiai", "Haa!"),
-    "kiai_3": ("kiai", "Xung kích!"),
+    "kiai_1": ("Mark", "kiai", "Hah!"),
+    "kiai_2": ("Zira", "kiai", "Hyaa!"),
+    "kiai_3": ("Mark", "kiai", "Break through!"),
     # Arena Announcer Callouts
-    "ann_fight": ("ann", "Chiến đấu!"),
-    "ann_break": ("ann", "Phá giáp!"),
-    "ann_parry": ("ann", "Phản đòn!"),
-    "ann_reaction": ("ann", "Cộng hưởng nguyên tố!"),
-    "ann_boss": ("ann", "Cảnh báo! Đại trùm xuất hiện!"),
-    "ann_victory": ("ann", "Chiến thắng!"),
-    "ann_defeat": ("ann", "Thất bại!"),
+    "ann_fight": ("David", "ann", "Fight!"),
+    "ann_break": ("David", "ann", "Armor Break!"),
+    "ann_parry": ("David", "ann", "Perfect Parry!"),
+    "ann_reaction": ("David", "ann", "Elemental Surge!"),
+    "ann_boss": ("David", "ann", "Warning! Boss approaching!"),
+    "ann_victory": ("David", "ann", "Mission complete! Victory!"),
+    "ann_defeat": ("David", "ann", "System critical! Defeat!"),
 }
 
 
-def synthesize_raw_winrt(items: list[tuple[str, str, str]]) -> None:
-    """Invoke Windows WinRT SpeechSynthesizer once to render all raw WAV clips."""
-    manifest = [{"key": k, "text": txt, "out": out} for k, txt, out in items]
+def synthesize_raw_winrt(items: list[tuple[str, str, str, str]]) -> None:
+    """Invoke Windows WinRT SpeechSynthesizer once to render all raw WAV clips using en-US voices."""
+    manifest = [{"key": k, "voice": v, "text": txt, "out": out} for k, v, txt, out in items]
     with tempfile.NamedTemporaryFile("w", suffix=".json", encoding="utf-8", delete=False) as tf:
         json.dump(manifest, tf, ensure_ascii=False)
         manifest_path = tf.name
@@ -82,17 +82,24 @@ function Await($WinRtTask, $ResultType) {{
   return $netTask.Result
 }}
 
+$allVoices = [Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices
+$enVoices = $allVoices | Where-Object {{ $_.Language -like 'en-*' }}
+$fallbackEn = $enVoices | Select-Object -First 1
+
 $synth = New-Object Windows.Media.SpeechSynthesis.SpeechSynthesizer
-$viVoice = [Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices | Where-Object {{ $_.Language -like 'vi*' }} | Select-Object -First 1
-if ($viVoice) {{
-  $synth.Voice = $viVoice
-}}
+if ($fallbackEn) {{ $synth.Voice = $fallbackEn }}
 try {{
-  $synth.Options.SpeakingRate = 1.12
+  $synth.Options.SpeakingRate = 1.16
 }} catch {{}}
 
 $items = Get-Content -LiteralPath '{manifest_path.replace("'", "''")}' -Raw -Encoding UTF8 | ConvertFrom-Json
 foreach ($item in $items) {{
+  $picked = $enVoices | Where-Object {{ $_.DisplayName -like ("*" + $item.voice + "*") }} | Select-Object -First 1
+  if ($picked) {{
+    $synth.Voice = $picked
+  }} elseif ($fallbackEn) {{
+    $synth.Voice = $fallbackEn
+  }}
   $stream = Await ($synth.SynthesizeTextToStreamAsync($item.text)) ([Windows.Media.SpeechSynthesis.SpeechSynthesisStream])
   $size = [uint32]$stream.Size
   $reader = New-Object Windows.Storage.Streams.DataReader($stream.GetInputStreamAt(0))
@@ -103,7 +110,7 @@ foreach ($item in $items) {{
   $reader.Dispose()
   $stream.Dispose()
 }}
-Write-Output ("SYNTH_OK:" + $items.Count + ":" + $synth.Voice.DisplayName)
+Write-Output ("SYNTH_OK:" + $items.Count + ":en-US")
 """
     try:
         res = subprocess.run(
@@ -204,28 +211,28 @@ def process_profile(sig: np.ndarray, sr: int, profile: str) -> np.ndarray:
     sr = TARGET_SR
 
     if profile == "nova_blade":
-        x = shift_pitch_speed(sig, 1.05)
+        x = shift_pitch_speed(sig, 1.03)
         x = simple_high_presence(x, 0.28)
         x = add_delay(x, sr, 18.0, 0.16)
     elif profile == "crimson_flare":
-        x = shift_pitch_speed(sig, 0.94)
+        x = shift_pitch_speed(sig, 0.96)
         x = np.tanh(x * 1.45) / np.tanh(1.45)
         x = simple_high_presence(x, 0.22)
         x = add_delay(x, sr, 24.0, 0.14)
     elif profile == "volt_sentinel":
-        x = shift_pitch_speed(sig, 1.13)
+        x = shift_pitch_speed(sig, 1.10)
         x = simple_high_presence(x, 0.34)
         x = add_delay(x, sr, 11.0, 0.22)
     elif profile == "emerald_phantom":
-        x = shift_pitch_speed(sig, 1.16)
-        x = simple_high_presence(x, 0.38)
-        x = add_delay(x, sr, 22.0, 0.15)
+        x = shift_pitch_speed(sig, 1.08)
+        x = simple_high_presence(x, 0.36)
+        x = add_delay(x, sr, 20.0, 0.16)
     elif profile == "obsidian_warden":
-        x = shift_pitch_speed(sig, 0.80)
-        x = np.tanh(x * 1.25) / np.tanh(1.25)
+        x = shift_pitch_speed(sig, 0.82)
+        x = np.tanh(x * 1.28) / np.tanh(1.28)
         x = add_delay(x, sr, 34.0, 0.22, feedback=0.35)
     elif profile == "cryo_archon":
-        x = shift_pitch_speed(sig, 1.09)
+        x = shift_pitch_speed(sig, 0.99)
         x = simple_high_presence(x, 0.32)
         x = add_delay(x, sr, 42.0, 0.20, feedback=0.4)
         x = add_delay(x, sr, 88.0, 0.12)
@@ -238,18 +245,17 @@ def process_profile(sig: np.ndarray, sr: int, profile: str) -> np.ndarray:
         x = m_pad * 0.78 + s_pad * 0.34
         x = add_delay(x, sr, 65.0, 0.24, feedback=0.42)
     elif profile == "ann":
-        x = shift_pitch_speed(sig, 0.97)
-        x = np.tanh(x * 1.3) / np.tanh(1.3)
+        x = shift_pitch_speed(sig, 0.94)
+        x = np.tanh(x * 1.32) / np.tanh(1.32)
         x = simple_high_presence(x, 0.26)
         x = add_delay(x, sr, 55.0, 0.22, feedback=0.38)
         x = add_delay(x, sr, 115.0, 0.10)
     else:  # kiai
-        x = shift_pitch_speed(sig, 1.14)
+        x = shift_pitch_speed(sig, 1.08)
         x = np.tanh(x * 1.35) / np.tanh(1.35)
         x = simple_high_presence(x, 0.30)
         x = add_delay(x, sr, 16.0, 0.14)
 
-    # Smooth 15ms fade-in/out & peak normalize to 0.92
     x = trim_silence(x, sr, -42.0)
     fade = min(len(x) // 4, int(0.015 * sr))
     if fade > 1:
@@ -273,13 +279,13 @@ def write_wav_mono(path: Path, sig: np.ndarray, sr: int = TARGET_SR) -> None:
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
-        raw_items: list[tuple[str, str, str]] = []
-        for key, (_profile, phrase) in CLIPS.items():
-            raw_items.append((key, phrase, os.path.join(tmp, f"{key}.wav")))
+        raw_items: list[tuple[str, str, str, str]] = []
+        for key, (voice_name, _profile, phrase) in CLIPS.items():
+            raw_items.append((key, voice_name, phrase, os.path.join(tmp, f"{key}.wav")))
 
         synthesize_raw_winrt(raw_items)
 
-        for key, (profile, _phrase) in CLIPS.items():
+        for key, (_voice_name, profile, _phrase) in CLIPS.items():
             raw_path = Path(tmp) / f"{key}.wav"
             sig, sr = read_wav_mono(raw_path)
             processed = process_profile(sig, sr, profile)
