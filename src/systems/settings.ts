@@ -3,6 +3,8 @@ export type Settings = {
   muted: boolean;
   volume: number;
   musicVolume: number;
+  voiceVolume: number;
+  voiceEnabled: boolean;
   shake: boolean;
   damageNumbers: boolean;
   motionInterpolation: boolean;
@@ -16,6 +18,8 @@ const DEFAULT_SETTINGS: Settings = {
   muted: false,
   volume: 1,
   musicVolume: 0.75,
+  voiceVolume: 0.9,
+  voiceEnabled: true,
   shake: true,
   damageNumbers: true,
   motionInterpolation: true,

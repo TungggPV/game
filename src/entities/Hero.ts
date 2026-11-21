@@ -10,6 +10,7 @@ import { PALETTE, type Palette } from "../systems/Fx";
 import { AfterimageRingBuffer, expDecay, ProceduralSmearArc } from "../systems/motionSynth";
 import type { ArmorCore } from "../systems/armorCores";
 import { sfx } from "../systems/sfx";
+import { voice } from "../systems/voice";
 import { castSkill } from "../systems/skills";
 import type { GameScene } from "../scenes/GameScene";
 import { Actor, type Hit } from "./Actor";
@@ -265,6 +266,10 @@ export class Hero extends Actor {
           this.pendingCast = undefined;
           castSkill(this.scene, this, slot, skill);
         }
+        if (!this.pendingCast && this.stateTime >= 0.14 && this.take("ultimate")) {
+          this.tryCast("ultimate");
+          return;
+        }
         if (this.stateTime >= 0.15 && this.tryDash()) return;
         if (done) this.setState("free", 0);
         return;
@@ -337,7 +342,8 @@ export class Hero extends Actor {
     this.meleeAt = 0.05;
     if (this.onGround) this.vx = this.facing * (this.comboStep === 3 ? 360 : 180);
     else this.vy = Math.min(this.vy, -120);
-    sfx.swing();
+    sfx.comboSwing(this.comboStep, this.def.element);
+    if (this.comboStep === 3) voice.playKiai(3);
     this.impulse(1.1, 0.94);
   }
 
@@ -405,6 +411,9 @@ export class Hero extends Actor {
     if (slot === "ultimate") {
       this.invuln = Math.max(this.invuln, 0.9);
       this.scene.ultimateIntro(this, skill);
+    } else {
+      sfx.skillCast(this.def.element, slot);
+      voice.playSkill(this.def.id);
     }
     if (this.onGround) this.vx = 0;
     else this.vy = Math.min(this.vy, 0);

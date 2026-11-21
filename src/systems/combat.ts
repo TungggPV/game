@@ -7,6 +7,7 @@ import type { GameScene } from "../scenes/GameScene";
 import { PALETTE, type Palette } from "./Fx";
 import { unlockEntry } from "./progress";
 import { sfx } from "./sfx";
+import { voice } from "./voice";
 
 export class CombatSystem {
   combo = 0;
@@ -50,6 +51,7 @@ export class CombatSystem {
     if (target.posture <= 0) {
       target.brokenTimer = 3.5;
       sfx.break();
+      voice.playAnnouncer("break");
       this.scene.fx.shockRing(target.cx, target.cy, 260, 0xffbb00);
       this.scene.fx.dualImpactFlash(0xffe45c, 0xff5511, 240);
       this.scene.fx.label(target.cx, target.y - target.bodyH - 40, "PHÁ GIÁP!", "#ffe45c");
@@ -82,6 +84,7 @@ export class CombatSystem {
       this.scene.explode(attacker, target.cx, target.cy, 140, { damage: 70, dir: 1, knock: 450, color: 0xff6a1a });
       this.scene.fx.label(target.cx, target.y - target.bodyH - 45, "QUÁ TẢI!", "#ff6a1a");
       sfx.reaction();
+      voice.playAnnouncer("reaction");
       return;
     }
 
@@ -92,6 +95,7 @@ export class CombatSystem {
       this.scene.fx.shockRing(target.cx, target.cy, 140, 0x9fe8ff);
       this.scene.fx.label(target.cx, target.y - target.bodyH - 45, "SIÊU DẪN!", "#9fe8ff");
       sfx.reaction();
+      voice.playAnnouncer("reaction");
       return;
     }
 
@@ -101,6 +105,7 @@ export class CombatSystem {
       this.scene.dealDamage(attacker, target, { damage: 95, dir: 1, color: 0xffe45c });
       this.scene.fx.label(target.cx, target.y - target.bodyH - 45, "TAN CHẢY!", "#ffe45c");
       sfx.reaction();
+      voice.playAnnouncer("reaction");
       return;
     }
 
@@ -112,6 +117,7 @@ export class CombatSystem {
       attacker.gainEnergy(15);
       this.scene.fx.label(target.cx, target.y - target.bodyH - 45, "KẾT TINH!", "#cca052");
       sfx.reaction();
+      voice.playAnnouncer("reaction");
       return;
     }
   }
@@ -180,6 +186,7 @@ export class CombatSystem {
     if (!blocked) this.scene.fx.hit(target.cx - hit.dir * target.bodyW * 0.15, target.cy - 10, hit.dir, this.paletteFor(attacker), heavy);
     if (target instanceof Enemy || this.scene.mode === "pk") this.scene.fx.number(target.cx, target.y - target.bodyH - 10, dealt, 0xffffff, crit);
     if (crit) sfx.crit();
+    else if (attacker instanceof Hero && heavy) sfx.elementImpact(attacker.def.element, true);
     else sfx.hit();
     this.hitstop = Math.max(this.hitstop, heavy ? 0.075 : 0.04);
     if (heavy) {
@@ -237,6 +244,7 @@ export class CombatSystem {
           // Trigger Parry!
           this.scene.fx.clashSpark(h.cx + h.facing * 35, h.cy, h.facing);
           sfx.parry();
+          voice.playAnnouncer("parry");
           this.hitstop = 0.09;
           enemy.vx = -enemy.facing * 380;
           enemy.hitstun = 0.6;

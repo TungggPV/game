@@ -7,6 +7,7 @@ import { setSceneFlag } from "../systems/controls";
 import { getDifficulty, setDifficulty, type DifficultyLevel } from "../systems/difficulty";
 import { getDailyRecord, getEndlessLeaderboard, loadProgress } from "../systems/progress";
 import { sfx } from "../systems/sfx";
+import { voice } from "../systems/voice";
 import { music } from "../systems/music";
 import { Button, text } from "../ui/widgets";
 
@@ -157,6 +158,7 @@ export class MenuScene extends Phaser.Scene {
     this.input.keyboard!.addCapture([K.TAB, K.SPACE]);
     const unlockSound = () => {
       sfx.unlock();
+      voice.unlock();
       music.start("menu");
     };
     this.input.once("pointerdown", unlockSound);
@@ -273,6 +275,8 @@ export class MenuScene extends Phaser.Scene {
 
     this.picks[player] = targetIndex;
     sfx.select();
+    const chosenHero = unlocked[targetIndex];
+    if (chosenHero) voice.playSelect(chosenHero.id);
     this.refresh();
   }
 
@@ -401,6 +405,7 @@ export class MenuScene extends Phaser.Scene {
     if (this.transitioning) return;
     this.transitioning = true;
     sfx.unlock();
+    voice.unlock();
     sfx.confirm();
     const mode = MODES[this.mode].id;
     const prog = loadProgress();

@@ -554,6 +554,147 @@ export class Fx {
     this.shake(0.015, 200);
   }
 
+  /** Camera-locked radial anime speed-lines around viewport edges (keeps center clear). */
+  speedLines(color = 0x18e6ff, duration = 680, count = 26) {
+    const cx = GAME_WIDTH / 2;
+    const cy = GAME_HEIGHT / 2;
+    for (let i = 0; i < count; i += 1) {
+      const ang = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.14;
+      const dist = 420 + Math.random() * 240;
+      const sx = cx + Math.cos(ang) * dist;
+      const sy = cy + Math.sin(ang) * (dist * 0.62);
+      const streak = this.scene.add
+        .image(sx, sy, "streak")
+        .setScrollFactor(0)
+        .setTint(i % 3 === 0 ? 0xffffff : color)
+        .setBlendMode(ADD)
+        .setRotation(ang)
+        .setScale(1.6 + Math.random() * 1.4, 0.32 + Math.random() * 0.28)
+        .setAlpha(0)
+        .setDepth(DEPTH.fx + 9);
+      this.scene.tweens.add({
+        targets: streak,
+        x: cx + Math.cos(ang) * (dist - 120),
+        y: cy + Math.sin(ang) * (dist * 0.62 - 70),
+        alpha: 0.72,
+        duration: Math.round(duration * 0.25),
+        ease: "Quad.easeOut",
+        yoyo: true,
+        hold: Math.round(duration * 0.35),
+        onComplete: () => streak.destroy(),
+      });
+    }
+  }
+
+  /** Additive screen-edge elemental rim pulse without obscuring the arena center. */
+  rimGlow(color: number, duration = 800, alpha = 0.42) {
+    if (!this.scene.textures.exists("vignette")) return;
+    const rim = this.scene.add
+      .image(GAME_WIDTH / 2, GAME_HEIGHT / 2, "vignette")
+      .setScrollFactor(0)
+      .setDisplaySize(GAME_WIDTH * 1.15, GAME_HEIGHT * 1.15)
+      .setTint(color)
+      .setBlendMode(ADD)
+      .setAlpha(0)
+      .setDepth(DEPTH.fx + 8);
+    this.scene.tweens.add({
+      targets: rim,
+      alpha,
+      duration: Math.min(180, Math.round(duration * 0.24)),
+      ease: "Quad.easeOut",
+      yoyo: true,
+      hold: Math.max(80, Math.round(duration * 0.42)),
+      onComplete: () => rim.destroy(),
+    });
+  }
+
+  /** Spinning glyph + contracting focus ring + inward sparks for skill wind-up. */
+  energyChargeRing(x: number, y: number, palette: Palette, duration = 300) {
+    if (this.scene.textures.exists("glyph")) {
+      const g = this.scene.add
+        .image(x, y, "glyph")
+        .setTint(palette.main)
+        .setBlendMode(ADD)
+        .setScale(1.45)
+        .setAlpha(0.15)
+        .setDepth(DEPTH.fx + 2);
+      this.scene.tweens.add({
+        targets: g,
+        scale: 0.55,
+        rotation: 2.2,
+        alpha: 0.9,
+        duration,
+        ease: "Cubic.easeIn",
+        onComplete: () => g.destroy(),
+      });
+    }
+    const r = this.scene.add
+      .image(x, y, "ring")
+      .setTint(palette.light)
+      .setBlendMode(ADD)
+      .setScale(1.9)
+      .setAlpha(0.85)
+      .setDepth(DEPTH.fx + 3);
+    this.scene.tweens.add({
+      targets: r,
+      scale: 0.22,
+      alpha: 0,
+      duration,
+      ease: "Quad.easeIn",
+      onComplete: () => r.destroy(),
+    });
+    this.charge(x, y, palette, duration, 150, 18);
+  }
+
+  /** Crisp anime star flare + crossed light beams + staggered shockwaves. */
+  impactBurst(x: number, y: number, palette: Palette, scale = 1.4) {
+    this.flashCore(x, y, scale * 1.25, 220);
+    this.glow(x, y, palette.main, scale * 2.4, 340, DEPTH.fx + 2);
+    for (const rot of [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4]) {
+      const beam = this.scene.add
+        .image(x, y, "streak")
+        .setTint(rot === 0 || rot === Math.PI / 2 ? 0xffffff : palette.light)
+        .setBlendMode(ADD)
+        .setRotation(rot)
+        .setScale(scale * (rot % (Math.PI / 2) === 0 ? 2.8 : 1.9), scale * 0.55)
+        .setDepth(DEPTH.fx + 4);
+      this.scene.tweens.add({
+        targets: beam,
+        scaleX: beam.scaleX * 1.55,
+        scaleY: 0.04,
+        alpha: 0,
+        duration: 240,
+        ease: "Cubic.easeOut",
+        onComplete: () => beam.destroy(),
+      });
+    }
+    this.shockRing(x, y, Math.round(145 * scale), 0xffffff, 220);
+    this.shockRing(x, y, Math.round(230 * scale), palette.main, 340);
+    this.sparks(x, y, palette.light, 1, Math.round(10 * scale), 950, 180);
+    this.sparks(x, y, palette.main, -1, Math.round(10 * scale), 950, 180);
+  }
+
+  /** Glowing fissure + ground crack decal + lingering floor embers. */
+  groundScorch(x: number, color: number, scale = 1.2, duration = 1200) {
+    this.groundCrack(x, scale, color, duration);
+    const fissure = this.scene.add
+      .image(x, GROUND_Y - 2, "glow")
+      .setTint(color)
+      .setBlendMode(ADD)
+      .setScale(scale * 1.75, scale * 0.28)
+      .setAlpha(0.85)
+      .setDepth(DEPTH.shadow + 2);
+    this.scene.tweens.add({
+      targets: fissure,
+      scaleX: scale * 2.15,
+      alpha: 0,
+      duration,
+      ease: "Quad.easeOut",
+      onComplete: () => fissure.destroy(),
+    });
+    this.embers(x, GROUND_Y - 14, { main: color, light: 0xffffff, dark: color }, 14, Math.round(55 * scale));
+  }
+
   // ---------- text ----------
 
   number(x: number, y: number, value: number, color: number, crit = false) {

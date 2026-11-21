@@ -6,6 +6,8 @@ import { Enemy } from "../entities/Enemy";
 import type { GameScene } from "../scenes/GameScene";
 import { getDifficultyModifiers } from "./difficulty";
 import { unlockEntry } from "./progress";
+import { sfx } from "./sfx";
+import { voice } from "./voice";
 
 const ENDLESS_MODIFIERS = [
   { id: "fast" as const, label: "⚡ QUÁI NHANH (+35% Tốc độ)" },
@@ -77,6 +79,9 @@ export class SpawnDirector {
     this.scene.setPhase("fight", 0);
     this.scene.lockHeroes(false);
     this.spawnTimer = 0.3;
+    if (this.scene.waveIndex === 0 && this.scene.mode !== "bossrush") {
+      voice.playAnnouncer("fight");
+    }
 
     // 1. Boss Rush Mode
     if (this.scene.mode === "bossrush") {
@@ -197,6 +202,8 @@ export class SpawnDirector {
       e.x = this.scene.arenaMax - 260;
       this.scene.fx.shake(type === "archon_zero" ? 0.03 : 0.02, 700);
       this.scene.events.emit("boss", e);
+      sfx.warn();
+      voice.playAnnouncer("boss");
       if (type === "archon_zero") {
         this.scene.events.emit("banner", "CẢNH BÁO TỐI CAO", "CỔ THẦN ARCHON ZERO ĐÃ THỨC TỈNH!", 0xd946ef);
       }

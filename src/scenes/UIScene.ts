@@ -8,6 +8,7 @@ import type { Hero } from "../entities/Hero";
 import { heroKey } from "../systems/assets";
 import { setSceneFlag } from "../systems/controls";
 import { sfx } from "../systems/sfx";
+import { voice } from "../systems/voice";
 import { ArmorCore, RARITY_COLORS, getActiveSynergies } from "../systems/armorCores";
 import type { GameScene, ResultData } from "./GameScene";
 import { Button, ButtonGroup, text } from "../ui/widgets";
@@ -374,18 +375,115 @@ export class UIScene extends Phaser.Scene {
 
   private cutin(hero: Hero, skill: SkillDef) {
     const fromLeft = hero.index === 0;
-    const root = this.add.container(0, GAME_HEIGHT / 2).setDepth(60);
-    const band = this.add.rectangle(GAME_WIDTH / 2, 0, GAME_WIDTH, 190, hero.def.color, 0.22).setBlendMode(Phaser.BlendModes.ADD);
-    const dark = this.add.rectangle(GAME_WIDTH / 2, 0, GAME_WIDTH, 170, 0x02070d, 0.8);
-    const art = this.add.image(fromLeft ? 260 : GAME_WIDTH - 260, 0, `${hero.def.id}_art`).setScale(0.62).setFlipX(!fromLeft);
-    art.setCrop(0, 30, art.width, 280);
-    const name = text(this, fromLeft ? 470 : GAME_WIDTH - 470, -10, skill.name.toUpperCase(), 56, hex(hero.def.color), "900").setOrigin(fromLeft ? 0 : 1, 0.5);
-    const sub = text(this, fromLeft ? 474 : GAME_WIDTH - 474, 40, "TUYỆT KỸ", 20, "#ffffff", "800").setOrigin(fromLeft ? 0 : 1, 0.5);
-    root.add([band, dark, art, name, sub]);
+    const root = this.add.container(0, GAME_HEIGHT / 2).setDepth(65);
+    const dir = fromLeft ? 1 : -1;
+
+    // Cinematic letterbox bars framing top and bottom of screen
+    const topBar = this.add.rectangle(GAME_WIDTH / 2, -GAME_HEIGHT / 2 - 28, GAME_WIDTH, 56, 0x02070d, 0.88).setDepth(64);
+    const botBar = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 28, GAME_WIDTH, 56, 0x02070d, 0.88).setDepth(64);
+    root.add([topBar, botBar]);
+    this.tweens.add({ targets: topBar, y: -GAME_HEIGHT / 2 + 24, duration: 150, ease: "Cubic.easeOut" });
+    this.tweens.add({ targets: botBar, y: GAME_HEIGHT / 2 - 24, duration: 150, ease: "Cubic.easeOut" });
+
+    // Dynamic slanted diagonal splash ribbon
+    const ribbon = this.add.graphics();
+    const skew = 48 * dir;
+    ribbon.fillStyle(0x030914, 0.9);
+    ribbon.fillPoints(
+      [
+        { x: -40, y: -112 - skew * 0.25 },
+        { x: GAME_WIDTH + 40, y: -112 + skew * 0.25 },
+        { x: GAME_WIDTH + 40, y: 112 + skew * 0.25 },
+        { x: -40, y: 112 - skew * 0.25 },
+      ],
+      true,
+    );
+    ribbon.fillStyle(hero.def.color, 0.22);
+    ribbon.fillPoints(
+      [
+        { x: -40, y: -92 - skew * 0.25 },
+        { x: GAME_WIDTH + 40, y: -92 + skew * 0.25 },
+        { x: GAME_WIDTH + 40, y: 92 + skew * 0.25 },
+        { x: -40, y: 92 - skew * 0.25 },
+      ],
+      true,
+    );
+    ribbon.lineStyle(4, hero.def.color, 0.95);
+    ribbon.lineBetween(-40, -112 - skew * 0.25, GAME_WIDTH + 40, -112 + skew * 0.25);
+    ribbon.lineBetween(-40, 112 - skew * 0.25, GAME_WIDTH + 40, 112 + skew * 0.25);
+    ribbon.lineStyle(2, 0xffffff, 0.85);
+    ribbon.lineBetween(-40, -96 - skew * 0.25, GAME_WIDTH + 40, -96 + skew * 0.25);
+    ribbon.lineBetween(-40, 96 - skew * 0.25, GAME_WIDTH + 40, 96 + skew * 0.25);
+    root.add(ribbon);
+
+    // High-speed kinetic energy streaks across the ribbon
+    for (let i = 0; i < 12; i += 1) {
+      const sy = -78 + (i / 11) * 156;
+      const sx = fromLeft ? -180 - i * 60 : GAME_WIDTH + 180 + i * 60;
+      const streak = this.add
+        .image(sx, sy, "streak")
+        .setTint(i % 3 === 0 ? 0xffffff : hero.def.color)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setScale(2.4 + (i % 3) * 0.7, 0.35 + (i % 2) * 0.22);
+      root.add(streak);
+      this.tweens.add({
+        targets: streak,
+        x: fromLeft ? GAME_WIDTH + 220 : -220,
+        duration: 380 + (i % 4) * 55,
+        delay: (i % 4) * 35,
+        ease: "Cubic.easeOut",
+      });
+    }
+
+    // Elemental halo + portrait ghost echo + main portrait
+    const artX = fromLeft ? 255 : GAME_WIDTH - 255;
+    const halo = this.add
+      .image(artX, 6, "glow")
+      .setTint(hero.def.color)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setScale(4.2, 2.8)
+      .setAlpha(0.75);
+    const ghost = this.add
+      .image(artX - 24 * dir, 0, `${hero.def.id}_art`)
+      .setScale(0.76)
+      .setFlipX(!fromLeft)
+      .setTintFill(hero.def.color)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setAlpha(0.45);
+    const art = this.add
+      .image(artX, 0, `${hero.def.id}_art`)
+      .setScale(0.68)
+      .setFlipX(!fromLeft);
+    art.setCrop(0, 24, art.width, 300);
+    ghost.setCrop(0, 24, ghost.width, 300);
+
+    // Slammed anime skill title + hero title badge
+    const textX = fromLeft ? 465 : GAME_WIDTH - 465;
+    const alignOrigin = fromLeft ? 0 : 1;
+    const sub = text(this, textX + 4 * dir, -54, `TUYỆT KỸ · ${hero.def.name.toUpperCase()}`, 21, "#ffffff", "900").setOrigin(alignOrigin, 0.5);
+    const name = this.add
+      .text(textX, 10, skill.name.toUpperCase(), {
+        fontFamily: FONT,
+        fontSize: "58px",
+        fontStyle: "900",
+        color: hex(hero.def.color),
+        stroke: "#030710",
+        strokeThickness: 8,
+      })
+      .setOrigin(alignOrigin, 0.5)
+      .setScale(1.45)
+      .setAlpha(0.1);
+    const roleTag = text(this, textX + 6 * dir, 62, skill.desc, 17, "#d6eefc", "700").setOrigin(alignOrigin, 0.5);
+
+    root.add([halo, ghost, art, sub, name, roleTag]);
     root.setX(fromLeft ? -GAME_WIDTH : GAME_WIDTH);
-    this.tweens.add({ targets: root, x: 0, duration: 160, ease: "Cubic.easeOut" });
-    this.tweens.add({ targets: art, x: art.x + (fromLeft ? 40 : -40), duration: 700 });
-    this.tweens.add({ targets: root, alpha: 0, delay: 650, duration: 200, onComplete: () => root.destroy() });
+    this.tweens.add({ targets: root, x: 0, duration: 145, ease: "Cubic.easeOut" });
+    this.tweens.add({ targets: name, scale: 1, alpha: 1, delay: 75, duration: 170, ease: "Back.easeOut" });
+    this.tweens.add({ targets: art, x: artX + 44 * dir, scale: 0.77, duration: 760, ease: "Quad.easeOut" });
+    this.tweens.add({ targets: ghost, x: artX + 70 * dir, alpha: 0, duration: 520, ease: "Quad.easeOut" });
+    this.tweens.add({ targets: topBar, y: -GAME_HEIGHT / 2 - 36, delay: 700, duration: 180 });
+    this.tweens.add({ targets: botBar, y: GAME_HEIGHT / 2 + 36, delay: 700, duration: 180 });
+    this.tweens.add({ targets: root, alpha: 0, delay: 720, duration: 190, onComplete: () => root.destroy() });
   }
 
   // ---------- overlays ----------
@@ -420,11 +518,17 @@ export class UIScene extends Phaser.Scene {
       mute.setCaption(`Âm thanh: ${sfx.isMuted() ? "TẮT" : "BẬT"}`);
     });
     mute.setCaption(`Âm thanh: ${sfx.isMuted() ? "TẮT" : "BẬT"}`);
+    const voiceBtn = new Button(this, bx, 500, 320, 52, "", () => {
+      voice.toggleEnabled();
+      voiceBtn.setCaption(`Giọng nói: ${voice.isEnabled() ? "BẬT" : "TẮT"}`);
+    });
+    voiceBtn.setCaption(`Giọng nói: ${voice.isEnabled() ? "BẬT" : "TẮT"}`);
     const buttons = [
       new Button(this, bx, 260, 320, 52, "Tiếp tục", resume),
       new Button(this, bx, 320, 320, 52, "Chơi lại", () => this.restart()),
       new Button(this, bx, 380, 320, 52, "Về menu", () => this.toMenu()),
       mute,
+      voiceBtn,
     ];
     root.add(buttons);
 

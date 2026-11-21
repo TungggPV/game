@@ -177,37 +177,38 @@ export class HazardSystem {
 
   spawnMeteor(owner: Hero, x: number, radius: number, hit: Hit) {
     const pal = PALETTE[owner.def.element];
+    sfx.meteorWhoosh();
     const mark = this.scene.add
       .image(x, GROUND_Y - 4, "glyph")
       .setTint(pal.main)
       .setBlendMode(Phaser.BlendModes.ADD)
-      .setScale(radius / 120, (radius / 120) * 0.26)
+      .setScale(radius / 100, (radius / 100) * 0.26)
       .setAlpha(0)
       .setDepth(DEPTH.shadow + 1);
-    this.scene.tweens.add({ targets: mark, alpha: 0.9, rotation: 2, duration: 420 });
-    const startX = x - 320;
-    const startY = this.scene.cameras.main.worldView.y - 100;
+    this.scene.tweens.add({ targets: mark, alpha: 0.95, rotation: 2.8, duration: 420 });
+    const startX = x - 340;
+    const startY = this.scene.cameras.main.worldView.y - 120;
     const rock = { x: startX, y: startY };
     const meteorKeys = fxSeq("fx_meteor", 8);
     const head = this.scene.add
       .image(startX, startY, "glow")
       .setTint(pal.main)
       .setBlendMode(Phaser.BlendModes.ADD)
-      .setScale(2.2)
+      .setScale(2.5)
       .setDepth(DEPTH.projectile);
     const core = this.scene.add
       .image(startX, startY, this.scene.textures.exists(meteorKeys[0]) ? meteorKeys[0] : "core")
       .setBlendMode(Phaser.BlendModes.ADD)
-      .setScale(this.scene.textures.exists(meteorKeys[0]) ? 0.95 : 1.3)
+      .setScale(this.scene.textures.exists(meteorKeys[0]) ? 1.15 : 1.45)
       .setDepth(DEPTH.projectile + 1);
     const angle = Math.atan2(GROUND_Y - 40 - startY, x - startX) * (180 / Math.PI);
     core.setRotation(Phaser.Math.DegToRad(angle - 45));
     const tail = this.scene.fx.trail(rock, "flame", {
-      speed: { min: 20, max: 80 },
-      lifespan: { min: 260, max: 480 },
-      frequency: 8,
-      quantity: 2,
-      scale: { start: 1.3, end: 0.1 },
+      speed: { min: 30, max: 110 },
+      lifespan: { min: 280, max: 520 },
+      frequency: 7,
+      quantity: 3,
+      scale: { start: 1.45, end: 0.1 },
       alpha: { start: 1, end: 0 },
       rotate: angle + 90,
       color: [0xffffff, pal.light, pal.main, pal.dark],
@@ -216,15 +217,15 @@ export class HazardSystem {
     const smoke = this.scene.fx.trail(
       rock,
       "smoke",
-      { speed: 20, lifespan: 600, frequency: 40, scale: { start: 0.4, end: 1.2 }, alpha: { start: 0.4, end: 0 }, tint: 0x30262a },
+      { speed: 25, lifespan: 620, frequency: 34, scale: { start: 0.45, end: 1.3 }, alpha: { start: 0.45, end: 0 }, tint: 0x30262a },
       DEPTH.projectile - 2,
     );
     this.scene.tweens.add({
       targets: [head, core, rock],
       x,
       y: GROUND_Y - 40,
-      delay: 120,
-      duration: 360,
+      delay: 110,
+      duration: 340,
       ease: "Quad.easeIn",
       onUpdate: (tw) => {
         const mk = meteorKeys[Math.floor(tw.progress * 16) % meteorKeys.length];
@@ -236,8 +237,16 @@ export class HazardSystem {
         mark.destroy();
         this.scene.fx.stopTrail(tail, 500);
         this.scene.fx.stopTrail(smoke, 700);
-        this.scene.fx.groundCrack(x, radius / 110, pal.main);
-        this.scene.fx.pillar(x, pal.main, 1.4, 0.8, 500);
+        this.scene.fx.playAnim(x, GROUND_Y + 8, fxSeq("fx_fire_vortex", 8), {
+          originY: 1,
+          scale: Math.max(1.15, radius / 95),
+          endScale: Math.max(1.45, radius / 76),
+          duration: 420,
+        });
+        this.scene.fx.groundScorch(x, pal.main, radius / 95, 1100);
+        this.scene.fx.impactBurst(x, GROUND_Y - 38, pal, Math.max(1.05, radius / 110));
+        this.scene.fx.pillar(x, pal.main, 1.5, 0.95, 520);
+        sfx.elementImpact(owner.def.element, true);
         this.scene.explode(owner, x, GROUND_Y - 60, radius, hit);
       },
     });

@@ -18,6 +18,7 @@ import { PickupSystem } from "../systems/pickups";
 import { addCoins, loadProgress, saveDailyRecord, saveEndlessScore, saveProgress, unlockEntry } from "../systems/progress";
 import { ProjectileSystem, type ProjectileSpec } from "../systems/projectiles";
 import { sfx } from "../systems/sfx";
+import { voice } from "../systems/voice";
 import { music } from "../systems/music";
 import { SpawnDirector } from "../systems/spawnDirector";
 import { getDailyDateString } from "../config/daily";
@@ -823,8 +824,13 @@ export class GameScene extends Phaser.Scene {
       mode: this.mode,
     } satisfies ResultData);
     if (solo && this.score > prog.bestScore) saveProgress({ bestScore: this.score });
-    if (win) sfx.win();
-    else sfx.lose();
+    if (win) {
+      sfx.win();
+      voice.playAnnouncer("victory");
+    } else {
+      sfx.lose();
+      voice.playAnnouncer("defeat");
+    }
   }
 
   private startPkRound() {
@@ -1071,6 +1077,7 @@ export class GameScene extends Phaser.Scene {
           this.lockHeroes(false);
           this.events.emit("banner", "CHIẾN!", "", 0xff4e3a);
           sfx.confirm();
+          voice.playAnnouncer("fight");
         }
         break;
       case "pkFight": {
@@ -1112,11 +1119,15 @@ export class GameScene extends Phaser.Scene {
 
   ultimateIntro(hero: Hero, skill: SkillDef) {
     const pal = PALETTE[hero.def.element];
-    sfx.ultimate();
-    this.hitstop = Math.max(this.hitstop, 0.3);
-    this.fx.tintScreen(pal.dark, 0.7, 1100);
-    this.fx.charge(hero.cx, hero.cy, pal, 320, 220, 30);
-    this.fx.ring(hero.x, GROUND_Y - 4, pal.main, 220, 600, 0.25, "glyph");
+    sfx.ultimateCharge(hero.def.element);
+    voice.playUltimate(hero.def.id);
+    this.hitstop = Math.max(this.hitstop, 0.32);
+    this.fx.tintScreen(pal.dark, 0.55, 1050);
+    this.fx.rimGlow(pal.main, 950, 0.42);
+    this.fx.speedLines(pal.main, 780, 28);
+    this.fx.energyChargeRing(hero.cx, hero.cy, pal, 320);
+    this.fx.zoomPunch(0.085, 420);
+    this.fx.ring(hero.x, GROUND_Y - 4, pal.main, 260, 620, 0.25, "glyph");
     this.events.emit("cutin", hero, skill);
   }
 

@@ -4,6 +4,7 @@ import type { Actor, Hit } from "../entities/Actor";
 import { Hero } from "../entities/Hero";
 import type { GameScene } from "../scenes/GameScene";
 import { fxSeq, PALETTE } from "./Fx";
+import { sfx } from "./sfx";
 
 export type ProjectileStyle = "plasma" | "fire" | "volt" | "wind" | "earth" | "cryo" | "void" | "enemy";
 
@@ -83,6 +84,7 @@ export class ProjectileSystem {
           this.explode(p.owner, p.x, p.y, p.explodeRadius, p.hit);
           p.pierce = 0;
         } else {
+          if (p.style !== "enemy") sfx.elementImpact(p.style, false);
           this.scene.dealDamage(p.owner, t, { ...p.hit, dir });
         }
         if (p.chain) this.chainFrom(p.owner, t, p.chain, p.hit, p.color);
@@ -347,7 +349,9 @@ export class ProjectileSystem {
 
   explode(attacker: Actor, x: number, y: number, radius: number, hit: Hit) {
     const pal = this.scene.paletteFor(attacker);
+    if (attacker instanceof Hero) sfx.elementImpact(attacker.def.element, true);
     this.scene.fx.explosion(x, y, pal, radius * 1.6);
+    this.scene.fx.impactBurst(x, y, pal, Math.max(0.85, radius / 115));
     this.scene.fx.ring(x, y, pal.main, radius * 1.4, 340);
     this.scene.fx.flashCore(x, y, 1.2);
     this.scene.areaHit(attacker, x, y, radius, hit);
@@ -359,7 +363,9 @@ export class ProjectileSystem {
       .filter((t) => !t.dead && t !== origin && Math.hypot(t.x - origin.x, t.y - origin.y) < 320)
       .sort((a, b) => Math.hypot(a.x - origin.x, a.y - origin.y) - Math.hypot(b.x - origin.x, b.y - origin.y))[0];
     if (!next) return;
-    this.scene.fx.lightning(origin.cx, origin.cy, next.cx, next.cy, color, 1.4, 2, 220);
+    this.scene.fx.lightning(origin.cx, origin.cy, next.cx, next.cy, color, 1.45, 2, 220);
+    this.scene.fx.impactBurst(next.cx, next.cy, PALETTE.volt, 0.72);
+    sfx.elementImpact("volt", false);
     this.scene.dealDamage(attacker, next, { ...hit, damage: hit.damage * 0.75, knock: 80 });
     if (remaining > 1) {
       this.scene.time.delayedCall(90, () => this.chainFrom(attacker, next, remaining - 1, hit, color));
